@@ -1,0 +1,83 @@
+:root {
+  font-family: Inter, Avenir, Helvetica, Arial, sans-serif;
+  font-size: 14px;
+  line-height: 24px;
+  font-weight: 400;
+  color: #0f0f0f;
+  background-color: #f6f6f6;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* 自定义滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #c1c1c1;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #a8a8a8;
+}
+
+/* Diff 样式 */
+.diff-added {
+  background-color: #e6ffed;
+  color: #24292e;
+}
+
+.diff-removed {
+  background-color: #ffeef0;
+  color: #24292e;
+}
+
+.diff-line {
+  padding: 2px 8px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  white-space: pre;
+}
+
+/* 状态颜色 */
+.status-added {
+  color: #67c23a;
+}
+
+.status-modified {
+  color: #e6a23c;
+}
+
+.status-deleted {
+  color: #f56c6c;
+}
+
+.status-unversioned {
+  color: #909399;
+}

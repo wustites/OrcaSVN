@@ -1,0 +1,44 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "identifier": "default",
+  "description": "Default capabilities for the app",
+  "windows": ["*"],
+  "permissions": [
+    "core:default",
+    "shell:allow-execute",
+    "shell:default",
+    "dialog:default",
+    "dialog:allow-open",
+    "dialog:allow-save",
+    "dialog:allow-message",
+    "dialog:allow-ask",
+    "dialog:allow-confirm",
+    "fs:default",
+    "fs:allow-mkdir",
+    "fs:allow-read-file",
+    "fs:allow-write-file",
+    "fs:allow-read-dir",
+    "fs:allow-copy-file",
+    "fs:allow-remove",
+    "fs:allow-rename",
+    "fs:allow-exists",
+    "fs:allow-app-read-recursive",
+    "fs:allow-app-write-recursive"
+  ],
+  "platforms": ["windows", "macOS", "linux"],
+  "webview": {
+    "launch": {
+      "allowlist": {
+        "shell": {
+          "execute": [
+            {
+              "name": "svn",
+              "cmd": "svn",
+              "args": true
+            }
+          ]
+        }
+      }
+    }
+  }
+}

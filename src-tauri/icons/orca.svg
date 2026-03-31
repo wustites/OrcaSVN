@@ -1,0 +1,141 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <!-- 身体渐变 -->
+    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#0d1b2a"/>
+      <stop offset="40%" style="stop-color:#1b263b"/>
+      <stop offset="100%" style="stop-color:#415a77"/>
+    </linearGradient>
+    
+    <!-- 腹部白色渐变 -->
+    <linearGradient id="whiteGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#e0e0e0"/>
+    </linearGradient>
+    
+    <!-- 眼睛高光 -->
+    <radialGradient id="eyeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#ffffff"/>
+      <stop offset="100%" style="stop-color:#cccccc"/>
+    </radialGradient>
+    
+    <!-- 水花渐变 -->
+    <linearGradient id="splashGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#74c0fc;stop-opacity:0.8"/>
+      <stop offset="100%" style="stop-color:#1971c2;stop-opacity:0.4"/>
+    </linearGradient>
+  </defs>
+  
+  <!-- 背景圆形 -->
+  <circle cx="256" cy="256" r="250" fill="#0a1020"/>
+  
+  <!-- 深海背景装饰 -->
+  <ellipse cx="256" cy="400" rx="200" ry="60" fill="#1a2332" opacity="0.5"/>
+  
+  <!-- === 虎鲸全身造型 === -->
+  
+  <!-- 尾巴（向左弯曲） -->
+  <path d="M 100 350 Q 60 380 40 360 Q 30 350 50 340 Q 80 320 120 340" 
+        fill="url(#bodyGrad)" stroke="#0d1b2a" stroke-width="2"/>
+  
+  <!-- 尾鳍上叶 -->
+  <path d="M 40 360 L 20 320 L 35 355 Z" 
+        fill="url(#bodyGrad)" stroke="#0d1b2a" stroke-width="2"/>
+  
+  <!-- 尾鳍下叶 -->
+  <path d="M 40 360 L 25 385 L 50 365 Z" 
+        fill="url(#bodyGrad)" stroke="#0d1b2a" stroke-width="2"/>
+  
+  <!-- 身体主体 - 流线型 -->
+  <ellipse cx="280" cy="300" rx="160" ry="100" 
+           fill="url(#bodyGrad)" transform="rotate(-15 280 300)"/>
+  
+  <!-- 白色腹部区域 -->
+  <path d="M 180 320 Q 280 380 380 340 Q 360 360 280 370 Q 200 375 160 340 Z" 
+        fill="url(#whiteGrad)"/>
+  
+  <!-- 白色腹部延伸（下巴到胸鳍） -->
+  <path d="M 380 280 Q 400 320 380 340 Q 360 320 370 290 Z" 
+        fill="url(#whiteGrad)"/>
+  
+  <!-- 背鳍（大而弯曲） -->
+  <path d="M 260 220 Q 280 120 240 130 Q 220 135 230 180 Q 235 200 250 220" 
+        fill="url(#bodyGrad)" stroke="#0d1b2a" stroke-width="2"/>
+  
+  <!-- 背鳍细节线条 -->
+  <path d="M 245 200 Q 255 160 250 140" 
+        stroke="#0d1b2a" stroke-width="2" fill="none" opacity="0.5"/>
+  
+  <!-- 左侧胸鳍 -->
+  <ellipse cx="180" cy="320" rx="55" ry="28" 
+           fill="url(#bodyGrad)" transform="rotate(-25 180 320)" 
+           stroke="#0d1b2a" stroke-width="2"/>
+  
+  <!-- 右侧胸鳍（部分可见） -->
+  <ellipse cx="380" cy="310" rx="45" ry="22" 
+           fill="url(#bodyGrad)" transform="rotate(20 380 310)" 
+           stroke="#0d1b2a" stroke-width="2"/>
+  
+  <!-- === 头部特征 === -->
+  
+  <!-- 头部轮廓 -->
+  <ellipse cx="380" cy="260" rx="90" ry="70" 
+           fill="url(#bodyGrad)" transform="rotate(-10 380 260)"/>
+  
+  <!-- 白色眼斑（左眼上方） -->
+  <ellipse cx="350" cy="220" rx="30" ry="40" 
+           fill="url(#whiteGrad)" transform="rotate(-20 350 220)"/>
+  
+  <!-- 白色眼斑（右眼上方） -->
+  <ellipse cx="410" cy="230" rx="28" ry="38" 
+           fill="url(#whiteGrad)" transform="rotate(15 410 230)"/>
+  
+  <!-- 眼睛（黑色瞳孔 - 左） -->
+  <circle cx="355" cy="215" r="10" fill="#000000"/>
+  
+  <!-- 眼睛（黑色瞳孔 - 右） -->
+  <circle cx="405" cy="225" r="9" fill="#000000"/>
+  
+  <!-- 眼睛高光（左） -->
+  <circle cx="358" cy="212" r="4" fill="url(#eyeGlow)"/>
+  
+  <!-- 眼睛高光（右） -->
+  <circle cx="408" cy="222" r="3.5" fill="url(#eyeGlow)"/>
+  
+  <!-- 嘴部线条 -->
+  <path d="M 420 280 Q 440 290 450 285" 
+        stroke="#0d1b2a" stroke-width="3" fill="none" stroke-linecap="round"/>
+  
+  <!-- 腮裂细节（左侧 3 条） -->
+  <path d="M 200 290 Q 205 295 200 300" stroke="#0d1b2a" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M 210 295 Q 215 300 210 305" stroke="#0d1b2a" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M 220 300 Q 225 305 220 310" stroke="#0d1b2a" stroke-width="2" fill="none" opacity="0.6"/>
+  
+  <!-- 腮裂细节（右侧 3 条） -->
+  <path d="M 340 280 Q 335 285 340 290" stroke="#0d1b2a" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M 330 285 Q 325 290 330 295" stroke="#0d1b2a" stroke-width="2" fill="none" opacity="0.6"/>
+  <path d="M 320 290 Q 315 295 320 300" stroke="#0d1b2a" stroke-width="2" fill="none" opacity="0.6"/>
+  
+  <!-- === 水花效果 === -->
+  
+  <!-- 喷气孔水柱 -->
+  <ellipse cx="300" cy="180" rx="8" ry="20" fill="url(#splashGrad)"/>
+  <ellipse cx="295" cy="165" rx="6" ry="15" fill="url(#splashGrad)" opacity="0.7"/>
+  <ellipse cx="305" cy="170" rx="5" ry="12" fill="url(#splashGrad)" opacity="0.6"/>
+  
+  <!-- 周围水花 -->
+  <circle cx="150" cy="380" r="6" fill="url(#splashGrad)" opacity="0.5"/>
+  <circle cx="170" cy="390" r="4" fill="url(#splashGrad)" opacity="0.4"/>
+  <circle cx="400" cy="370" r="5" fill="url(#splashGrad)" opacity="0.5"/>
+  <circle cx="420" cy="385" r="7" fill="url(#splashGrad)" opacity="0.4"/>
+  <circle cx="100" cy="360" r="4" fill="url(#splashGrad)" opacity="0.3"/>
+  
+  <!-- 动态水波纹 -->
+  <path d="M 80 400 Q 100 395 120 400" stroke="#4a9eff" stroke-width="2" fill="none" opacity="0.4"/>
+  <path d="M 380 410 Q 400 405 420 410" stroke="#4a9eff" stroke-width="2" fill="none" opacity="0.4"/>
+  <path d="M 200 420 Q 220 415 240 420" stroke="#4a9eff" stroke-width="2" fill="none" opacity="0.3"/>
+  
+  <!-- 身体高光 -->
+  <ellipse cx="260" cy="280" rx="40" ry="20" fill="#ffffff" opacity="0.15" transform="rotate(-15 260 280)"/>
+  <ellipse cx="360" cy="240" rx="30" ry="15" fill="#ffffff" opacity="0.1" transform="rotate(-10 360 240)"/>
+</svg>
