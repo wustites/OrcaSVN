@@ -11,7 +11,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'ubuntu-latest'
+          - platform: 'ubuntu-22.04'
             args: ''
             name: 'linux'
           - platform: 'windows-latest'
@@ -34,7 +34,6 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          # 使用 nightly 以支持更好的优化
           toolchain: stable
 
       - name: Install dependencies (ubuntu only)
@@ -48,7 +47,7 @@ jobs:
 
       # Tauri 自动构建并上传到 Release
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
