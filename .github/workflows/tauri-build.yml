@@ -54,6 +54,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Generate app icons
+        run: npm run icons
+
       - name: Build frontend
         run: npm run build
 

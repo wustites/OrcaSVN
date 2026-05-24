@@ -1,47 +1,76 @@
 <template>
   <div class="workspace-view">
     <div v-if="!workspaceStore.currentPath" class="empty-workspace">
-      <div class="empty-panel">
+      <div class="empty-panel animate-scale-in">
         <div class="empty-mark">
           <el-icon><FolderOpened /></el-icon>
         </div>
         <h1>{{ $t('workspace.emptyWorkspace') }}</h1>
+        <p class="empty-description">{{ $t('workspace.emptyDescription') }}</p>
         <div class="empty-actions">
-          <el-button type="primary" @click="openWorkspace">{{ $t('workspace.openWorkspace') }}</el-button>
-          <el-button @click="doCheckout">{{ $t('common.checkout') }}</el-button>
+          <el-button type="primary" @click="openWorkspace" size="large">
+            <el-icon><FolderOpened /></el-icon>
+            {{ $t('workspace.openWorkspace') }}
+          </el-button>
+          <el-button @click="doCheckout" size="large">
+            <el-icon><Download /></el-icon>
+            {{ $t('common.checkout') }}
+          </el-button>
         </div>
       </div>
     </div>
 
     <div v-else class="workspace-content">
-      <el-card class="info-card">
+      <el-card class="info-card animate-fade-in">
         <template #header>
           <div class="card-header">
-            <span>{{ $t('workspace.repositoryInfo') }}</span>
-            <el-button @click="closeWorkspace">{{ $t('common.close') }}</el-button>
+            <span class="card-title">
+              <el-icon><InfoFilled /></el-icon>
+              {{ $t('workspace.repositoryInfo') }}
+            </span>
+            <el-button @click="closeWorkspace" size="small" text>
+              <el-icon><Close /></el-icon>
+              {{ $t('common.close') }}
+            </el-button>
           </div>
         </template>
-        <el-alert v-if="workspaceStore.error" type="error" :title="workspaceStore.error" :closable="false" class="mb-4" />
-        <el-descriptions :column="2" border v-if="workspaceStore.svnInfo">
-          <el-descriptions-item :label="$t('workspace.path')">{{ workspaceStore.svnInfo.path }}</el-descriptions-item>
-          <el-descriptions-item label="URL">{{ workspaceStore.svnInfo.url }}</el-descriptions-item>
-          <el-descriptions-item :label="$t('workspace.repositoryRoot')">{{ workspaceStore.svnInfo.repository_root }}</el-descriptions-item>
-          <el-descriptions-item :label="$t('workspace.revision')">{{ workspaceStore.svnInfo.revision }}</el-descriptions-item>
-          <el-descriptions-item :label="$t('workspace.type')">{{ workspaceStore.svnInfo.node_kind }}</el-descriptions-item>
+        <el-alert v-if="workspaceStore.error" type="error" :title="workspaceStore.error" :closable="false" class="mb-4" show-icon />
+        <el-descriptions :column="responsiveColumns" border v-if="workspaceStore.svnInfo" class="info-descriptions">
+          <el-descriptions-item :label="$t('workspace.path')">
+            <span class="path-text">{{ workspaceStore.svnInfo.path }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item label="URL">
+            <span class="url-text">{{ workspaceStore.svnInfo.url }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item :label="$t('workspace.repositoryRoot')">
+            <span class="path-text">{{ workspaceStore.svnInfo.repository_root }}</span>
+          </el-descriptions-item>
+          <el-descriptions-item :label="$t('workspace.revision')">
+            <el-tag type="primary" size="small">r{{ workspaceStore.svnInfo.revision }}</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item :label="$t('workspace.type')">
+            <el-tag size="small">{{ workspaceStore.svnInfo.node_kind }}</el-tag>
+          </el-descriptions-item>
         </el-descriptions>
-        <div v-else-if="!workspaceStore.isLoading" class="no-info">{{ $t('workspace.noRepositoryInfo') }}</div>
+        <div v-else-if="!workspaceStore.isLoading" class="no-info">
+          <el-icon><InfoFilled /></el-icon>
+          <span>{{ $t('workspace.noRepositoryInfo') }}</span>
+        </div>
       </el-card>
 
-      <el-card class="status-card">
+      <el-card class="status-card animate-fade-in" style="animation-delay: 0.1s">
         <template #header>
           <div class="card-header">
-            <span>{{ $t('workspace.fileStatus') }}</span>
+            <span class="card-title">
+              <el-icon><List /></el-icon>
+              {{ $t('workspace.fileStatus') }}
+            </span>
             <div class="header-actions">
-              <el-button @click="refreshStatus" :loading="workspaceStore.isLoading">
+              <el-button @click="refreshStatus" :loading="workspaceStore.isLoading" size="small">
                 <el-icon><Refresh /></el-icon>
                 {{ $t('common.refresh') }}
               </el-button>
-              <el-button type="primary" @click="doUpdate">
+              <el-button type="primary" @click="doUpdate" size="small">
                 <el-icon><RefreshRight /></el-icon>
                 {{ $t('common.update') }}
               </el-button>
@@ -51,40 +80,66 @@
 
         <div class="status-summary">
           <div class="status-metric modified">
-            <span>{{ $t('workspace.statusModified') }}</span>
-            <strong>{{ workspaceStore.modifiedCount }}</strong>
+            <div class="metric-icon">
+              <el-icon><Edit /></el-icon>
+            </div>
+            <div class="metric-info">
+              <span class="metric-label">{{ $t('workspace.statusModified') }}</span>
+              <strong class="metric-value">{{ workspaceStore.modifiedCount }}</strong>
+            </div>
           </div>
           <div class="status-metric added">
-            <span>{{ $t('workspace.statusAdded') }}</span>
-            <strong>{{ workspaceStore.addedCount }}</strong>
+            <div class="metric-icon">
+              <el-icon><Plus /></el-icon>
+            </div>
+            <div class="metric-info">
+              <span class="metric-label">{{ $t('workspace.statusAdded') }}</span>
+              <strong class="metric-value">{{ workspaceStore.addedCount }}</strong>
+            </div>
           </div>
           <div class="status-metric deleted">
-            <span>{{ $t('workspace.statusDeleted') }}</span>
-            <strong>{{ workspaceStore.deletedCount }}</strong>
+            <div class="metric-icon">
+              <el-icon><Delete /></el-icon>
+            </div>
+            <div class="metric-info">
+              <span class="metric-label">{{ $t('workspace.statusDeleted') }}</span>
+              <strong class="metric-value">{{ workspaceStore.deletedCount }}</strong>
+            </div>
           </div>
         </div>
 
-        <el-table :data="workspaceStore.statusList" style="width: 100%" max-height="400">
-          <el-table-column prop="status_code" :label="$t('commit.status')" width="180" align="center">
+        <el-table 
+          :data="workspaceStore.statusList" 
+          style="width: 100%" 
+          max-height="400"
+          stripe
+          highlight-current-row
+          class="status-table"
+        >
+          <el-table-column prop="status_code" :label="$t('commit.status')" width="140" align="center">
             <template #default="{ row }">
               <span class="status-badge" :class="getStatusClass(row.status_code)">
                 {{ $t(getStatusLabelKey(row.status_code)) }}
               </span>
             </template>
           </el-table-column>
-          <el-table-column prop="path" :label="$t('commit.file')" />
-          <el-table-column :label="$t('common.action')" width="236" fixed="right">
+          <el-table-column prop="path" :label="$t('commit.file')" show-overflow-tooltip>
+            <template #default="{ row }">
+              <span class="file-path">{{ row.path }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column :label="$t('common.action')" width="200" fixed="right" align="center">
             <template #default="{ row }">
               <div class="row-actions">
-                <el-button link @click="viewDiff(row.path)">
+                <el-button link type="primary" @click="viewDiff(row.path)" size="small">
                   <el-icon><Connection /></el-icon>
                   {{ $t('common.diff') }}
                 </el-button>
-                <el-button link @click="viewBlame(row.path)">
+                <el-button link type="primary" @click="viewBlame(row.path)" size="small">
                   <el-icon><Edit /></el-icon>
                   {{ $t('common.blame') }}
                 </el-button>
-                <el-button link type="danger" @click="revertFile(row.path)">
+                <el-button link type="danger" @click="revertFile(row.path)" size="small">
                   <el-icon><RefreshLeft /></el-icon>
                   {{ $t('common.revert') }}
                 </el-button>
@@ -94,28 +149,31 @@
         </el-table>
       </el-card>
 
-      <el-card class="actions-card">
+      <el-card class="actions-card animate-fade-in" style="animation-delay: 0.2s">
         <template #header>
-          <span>{{ $t('workspace.quickActions') }}</span>
+          <span class="card-title">
+            <el-icon><Operation /></el-icon>
+            {{ $t('workspace.quickActions') }}
+          </span>
         </template>
         <div class="quick-actions">
-          <el-button @click="doCommit">
+          <el-button @click="doCommit" class="action-btn">
             <el-icon><Upload /></el-icon>
             {{ $t('common.commit') }}
           </el-button>
-          <el-button @click="doAdd">
+          <el-button @click="doAdd" class="action-btn">
             <el-icon><Plus /></el-icon>
             {{ $t('common.add') }}
           </el-button>
-          <el-button @click="doDelete">
+          <el-button @click="doDelete" class="action-btn">
             <el-icon><Delete /></el-icon>
             {{ $t('common.delete') }}
           </el-button>
-          <el-button @click="doCleanup">
+          <el-button @click="doCleanup" class="action-btn">
             <el-icon><Brush /></el-icon>
             {{ $t('common.cleanup') }}
           </el-button>
-          <el-button @click="doSwitch">
+          <el-button @click="doSwitch" class="action-btn">
             <el-icon><Switch /></el-icon>
             {{ $t('common.switch') }}
           </el-button>
@@ -126,6 +184,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnUpdate, svnCleanup, svnRevert, svnAdd, svnDelete, svnSwitch } from '@/api/svn'
@@ -139,6 +198,10 @@ const { t } = useI18n()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog, refreshStatus } = useWorkspace()
+
+const responsiveColumns = computed(() => {
+  return window.innerWidth > 860 ? 2 : 1
+})
 
 const openWorkspace = () => openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
 
@@ -256,8 +319,6 @@ const revertFile = async (path: string) => {
     workspaceStore.error = String(err)
   }
 }
-
-
 </script>
 
 <style scoped>
@@ -270,49 +331,59 @@ const revertFile = async (path: string) => {
   justify-content: center;
   align-items: center;
   height: 100%;
+  padding: var(--app-spacing-lg);
 }
 
 .empty-panel {
   width: min(520px, 100%);
-  padding: 42px;
-  border: 1px solid rgba(198, 198, 210, 0.8);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.76);
+  padding: var(--app-spacing-xl);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--app-radius-lg);
+  background: rgba(255, 255, 255, 0.82);
   box-shadow: var(--md-sys-elevation-2);
   text-align: center;
-  backdrop-filter: blur(18px);
+  backdrop-filter: blur(20px);
 }
 
 .empty-panel h1 {
-  margin: 18px 0 22px;
+  margin: var(--app-spacing-lg) 0 var(--app-spacing-sm);
   color: #20212a;
-  font-size: 22px;
-  line-height: 1.25;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.3;
+}
+
+.empty-description {
+  color: var(--el-text-color-secondary);
+  margin-bottom: var(--app-spacing-lg);
+  font-size: 14px;
 }
 
 .empty-mark {
   display: grid;
   place-items: center;
-  width: 72px;
-  height: 72px;
+  width: 80px;
+  height: 80px;
   margin: 0 auto;
-  border-radius: 8px;
+  border-radius: var(--app-radius-md);
   background: linear-gradient(135deg, var(--md-sys-color-primary-container), var(--md-sys-color-secondary-container));
   color: var(--md-sys-color-primary);
-  font-size: 34px;
+  font-size: 36px;
+  box-shadow: var(--md-sys-elevation-2);
 }
 
 .empty-actions {
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 12px;
+  gap: var(--app-spacing);
 }
 
 .workspace-content {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 16px;
+  gap: var(--app-spacing-md);
   padding: 2px;
   height: 100%;
   overflow-y: auto;
@@ -330,38 +401,110 @@ const revertFile = async (path: string) => {
   align-items: center;
 }
 
+.card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--app-spacing-sm);
+  font-weight: 700;
+}
+
 .header-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--app-spacing-sm);
+}
+
+.info-descriptions {
+  margin-top: var(--app-spacing-sm);
+}
+
+.path-text {
+  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.url-text {
+  color: var(--md-sys-color-primary);
+  word-break: break-all;
+}
+
+.no-info {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--app-spacing-sm);
+  color: var(--el-text-color-secondary);
+  text-align: center;
+  padding: var(--app-spacing-lg);
 }
 
 .status-summary {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-  margin-bottom: 16px;
+  gap: var(--app-spacing);
+  margin-bottom: var(--app-spacing-md);
 }
 
 .status-metric {
-  min-height: 72px;
-  padding: 13px 14px;
-  border: 1px solid rgba(198, 198, 210, 0.72);
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: var(--app-spacing);
+  min-height: 80px;
+  padding: var(--app-spacing-md);
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--app-radius-md);
   background: #fff;
+  transition: transform var(--app-transition-fast), box-shadow var(--app-transition-fast);
 }
 
-.status-metric span {
+.status-metric:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--md-sys-elevation-2);
+}
+
+.metric-icon {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--app-radius);
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.status-metric.modified .metric-icon {
+  background: #fef9c3;
+  color: #a16207;
+}
+
+.status-metric.added .metric-icon {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-metric.deleted .metric-icon {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.metric-info {
+  overflow: hidden;
+}
+
+.metric-label {
   display: block;
-  color: #5b5d6b;
+  color: var(--el-text-color-secondary);
   font-size: 12px;
-  font-weight: 700;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
-.status-metric strong {
+.metric-value {
   display: block;
-  margin-top: 6px;
+  margin-top: 4px;
   color: #20212a;
-  font-size: 26px;
+  font-size: 28px;
+  font-weight: 800;
   line-height: 1;
 }
 
@@ -377,16 +520,30 @@ const revertFile = async (path: string) => {
   background: linear-gradient(135deg, #fee2e2, #fff);
 }
 
+.status-table {
+  border-radius: var(--app-radius-md);
+  overflow: hidden;
+}
+
+.file-path {
+  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-size: 13px;
+}
+
 .quick-actions {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: var(--app-spacing);
+}
+
+.action-btn {
+  justify-content: flex-start;
 }
 
 .row-actions {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: center;
   gap: 4px;
 }
 
@@ -397,47 +554,46 @@ const revertFile = async (path: string) => {
   gap: 6px;
   min-width: 82px;
   height: 28px;
-  padding: 0 10px;
-  border-radius: 999px;
+  padding: 0 var(--app-spacing);
+  border-radius: var(--app-radius-full);
   background: #f5f5fb;
-  font-weight: 800;
-}
-
-.status-added {
-  color: #15803d;
-  font-weight: bold;
-  background: #dcfce7;
-}
-
-.status-modified {
-  color: #a16207;
-  font-weight: bold;
-  background: #fef9c3;
-}
-
-.status-deleted {
-  color: #dc2626;
-  font-weight: bold;
-  background: #fee2e2;
-}
-
-.status-unversioned {
-  color: #6366f1;
-  background: #e0e7ff;
+  font-weight: 700;
+  font-size: 12px;
 }
 
 .mb-4 {
-  margin-bottom: 16px;
+  margin-bottom: var(--app-spacing-md);
 }
 
-.no-info {
-  color: #999;
-  text-align: center;
-  padding: 20px;
-}
-
-@media (max-width: 720px) {
+@media (max-width: 860px) {
   .status-summary {
+    grid-template-columns: 1fr;
+  }
+  
+  .quick-actions {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .empty-panel {
+    padding: var(--app-spacing-lg);
+  }
+  
+  .empty-panel h1 {
+    font-size: 20px;
+  }
+  
+  .status-metric {
+    min-height: 70px;
+    padding: var(--app-spacing);
+  }
+  
+  .metric-value {
+    font-size: 24px;
+  }
+  
+  .quick-actions {
     grid-template-columns: 1fr;
   }
 }

@@ -18,7 +18,7 @@
                 <el-icon><Document /></el-icon>
               </template>
             </el-input>
-            <el-button @click="loadDiff" :loading="loading">
+            <el-button @click="loadDiff" :loading="loading" type="primary">
               <el-icon><Connection /></el-icon>
               {{ $t('diff.compare') }}
             </el-button>
@@ -37,20 +37,24 @@
             v-model.number="oldRev"
             type="number"
             :placeholder="$t('diff.oldRevision')"
-            style="width: 120px"
+            class="rev-input"
           />
-          <span>{{ $t('diff.to') }}</span>
+          <span class="rev-separator">→</span>
           <el-input
             v-model.number="newRev"
             type="number"
             :placeholder="$t('diff.newRevision')"
-            style="width: 120px"
+            class="rev-input"
           />
         </div>
       </div>
 
       <div v-if="!diffResult && !loading" class="empty-diff">
-        <el-empty :description="$t('diff.selectFileAndCompare')" />
+        <el-empty :description="$t('diff.selectFileAndCompare')">
+          <template #image>
+            <el-icon class="empty-icon"><Connection /></el-icon>
+          </template>
+        </el-empty>
       </div>
 
       <div v-else-if="loading" class="loading-diff">
@@ -59,15 +63,25 @@
 
       <div v-else class="diff-content">
         <div class="diff-header">
-          <el-tag class="path-tag">
-            <el-icon><Document /></el-icon>
-            {{ $t('diff.file') }}：{{ diffResult?.path }}
-          </el-tag>
-          <el-tag v-if="diffResult?.old_revision && diffResult?.new_revision">
-            {{ $t('common.version') }}：{{ diffResult?.old_revision }} → {{ diffResult?.new_revision }}
-          </el-tag>
-          <el-tag type="success">+{{ diffStats.added }}</el-tag>
-          <el-tag type="danger">-{{ diffStats.removed }}</el-tag>
+          <div class="diff-tags">
+            <el-tag class="path-tag" type="primary">
+              <el-icon><Document /></el-icon>
+              {{ $t('diff.file') }}：{{ diffResult?.path }}
+            </el-tag>
+            <el-tag v-if="diffResult?.old_revision && diffResult?.new_revision" type="info">
+              {{ $t('common.version') }}：{{ diffResult?.old_revision }} → {{ diffResult?.new_revision }}
+            </el-tag>
+          </div>
+          <div class="diff-stats">
+            <el-tag type="success" effect="plain" class="stat-tag">
+              <el-icon><Plus /></el-icon>
+              {{ diffStats.added }}
+            </el-tag>
+            <el-tag type="danger" effect="plain" class="stat-tag">
+              <el-icon><Minus /></el-icon>
+              {{ diffStats.removed }}
+            </el-tag>
+          </div>
         </div>
 
         <div class="diff-lines" role="table" aria-label="Diff">
@@ -200,6 +214,7 @@ watch(() => route.query.path, (path) => {
 
 .diff-card {
   height: 100%;
+  border-radius: var(--app-radius-lg);
 }
 
 :deep(.diff-card > .el-card__body) {
@@ -212,7 +227,8 @@ watch(() => route.query.path, (path) => {
 .view-title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-spacing-sm);
+  font-weight: 700;
 }
 
 .card-header {
@@ -224,7 +240,7 @@ watch(() => route.query.path, (path) => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-spacing-sm);
 }
 
 .path-input {
@@ -232,26 +248,44 @@ watch(() => route.query.path, (path) => {
 }
 
 .diff-options {
-  margin-bottom: 20px;
+  margin-bottom: var(--app-spacing-md);
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 20px;
+  gap: var(--app-spacing-md);
 }
 
 .mode-switch :deep(.el-radio-button__inner) {
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .revision-inputs {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-spacing-sm);
+}
+
+.rev-input {
+  width: 120px;
+}
+
+.rev-separator {
+  color: var(--el-text-color-secondary);
+  font-weight: 600;
 }
 
 .empty-diff,
 .loading-diff {
-  padding: 40px 0;
+  padding: var(--app-spacing-xl) 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.empty-icon {
+  font-size: 64px;
+  color: var(--el-text-color-placeholder);
 }
 
 .diff-content {
@@ -259,43 +293,69 @@ watch(() => route.query.path, (path) => {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  margin-top: 20px;
+  margin-top: var(--app-spacing-md);
 }
 
 .diff-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 15px;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--app-spacing);
+  margin-bottom: var(--app-spacing);
+}
+
+.diff-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-spacing-sm);
 }
 
 .path-tag {
   max-width: min(720px, 100%);
 }
 
+.diff-stats {
+  display: flex;
+  gap: var(--app-spacing-sm);
+}
+
+.stat-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 600;
+}
+
 .diff-lines {
   flex: 1;
   min-height: 320px;
   background: #fbfbff;
-  border: 1px solid rgba(198, 198, 210, 0.8);
-  border-radius: 8px;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: var(--app-radius-md);
   overflow: auto;
   font-family: "Cascadia Mono", Consolas, Monaco, monospace;
   font-size: 13px;
+  line-height: 1.5;
 }
 
 .diff-row {
   display: grid;
   grid-template-columns: 64px 34px minmax(max-content, 1fr);
   min-width: max-content;
-  border-bottom: 1px solid rgba(226, 228, 238, 0.72);
+  border-bottom: 1px solid rgba(226, 228, 238, 0.6);
+  transition: background-color var(--app-transition-fast);
+}
+
+.diff-row:hover {
+  filter: brightness(0.98);
 }
 
 .diff-line-number,
 .diff-marker {
   user-select: none;
   color: #747789;
-  background: rgba(241, 242, 251, 0.86);
+  background: rgba(241, 242, 251, 0.9);
   text-align: right;
 }
 
@@ -345,6 +405,51 @@ watch(() => route.query.path, (path) => {
   font-weight: 800;
 }
 
+/* 暗色主题 */
+.theme-dark .diff-lines {
+  background: #1a1a2e;
+  border-color: var(--md-sys-color-outline-variant);
+}
+
+.theme-dark .diff-line-number,
+.theme-dark .diff-marker {
+  background: #2a2a3e;
+  color: #8b8ba0;
+}
+
+.theme-dark .diff-code {
+  color: #c4c4d8;
+}
+
+.theme-dark .diff-added {
+  background-color: #052e16;
+}
+
+.theme-dark .diff-added .diff-marker,
+.theme-dark .diff-added .diff-line-number {
+  background: #052e16;
+  color: #4ade80;
+}
+
+.theme-dark .diff-removed {
+  background-color: #450a0a;
+}
+
+.theme-dark .diff-removed .diff-marker,
+.theme-dark .diff-removed .diff-line-number {
+  background: #450a0a;
+  color: #f87171;
+}
+
+.theme-dark .diff-meta {
+  background: #1e1b4b;
+}
+
+.theme-dark .diff-meta .diff-code,
+.theme-dark .diff-meta .diff-marker {
+  color: #a5b4fc;
+}
+
 @media (max-width: 860px) {
   .path-input {
     width: 100%;
@@ -352,6 +457,13 @@ watch(() => route.query.path, (path) => {
 
   .header-actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .diff-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>

@@ -18,7 +18,7 @@
                 <el-icon><Document /></el-icon>
               </template>
             </el-input>
-            <el-button @click="loadBlame" :loading="loading">
+            <el-button @click="loadBlame" :loading="loading" type="primary">
               <el-icon><Edit /></el-icon>
               {{ $t('blame.load') }}
             </el-button>
@@ -27,7 +27,11 @@
       </template>
 
       <div v-if="!blameLines.length && !loading" class="empty-blame">
-        <el-empty :description="$t('blame.selectFileToBlame')" />
+        <el-empty :description="$t('blame.selectFileToBlame')">
+          <template #image>
+            <el-icon class="empty-icon"><Edit /></el-icon>
+          </template>
+        </el-empty>
       </div>
 
       <div v-else-if="loading" class="loading-blame">
@@ -36,20 +40,48 @@
 
       <div v-else class="blame-content">
         <div class="blame-header">
-          <el-tag class="path-tag">
-            <el-icon><Document /></el-icon>
-            {{ currentPath }}
-          </el-tag>
-          <el-tag>{{ blameLines.length }}</el-tag>
+          <div class="blame-tags">
+            <el-tag class="path-tag" type="primary">
+              <el-icon><Document /></el-icon>
+              {{ currentPath }}
+            </el-tag>
+            <el-tag type="info" effect="plain">
+              <el-icon><List /></el-icon>
+              {{ blameLines.length }} {{ $t('blame.lines') }}
+            </el-tag>
+          </div>
         </div>
 
-        <el-table :data="annotatedBlameLines" style="width: 100%" height="100%" row-key="lineNo">
-          <el-table-column prop="lineNo" label="#" width="72" align="right" fixed />
-          <el-table-column prop="revision" :label="$t('blame.revision')" width="112" sortable />
-          <el-table-column prop="author" :label="$t('blame.author')" width="150" show-overflow-tooltip />
+        <el-table 
+          :data="annotatedBlameLines" 
+          style="width: 100%" 
+          height="100%" 
+          row-key="lineNo"
+          stripe
+          highlight-current-row
+          class="blame-table"
+        >
+          <el-table-column prop="lineNo" label="#" width="72" align="right" fixed>
+            <template #default="{ row }">
+              <span class="line-number">{{ row.lineNo }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column prop="revision" :label="$t('blame.revision')" width="112" sortable align="center">
+            <template #default="{ row }">
+              <el-tag type="primary" size="small" effect="plain">r{{ row.revision }}</el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="author" :label="$t('blame.author')" width="150" show-overflow-tooltip>
+            <template #default="{ row }">
+              <div class="author-cell">
+                <el-icon><User /></el-icon>
+                <span>{{ row.author }}</span>
+              </div>
+            </template>
+          </el-table-column>
           <el-table-column prop="line" :label="$t('blame.content')">
             <template #default="{ row }">
-              <span class="code-line">{{ row.line }}</span>
+              <code class="code-line">{{ row.line }}</code>
             </template>
           </el-table-column>
         </el-table>
@@ -114,6 +146,7 @@ watch(() => route.query.path, (path) => {
 
 .blame-card {
   height: 100%;
+  border-radius: var(--app-radius-lg);
 }
 
 :deep(.blame-card > .el-card__body) {
@@ -126,7 +159,8 @@ watch(() => route.query.path, (path) => {
 .view-title {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--app-spacing-sm);
+  font-weight: 700;
 }
 
 .card-header {
@@ -138,7 +172,7 @@ watch(() => route.query.path, (path) => {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--app-spacing-sm);
 }
 
 .path-input {
@@ -147,7 +181,16 @@ watch(() => route.query.path, (path) => {
 
 .empty-blame,
 .loading-blame {
-  padding: 40px 0;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--app-spacing-xl) 0;
+}
+
+.empty-icon {
+  font-size: 64px;
+  color: var(--el-text-color-placeholder);
 }
 
 .blame-content {
@@ -155,18 +198,31 @@ watch(() => route.query.path, (path) => {
   flex: 1;
   min-height: 0;
   flex-direction: column;
-  margin-top: 20px;
+  margin-top: var(--app-spacing-md);
 }
 
 .blame-header {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-bottom: 14px;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--app-spacing);
+  margin-bottom: var(--app-spacing);
+}
+
+.blame-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--app-spacing-sm);
 }
 
 .path-tag {
   max-width: min(720px, 100%);
+}
+
+.blame-table {
+  border-radius: var(--app-radius-md);
+  overflow: hidden;
 }
 
 :deep(.el-table__cell) {
@@ -178,11 +234,31 @@ watch(() => route.query.path, (path) => {
   box-shadow: 6px 0 14px rgba(31, 35, 64, 0.06);
 }
 
+.line-number {
+  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.author-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.author-cell .el-icon {
+  font-size: 14px;
+  color: var(--el-text-color-secondary);
+}
+
 .code-line {
   display: block;
   min-width: max-content;
   font-family: "Cascadia Mono", Consolas, Monaco, monospace;
   white-space: pre;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-primary);
 }
 
 @media (max-width: 860px) {
@@ -192,6 +268,13 @@ watch(() => route.query.path, (path) => {
 
   .header-actions {
     width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  
+  .blame-header {
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 </style>
