@@ -40,7 +40,7 @@
 
 ```bash
 # 使用 winget 安装
-winget install OrcaSVN
+winget install OrcaSVN.OrcaSVN
 ```
 
 或从 [Releases](https://github.com/wustites/OrcaSVN/releases) 页面下载安装包：
