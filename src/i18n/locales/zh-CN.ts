@@ -37,6 +37,7 @@ export default {
     commit: '提交',
     version: '版本',
     techStack: '技术栈',
+    all: '全部',
   },
   language: {
     label: '语言',
@@ -91,6 +92,8 @@ export default {
     selectedFiles: '已选择 {count} 个文件',
     markDeleted: '标记删除',
     error: '错误',
+    noChanges: '没有更改的文件',
+    noWorkspace: '未打开工作区',
   },
   log: {
     title: '日志 - 查看提交历史',
@@ -148,6 +151,8 @@ export default {
     selectFileAndCompare: '选择文件并点击对比',
     file: '文件',
     version: '版本',
+    selectFile: '选择文件查看差异',
+    noDiff: '没有差异',
   },
   blame: {
     title: '注解 (Blame)',

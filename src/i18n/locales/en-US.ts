@@ -37,6 +37,7 @@ export default {
     commit: 'Commit',
     version: 'Version',
     techStack: 'Tech Stack',
+    all: 'All',
   },
   language: {
     label: 'Language',
@@ -91,6 +92,8 @@ export default {
     selectedFiles: '{count} files selected',
     markDeleted: 'Mark Deleted',
     error: 'Error',
+    noChanges: 'No changed files',
+    noWorkspace: 'No workspace opened',
   },
   log: {
     title: 'Log - View Commit History',
@@ -148,6 +151,8 @@ export default {
     selectFileAndCompare: 'Select a file and click Compare',
     file: 'File',
     version: 'Version',
+    selectFile: 'Select a file to view diff',
+    noDiff: 'No diff',
   },
   blame: {
     title: 'Blame',
