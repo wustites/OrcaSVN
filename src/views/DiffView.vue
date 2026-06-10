@@ -27,15 +27,19 @@
       </template>
 
       <div class="diff-options">
-        <el-radio-group v-model="diffType" class="mode-switch">
+        <el-radio-group v-model="diffType" class="mode-switch" @change="handleDiffTypeChange">
           <el-radio-button label="working">{{ $t('diff.workingCopy') }}</el-radio-button>
           <el-radio-button label="revision">{{ $t('diff.betweenRevisions') }}</el-radio-button>
+          <el-radio-button v-if="changeRev" label="change">
+            {{ $t('diff.changeRevision', { revision: changeRev }) }}
+          </el-radio-button>
         </el-radio-group>
 
         <div v-if="diffType === 'revision'" class="revision-inputs">
           <el-input
             v-model.number="oldRev"
             type="number"
+            :min="0"
             :placeholder="$t('diff.oldRevision')"
             class="rev-input"
           />
@@ -43,6 +47,7 @@
           <el-input
             v-model.number="newRev"
             type="number"
+            :min="0"
             :placeholder="$t('diff.newRevision')"
             class="rev-input"
           />
@@ -126,11 +131,13 @@ interface DiffLineRow {
 }
 
 const currentPath = ref('')
-const diffType = ref<'working' | 'revision'>('working')
+const diffType = ref<'working' | 'revision' | 'change'>('working')
 const oldRev = ref<number>()
 const newRev = ref<number>()
+const changeRev = ref<number>()
 const loading = ref(false)
 const diffResult = ref<DiffResult | null>(null)
+let requestGeneration = 0
 
 const diffLines = computed<DiffLineRow[]>(() => {
   if (!diffResult.value?.diff) return []
@@ -183,28 +190,59 @@ const loadDiff = async () => {
   const file = currentPath.value || route.query.path as string
   if (!file || !workspaceStore.currentPath) return
 
+  const generation = ++requestGeneration
   loading.value = true
   diffResult.value = null
 
   try {
-    const old = diffType.value === 'revision' ? oldRev.value : undefined
+    if (diffType.value === 'revision' && (oldRev.value === undefined || newRev.value === undefined)) {
+      ElMessage.warning(t('diff.enterBothRevisions'))
+      return
+    }
+    if (
+      diffType.value === 'revision' &&
+      (!Number.isInteger(oldRev.value) || !Number.isInteger(newRev.value) || oldRev.value! < 0 || newRev.value! < 0)
+    ) {
+      ElMessage.warning(t('diff.invalidRevision'))
+      return
+    }
+    const old = diffType.value === 'revision' ? oldRev.value : changeRev.value
     const new_ = diffType.value === 'revision' ? newRev.value : undefined
 
-    diffResult.value = await svnDiff(workspaceStore.currentPath, file, old, new_)
+    const result = await svnDiff(workspaceStore.currentPath, file, old, new_)
+    if (generation === requestGeneration) diffResult.value = result
   } catch (err) {
-    diffResult.value = null
-    ElMessage.error(`${t('common.error')}：${err}`)
+    if (generation === requestGeneration) {
+      diffResult.value = null
+      ElMessage.error(`${t('common.error')}：${err}`)
+    }
   } finally {
-    loading.value = false
+    if (generation === requestGeneration) loading.value = false
   }
 }
 
-watch(() => route.query.path, (path) => {
-  if (path) {
+const handleDiffTypeChange = (type: string | number | boolean) => {
+  if (type !== 'change') changeRev.value = undefined
+}
+
+watch(
+  () => [route.query.path, route.query.revision] as const,
+  ([path, revision]) => {
+    if (!path) return
+
     currentPath.value = path as string
+    const parsedRevision = Number(revision)
+    if (Number.isInteger(parsedRevision) && parsedRevision > 0) {
+      diffType.value = 'change'
+      changeRev.value = parsedRevision
+    } else {
+      diffType.value = 'working'
+      changeRev.value = undefined
+    }
     loadDiff()
-  }
-}, { immediate: true })
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>

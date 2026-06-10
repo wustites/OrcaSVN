@@ -1,10 +1,11 @@
 {
   "name": "OrcaSVN",
-  "version": "0.3.1",
+  "version": "0.4.0",
   "description": "OrcaSVN 客户端 - 基于 Tauri",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
+    "check": "npm run build && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo test --manifest-path src-tauri/Cargo.toml",
     "icons": "node src-tauri/icons/generate-icons.js",
     "preview": "vite preview",
     "tauri": "tauri"

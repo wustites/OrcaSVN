@@ -1,8 +1,52 @@
 use crate::{DiffResult, SvnInfo, SvnLogEntry, SvnStatus};
 use serde::{Deserialize, Serialize};
 
-use super::executor::{execute_svn, execute_svn_allow_diff, SvnError};
+use super::executor::{execute_svn, SvnError};
 use super::parser::{parse_blame_text, parse_info_xml, parse_log_xml, parse_status_xml};
+
+fn append_targets(args: &mut Vec<String>, targets: &[String]) {
+    if targets.is_empty() {
+        return;
+    }
+    args.push("--".to_string());
+    args.extend(targets.iter().cloned());
+}
+
+fn normalize_diff_target(file: &str) -> String {
+    if file.contains("://") || !file.contains('@') || file.ends_with('@') {
+        file.to_string()
+    } else {
+        format!("{}@", file)
+    }
+}
+
+fn build_diff_args(
+    file: &str,
+    old_rev: Option<u64>,
+    new_rev: Option<u64>,
+) -> Result<Vec<String>, SvnError> {
+    let mut args = vec!["diff".to_string()];
+
+    match (old_rev, new_rev) {
+        (Some(old), Some(new)) => {
+            args.push("-r".to_string());
+            args.push(format!("{}:{}", old, new));
+        }
+        (Some(change), None) => {
+            args.push("-c".to_string());
+            args.push(change.to_string());
+        }
+        (None, Some(_)) => {
+            return Err(SvnError::InvalidArguments(
+                "新版本不能在没有旧版本的情况下单独指定".to_string(),
+            ));
+        }
+        (None, None) => {}
+    }
+
+    append_targets(&mut args, &[normalize_diff_target(file)]);
+    Ok(args)
+}
 
 pub async fn checkout(url: &str, path: &str, revision: Option<u64>) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["checkout".to_string(), url.to_string(), path.to_string()];
@@ -36,9 +80,12 @@ pub async fn commit(
     let mut args: Vec<String> = vec!["commit".to_string(), "-m".to_string(), message.to_string()];
 
     if let Some(file_list) = files {
-        for file in file_list {
-            args.push(file.clone());
+        if file_list.is_empty() {
+            return Err(SvnError::InvalidArguments(
+                "显式文件列表不能为空；省略文件列表可提交整个工作副本".to_string(),
+            ));
         }
+        append_targets(&mut args, file_list);
     }
 
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
@@ -97,7 +144,7 @@ pub struct BlameLine {
 }
 
 pub async fn blame(workspace: &str, file: &str) -> Result<Vec<BlameLine>, SvnError> {
-    let args = vec!["blame", file];
+    let args = vec!["blame", "--", file];
     let output = execute_svn(&args, Some(workspace)).await?;
     parse_blame_text(&output)
 }
@@ -108,54 +155,40 @@ pub async fn diff(
     old_rev: Option<u64>,
     new_rev: Option<u64>,
 ) -> Result<DiffResult, SvnError> {
-    let mut args: Vec<String> = vec!["diff".to_string()];
-
-    if let Some(old) = old_rev {
-        if let Some(new) = new_rev {
-            args.push("-r".to_string());
-            args.push(format!("{}:{}", old, new));
-        } else {
-            args.push("-c".to_string());
-            args.push(old.to_string());
-        }
-    }
-
-    args.push(file.to_string());
-
+    let args = build_diff_args(file, old_rev, new_rev)?;
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    let output = execute_svn_allow_diff(&args_refs, Some(workspace)).await?;
+    let output = execute_svn(&args_refs, Some(workspace)).await?;
+    let (result_old_rev, result_new_rev) = match (old_rev, new_rev) {
+        (Some(old), Some(new)) => (old, new),
+        (Some(change), None) => (change.saturating_sub(1), change),
+        _ => (0, 0),
+    };
 
     Ok(DiffResult {
         path: file.to_string(),
         diff: output,
-        old_revision: old_rev.unwrap_or(0),
-        new_revision: new_rev.unwrap_or(0),
+        old_revision: result_old_rev,
+        new_revision: result_new_rev,
     })
 }
 
 pub async fn add(path: &str, files: &[String]) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["add".to_string()];
-    for file in files {
-        args.push(file.clone());
-    }
+    append_targets(&mut args, files);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     execute_svn(&args_refs, Some(path)).await
 }
 
 pub async fn delete(path: &str, files: &[String]) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["delete".to_string()];
-    for file in files {
-        args.push(file.clone());
-    }
+    append_targets(&mut args, files);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     execute_svn(&args_refs, Some(path)).await
 }
 
 pub async fn revert(path: &str, files: &[String]) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["revert".to_string()];
-    for file in files {
-        args.push(file.clone());
-    }
+    append_targets(&mut args, files);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     execute_svn(&args_refs, Some(path)).await
 }
@@ -166,9 +199,7 @@ pub async fn resolve(path: &str, files: &[String], strategy: &str) -> Result<Str
         "--accept".to_string(),
         strategy.to_string(),
     ];
-    for file in files {
-        args.push(file.clone());
-    }
+    append_targets(&mut args, files);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     execute_svn(&args_refs, Some(path)).await
 }
@@ -197,4 +228,94 @@ pub async fn merge(
     ];
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     execute_svn(&args_refs, Some(path)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{append_targets, build_diff_args, commit, normalize_diff_target};
+    use crate::svn::executor::SvnError;
+
+    #[test]
+    fn target_arguments_are_separated_from_options() {
+        let mut args = vec!["add".to_string()];
+        append_targets(
+            &mut args,
+            &["-leading-dash.txt".to_string(), "src/main.rs".to_string()],
+        );
+        assert_eq!(args, ["add", "--", "-leading-dash.txt", "src/main.rs"]);
+    }
+
+    #[test]
+    fn empty_targets_do_not_add_separator() {
+        let mut args = vec!["commit".to_string()];
+        append_targets(&mut args, &[]);
+        assert_eq!(args, ["commit"]);
+    }
+
+    #[test]
+    fn commit_rejects_an_explicit_empty_file_list() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("failed to build tokio runtime");
+        let result = runtime.block_on(commit(".", "message", Some(&[])));
+        assert!(matches!(result, Err(SvnError::InvalidArguments(_))));
+    }
+
+    #[test]
+    fn diff_builds_working_copy_arguments() {
+        assert_eq!(
+            build_diff_args("src/main.rs", None, None).unwrap(),
+            ["diff", "--", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn diff_builds_revision_range_arguments() {
+        assert_eq!(
+            build_diff_args("src/main.rs", Some(10), Some(12)).unwrap(),
+            ["diff", "-r", "10:12", "--", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn diff_builds_change_arguments() {
+        assert_eq!(
+            build_diff_args("https://example.test/repo/file@12", Some(12), None).unwrap(),
+            [
+                "diff",
+                "-c",
+                "12",
+                "--",
+                "https://example.test/repo/file@12"
+            ]
+        );
+    }
+
+    #[test]
+    fn diff_rejects_new_revision_without_old_revision() {
+        assert!(matches!(
+            build_diff_args("src/main.rs", None, Some(12)),
+            Err(SvnError::InvalidArguments(_))
+        ));
+    }
+
+    #[test]
+    fn diff_escapes_peg_revision_marker_in_local_path() {
+        assert_eq!(
+            normalize_diff_target("src/name@domain.txt"),
+            "src/name@domain.txt@"
+        );
+        assert_eq!(
+            normalize_diff_target("src/name@domain.txt@"),
+            "src/name@domain.txt@"
+        );
+    }
+
+    #[test]
+    fn diff_keeps_url_peg_revision() {
+        assert_eq!(
+            normalize_diff_target("https://example.test/repo/file@12"),
+            "https://example.test/repo/file@12"
+        );
+    }
 }

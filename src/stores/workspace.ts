@@ -17,12 +17,29 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     return statusList.value.filter(s => s.status_code === 'modified').length
   })
 
+  const changedCount = computed(() => {
+    const changedStatuses = new Set(['modified', 'added', 'deleted', 'replaced'])
+    return statusList.value.filter(s => changedStatuses.has(s.status_code) || s.prop_status === 'modified').length
+  })
+
   const addedCount = computed(() => {
     return statusList.value.filter(s => s.status_code === 'added').length
   })
 
   const deletedCount = computed(() => {
     return statusList.value.filter(s => s.status_code === 'deleted').length
+  })
+
+  const unversionedCount = computed(() => {
+    return statusList.value.filter(s => s.status_code === 'unversioned').length
+  })
+
+  const conflictedCount = computed(() => {
+    return statusList.value.filter(s => s.status_code === 'conflicted' || s.prop_status === 'conflicted').length
+  })
+
+  const missingCount = computed(() => {
+    return statusList.value.filter(s => s.status_code === 'missing').length
   })
 
   function setCurrentPath(path: string) {
@@ -60,8 +77,12 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     error,
     hasChanges,
     modifiedCount,
+    changedCount,
     addedCount,
     deletedCount,
+    unversionedCount,
+    conflictedCount,
+    missingCount,
     setCurrentPath,
     setStatusList,
     setSvnInfo,

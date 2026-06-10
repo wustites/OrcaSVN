@@ -13,30 +13,30 @@ pub enum SvnError {
     SvnNotFound,
     #[error("解析输出失败：{0}")]
     ParseError(String),
+    #[error("无效的 SVN 参数：{0}")]
+    InvalidArguments(String),
     #[error("SVN 操作超时")]
     Timeout,
 }
 
 pub async fn execute_svn(args: &[&str], path: Option<&str>) -> Result<String, SvnError> {
-    execute_svn_inner(args, path, false).await
+    execute_svn_inner(args, path).await
 }
 
-pub async fn execute_svn_allow_diff(args: &[&str], path: Option<&str>) -> Result<String, SvnError> {
-    execute_svn_inner(args, path, true).await
+fn build_command_args(args: &[String]) -> Vec<String> {
+    let mut command_args = vec!["--non-interactive".to_string()];
+    command_args.extend(args.iter().cloned());
+    command_args
 }
 
-async fn execute_svn_inner(
-    args: &[&str],
-    path: Option<&str>,
-    allow_diff_exit: bool,
-) -> Result<String, SvnError> {
+async fn execute_svn_inner(args: &[&str], path: Option<&str>) -> Result<String, SvnError> {
     let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let path_str = path.map(|s| s.to_string());
 
     spawn_blocking(move || {
         let mut cmd = Command::new("svn");
-        cmd.args(&args_vec);
-        cmd.arg("--non-interactive");
+        // Global options must precede a possible `--` target separator.
+        cmd.args(build_command_args(&args_vec));
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());
 
@@ -82,8 +82,6 @@ async fn execute_svn_inner(
 
         if output.status.success() {
             Ok(stdout)
-        } else if allow_diff_exit && output.status.code() == Some(1) {
-            Ok(stdout)
         } else {
             Err(SvnError::CommandFailed(format!("{}\n{}", stdout, stderr)))
         }
@@ -110,5 +108,28 @@ mod tests {
             Err(SvnError::SvnNotFound) => {}
             Err(err) => panic!("unexpected svn executor error: {err}"),
         }
+    }
+
+    #[test]
+    fn global_options_precede_target_separator() {
+        let args = vec![
+            "diff".to_string(),
+            "-c".to_string(),
+            "12".to_string(),
+            "--".to_string(),
+            "https://example.test/repo/file@12".to_string(),
+        ];
+
+        assert_eq!(
+            build_command_args(&args),
+            [
+                "--non-interactive",
+                "diff",
+                "-c",
+                "12",
+                "--",
+                "https://example.test/repo/file@12"
+            ]
+        );
     }
 }

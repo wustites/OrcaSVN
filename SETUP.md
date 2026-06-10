@@ -1,80 +1,54 @@
-# 开发环境设置指南
+# 开发环境
 
-## 必需的安装
+## 前置依赖
 
-### 1. 安装 Rust
-
-访问 [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) 下载并安装 Rust。
-
-Windows 用户可以直接运行以下命令（需要 PowerShell）：
-
-```powershell
-winget install Rustlang.Rust.MSVC
-```
-
-或者下载安装程序：[rustup-init.exe](https://static.rust-lang.org/rustup/dist/i686-pc-windows-gnu/rustup-init.exe)
-
-安装完成后，验证：
-
-```bash
-rustc --version
-cargo --version
-```
-
-### 2. 安装 Node.js
-
-访问 [https://nodejs.org/](https://nodejs.org/) 下载并安装 Node.js（推荐 LTS 版本）。
-
-验证：
+安装并验证 Node.js、Rust 和 SVN CLI：
 
 ```bash
 node --version
 npm --version
+rustc --version
+cargo --version
+svn --version --quiet
 ```
 
-### 3. SVN 命令行工具
+Windows 还需要 Visual Studio C++ Build Tools 和 WebView2。Linux、macOS 的系统依赖请参考 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)。
 
-你已经安装了 SVN，版本 1.14.5。
-
-## 开始开发
-
-1. **安装依赖**
+## 启动项目
 
 ```bash
-npm install
-```
-
-2. **启动开发模式**
-
-```bash
+npm ci
 npm run tauri dev
 ```
 
-首次运行时会下载和编译 Rust 依赖，可能需要几分钟。
+仅调试前端时可以运行 `npm run dev`，但所有 SVN 操作都依赖 Tauri 后端。
 
-3. **构建发布版本**
+## 验证改动
+
+```bash
+npm run check
+```
+
+该命令依次检查前端类型和构建，并运行 Rust 格式检查与单元测试。
+
+## 发布构建
 
 ```bash
 npm run tauri build
 ```
 
-构建产物位于 `src-tauri/target/release/` 目录。
+安装包和二进制产物位于 `src-tauri/target/release/`。推送 `v*` 标签时，GitHub Actions 会为三个桌面平台创建 Release。
 
-## 常见问题
+## 排查问题
 
-### Rust 编译错误
+### 找不到 SVN
 
-确保安装了最新的 Rust 工具链：
+确保 `svn` 位于当前用户的 `PATH` 中，然后重新启动 OrcaSVN。
 
-```bash
-rustup update
-```
+### Windows 编译失败
 
-### WebView2 错误
+确认 Rust 使用 MSVC 工具链，并安装 Visual Studio 的“使用 C++ 的桌面开发”工作负载。
 
-Windows 10 1803+ 已内置 WebView2。如果是旧版本 Windows，请下载安装：
-[Microsoft Edge WebView2](https://developer.microsoft.com/en-us/microsoft-edge/webview2/)
+### 端口 1420 被占用
 
-### 端口占用
-
-开发服务器默认使用 1420 端口。如果被占用，修改 `tauri.conf.json` 中的 `devPath`。
+开发服务器要求固定使用 1420 端口。结束占用进程后重新运行 `npm run tauri dev`。

@@ -10,7 +10,13 @@
         </div>
       </template>
 
-      <el-form :model="form" label-width="120px" class="checkout-form" label-position="left">
+      <el-form
+        :model="form"
+        label-width="190px"
+        class="checkout-form"
+        label-position="left"
+        require-asterisk-position="right"
+      >
         <el-form-item :label="$t('checkout.repositoryUrl')" required class="form-item">
           <el-input
             v-model="form.url"
@@ -180,6 +186,33 @@ const resetForm = () => {
   margin-top: var(--app-spacing-md);
 }
 
+.checkout-form :deep(.el-form-item__label) {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  padding-right: 20px;
+  line-height: 32px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.checkout-form :deep(.el-form-item__label::before) {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  margin-right: 5px;
+  text-align: center;
+}
+
+.checkout-form :deep(.el-form-item.is-required .el-form-item__label::before) {
+  content: "*";
+  color: var(--el-color-danger);
+}
+
+.checkout-form :deep(.el-form-item.is-required .el-form-item__label::after) {
+  display: none;
+}
+
 .form-item {
   margin-bottom: var(--app-spacing-lg);
 }
@@ -236,6 +269,7 @@ const resetForm = () => {
   .checkout-form :deep(.el-form-item__label) {
     text-align: left;
     padding-bottom: 4px;
+    width: 100% !important;
   }
   
   .form-actions {

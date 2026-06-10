@@ -1,116 +1,88 @@
 # OrcaSVN
 
-基于 Tauri 的 SVN 图形客户端，使用 Rust + TypeScript + Vue 3 开发。
+OrcaSVN 是一个基于 Tauri、Rust 和 Vue 3 的跨平台 SVN 桌面客户端。它借鉴 Git 客户端清晰的工作区体验，同时保留 SVN 的集中式版本控制语义。
 
-## 功能特性
+## 核心能力
 
-- ✅ **Checkout** - 从 SVN 仓库检出代码
-- ✅ **Commit** - 提交更改到仓库
-- ✅ **Update** - 更新工作副本
-- ✅ **Status** - 查看文件状态
-- ✅ **Log** - 查看提交历史
-- ✅ **Diff** - 代码对比
-- ✅ **Blame** - 文件注解
-- ✅ **Add/Delete/Revert** - 文件操作
-- ✅ **Cleanup** - 清理工作区
-- ✅ **Switch** - 切换分支/URL
+- 以类似 `git status` 的分类查看本地变更、未版本文件、冲突和缺失文件
+- Checkout、Update、Commit、Add、Delete、Revert、Cleanup、Switch 和 Merge
+- 查看提交历史、文件差异和逐行 Blame
+- 支持简体中文、繁体中文、英语、日语和韩语
+- 支持浅色、深色主题以及 Windows、macOS、Linux
 
-## 技术栈
-
-- **前端**: Vue 3 + TypeScript + Vite
-- **UI 框架**: Element Plus
-- **状态管理**: Pinia
-- **后端**: Rust + Tauri
-- **SVN 交互**: 调用 svn 命令行工具
-
-## 开发环境要求
-
-1. [Node.js](https://nodejs.org/) (v18 或更高版本)
-2. [Rust](https://www.rust-lang.org/tools/install) (最新稳定版)
-3. [SVN](https://subversion.apache.org/packages.html) 命令行工具
-
-### Windows 额外要求
-
-- Microsoft Visual Studio C++ Build Tools
-- WebView2 (Windows 10 1803+ 已内置)
+> OrcaSVN 调用本机的 `svn` 命令行工具，不会自行实现 SVN 协议。
 
 ## 安装
 
 ### Windows
 
-```bash
-# 使用 winget 安装
+```powershell
 winget install OrcaSVN.OrcaSVN
 ```
 
-或从 [Releases](https://github.com/wustites/OrcaSVN/releases) 页面下载安装包：
-- `OrcaSVN_x.x.x_x64-setup.exe` - NSIS 安装程序
-- `OrcaSVN_x.x.x_x64_en-US.msi` - MSI 安装程序
+也可以从 [GitHub Releases](https://github.com/wustites/OrcaSVN/releases) 下载 Windows、macOS 或 Linux 安装包。
 
-### macOS
-
-从 [Releases](https://github.com/wustites/OrcaSVN/releases) 页面下载 `.dmg` 文件。
-
-### Linux
-
-从 [Releases](https://github.com/wustites/OrcaSVN/releases) 页面下载：
-- `.AppImage` - 通用 Linux 格式
-- `.deb` - Debian/Ubuntu
-- `.rpm` - Fedora/RHEL
-
-## 开发环境要求
+安装后请确认 SVN CLI 可用：
 
 ```bash
-npm install
+svn --version --quiet
 ```
 
-## 开发模式
+## 快速开始
+
+1. 打开 OrcaSVN，选择已有 SVN 工作副本，或通过 Checkout 检出仓库。
+2. 在工作区按“变更、未版本、冲突、缺失”筛选文件。
+3. 选择文件查看 Diff，确认后进入 Commit 页面提交。
+4. 提交前先执行 Update，并优先解决冲突。
+
+更完整的操作说明见 [QUICKSTART.md](QUICKSTART.md)。
+
+## 本地开发
+
+要求：
+
+- Node.js 18 或更高版本
+- 最新稳定版 Rust
+- SVN CLI 1.10 或更高版本
+- 平台对应的 Tauri 2 构建依赖
 
 ```bash
+npm ci
 npm run tauri dev
 ```
 
-## 构建应用
+提交改动前运行：
 
 ```bash
-npm run tauri build
+npm run check
 ```
+
+详细环境配置和常见问题见 [SETUP.md](SETUP.md)，贡献约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 项目结构
 
-```
-OrcaSVN/
-├── src/                    # 前端源代码
-│   ├── api/               # API 调用
-│   ├── layouts/           # 布局组件
-│   ├── router/            # 路由配置
-│   ├── stores/            # Pinia 状态管理
-│   ├── types/             # TypeScript 类型定义
-│   ├── views/             # 页面组件
-│   ├── App.vue            # 根组件
-│   ├── main.ts            # 入口文件
-│   └── style.css          # 全局样式
-├── src-tauri/             # Tauri/Rust 后端
-│   ├── src/
-│   │   ├── main.rs        # Rust 主入口
-│   │   └── svn.rs         # SVN 命令实现
-│   ├── Cargo.toml         # Rust 依赖配置
-│   ├── build.rs           # 构建脚本
-│   └── tauri.conf.json    # Tauri 配置
-├── package.json           # Node.js 依赖配置
-├── tsconfig.json          # TypeScript 配置
-├── vite.config.ts         # Vite 配置
-└── index.html             # HTML 模板
+```text
+src/                    Vue 3 前端
+  api/                  Tauri 命令调用封装
+  composables/          可复用工作区逻辑
+  i18n/                 多语言资源
+  stores/               Pinia 状态
+  views/                页面
+src-tauri/src/
+  main.rs               Tauri 命令边界
+  svn/executor.rs       SVN 进程执行与超时
+  svn/operations.rs     SVN 参数构造
+  svn/parser.rs         XML/文本结果解析
+.github/workflows/      发布流水线
 ```
 
-## 使用说明
+## 设计原则
 
-1. 启动应用后，点击"打开工作区"选择一个 SVN 工作目录
-2. 或者使用"Checkout"功能从仓库检出代码
-3. 在工作区可以查看文件状态、提交更改、查看日志等
-4. 使用"对比"功能查看代码差异
-5. 使用"注解"功能查看每行代码的最后修改者
+- **可预测**：界面操作尽量对应明确的 SVN 命令。
+- **先审阅后变更**：默认先展示状态和差异，再执行提交或还原。
+- **安全参数边界**：文件目标使用 `--` 与命令选项隔离。
+- **清晰反馈**：错误保留 SVN 原始上下文，便于诊断。
 
 ## 许可证
 
-MIT License
+[MIT](LICENSE)

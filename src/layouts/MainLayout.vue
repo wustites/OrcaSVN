@@ -1,286 +1,543 @@
 <template>
-  <div class="app-container">
-    <!-- 顶部工具栏 -->
-    <header class="toolbar">
-      <div class="toolbar-left">
-        <div class="logo">
-          <el-icon class="logo-icon"><FolderOpened /></el-icon>
-          <span class="logo-text">OrcaSVN</span>
-        </div>
-        <div class="toolbar-divider"></div>
-        <div class="toolbar-actions">
-          <el-tooltip :content="$t('menu.workspace')" placement="bottom">
-            <el-button text @click="navigateTo('workspace')">
-              <el-icon><HomeFilled /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip :content="$t('menu.checkout')" placement="bottom">
-            <el-button text @click="navigateTo('checkout')">
-              <el-icon><Download /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip :content="$t('menu.commit')" placement="bottom">
-            <el-button text @click="navigateTo('commit')">
-              <el-icon><Upload /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip :content="$t('menu.log')" placement="bottom">
-            <el-button text @click="navigateTo('log')">
-              <el-icon><Document /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip :content="$t('menu.diff')" placement="bottom">
-            <el-button text @click="navigateTo('diff')">
-              <el-icon><Connection /></el-icon>
-            </el-button>
-          </el-tooltip>
-          <el-tooltip :content="$t('menu.blame')" placement="bottom">
-            <el-button text @click="navigateTo('blame')">
-              <el-icon><Edit /></el-icon>
-            </el-button>
-          </el-tooltip>
-        </div>
-      </div>
-      <div class="toolbar-right">
-        <div class="workspace-info" v-if="workspaceStore.currentPath">
+  <div class="fork-shell">
+    <header class="fork-toolbar">
+      <div class="toolbar-group">
+        <button class="brand-button" aria-label="OrcaSVN" @click="navigateTo('workspace')">
+          <span class="brand-mark">
+            <svg viewBox="0 0 512 512" aria-hidden="true">
+              <path d="M91 297C132 217 214 170 345 166C322 187 309 211 306 237C347 241 385 258 420 289C358 288 315 305 288 340C221 361 155 347 91 297Z" />
+              <path d="M153 288C188 238 233 209 290 201C270 232 269 263 286 294C235 310 191 308 153 288Z" class="brand-cut" />
+              <path d="M326 207V143M326 143L374 114M326 143L281 112" class="brand-branch" />
+              <circle cx="326" cy="207" r="18" class="brand-node" />
+              <circle cx="374" cy="114" r="18" class="brand-node" />
+              <circle cx="281" cy="112" r="18" class="brand-node" />
+            </svg>
+          </span>
+          <span class="brand-name">OrcaSVN</span>
+        </button>
+        <span class="toolbar-divider"></span>
+        <button class="tool-button" :class="{ active: routeName === 'workspace' }" @click="navigateTo('workspace')">
           <el-icon><FolderOpened /></el-icon>
-          <span class="workspace-path">{{ workspaceStore.currentPath }}</span>
-        </div>
-        <el-tooltip :content="$t('menu.refresh')" placement="bottom">
-          <el-button text circle @click="refreshStatus" :loading="workspaceStore.isLoading">
-            <el-icon><Refresh /></el-icon>
-          </el-button>
-        </el-tooltip>
-        <el-tooltip :content="$t('menu.settings')" placement="bottom">
-          <el-button text circle @click="openSettings">
-            <el-icon><Setting /></el-icon>
-          </el-button>
-        </el-tooltip>
+          <span>{{ $t('menu.workspace') }}</span>
+        </button>
+        <button class="tool-button" @click="refreshStatus" :disabled="workspaceStore.isLoading">
+          <el-icon><Refresh /></el-icon>
+          <span>{{ $t('menu.refresh') }}</span>
+        </button>
+        <button class="tool-button" :class="{ active: routeName === 'log' }" @click="navigateTo('log')">
+          <el-icon><Document /></el-icon>
+          <span>{{ $t('menu.log') }}</span>
+        </button>
+      </div>
+
+      <button class="repository-title" @click="navigateTo('workspace')">
+        <strong>{{ repositoryName }}</strong>
+        <span v-if="workspaceStore.svnInfo">r{{ workspaceStore.svnInfo.revision }}</span>
+        <span v-else>OrcaSVN</span>
+      </button>
+
+      <div class="toolbar-group toolbar-group-right">
+        <button class="tool-button" :class="{ active: routeName === 'commit' }" @click="navigateTo('commit')">
+          <el-icon><Upload /></el-icon>
+          <span>{{ $t('menu.commit') }}</span>
+        </button>
+        <button class="tool-button" :class="{ active: routeName === 'diff' }" @click="navigateTo('diff')">
+          <el-icon><Connection /></el-icon>
+          <span>{{ $t('menu.diff') }}</span>
+        </button>
+        <button class="tool-button" :class="{ active: routeName === 'blame' }" @click="navigateTo('blame')">
+          <el-icon><Edit /></el-icon>
+          <span>{{ $t('menu.blame') }}</span>
+        </button>
+        <span class="toolbar-divider"></span>
+        <button class="tool-button" :class="{ active: routeName === 'settings' }" @click="navigateTo('settings')">
+          <el-icon><Setting /></el-icon>
+          <span>{{ $t('menu.settings') }}</span>
+        </button>
         <LanguageSwitcher />
       </div>
     </header>
 
-    <!-- 主内容区域 -->
-    <div class="main-content">
-      <router-view v-slot="{ Component, route }">
-        <transition name="fade" mode="out-in">
-          <keep-alive :include="cachedViews">
-            <component :is="Component" :key="route.path" />
-          </keep-alive>
-        </transition>
-      </router-view>
-    </div>
+    <main class="fork-content">
+      <aside class="shell-sidebar">
+        <div class="shell-repository">
+          <span class="repository-icon"><el-icon><Folder /></el-icon></span>
+          <span class="repository-copy">
+            <strong>{{ repositoryName }}</strong>
+            <small v-if="workspaceStore.svnInfo">r{{ workspaceStore.svnInfo.revision }}</small>
+            <small v-else>Subversion client</small>
+          </span>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">WORKING COPY</div>
+          <button :class="{ active: routeName === 'workspace' }" @click="navigateTo('workspace')">
+            <el-icon><Document /></el-icon>
+            <span>{{ $t('workspace.fileStatus') }}</span>
+            <b>{{ workspaceStore.statusList.length }}</b>
+          </button>
+          <button :class="{ active: routeName === 'log' }" @click="navigateTo('log')">
+            <el-icon><List /></el-icon>
+            <span>{{ $t('menu.log') }}</span>
+          </button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">REPOSITORY</div>
+          <button :class="{ active: routeName === 'commit' }" @click="navigateTo('commit')">
+            <el-icon><Upload /></el-icon>
+            <span>{{ $t('menu.commit') }}</span>
+          </button>
+          <button :class="{ active: routeName === 'diff' }" @click="navigateTo('diff')">
+            <el-icon><Connection /></el-icon>
+            <span>{{ $t('menu.diff') }}</span>
+          </button>
+          <button :class="{ active: routeName === 'blame' }" @click="navigateTo('blame')">
+            <el-icon><Edit /></el-icon>
+            <span>{{ $t('menu.blame') }}</span>
+          </button>
+        </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">APPLICATION</div>
+          <button :class="{ active: routeName === 'checkout' }" @click="navigateTo('checkout')">
+            <el-icon><Download /></el-icon>
+            <span>{{ $t('menu.checkout') }}</span>
+          </button>
+          <button :class="{ active: routeName === 'settings' }" @click="navigateTo('settings')">
+            <el-icon><Setting /></el-icon>
+            <span>{{ $t('menu.settings') }}</span>
+          </button>
+        </div>
+      </aside>
 
-    <!-- 底部状态栏 -->
-    <footer class="status-bar">
-      <div class="status-left">
-        <span class="status-item" v-if="workspaceStore.currentPath">
-          <el-icon><FolderOpened /></el-icon>
-          {{ workspaceStore.currentPath }}
-        </span>
-        <span class="status-item" v-else>
-          <el-icon><InfoFilled /></el-icon>
-          {{ $t('workspace.noWorkspace') }}
-        </span>
-      </div>
-      <div class="status-right">
-        <span class="status-item" v-if="workspaceStore.svnInfo">
-          <el-icon><Connection /></el-icon>
-          r{{ workspaceStore.svnInfo.revision }}
-        </span>
-        <span class="status-item" v-if="workspaceStore.modifiedCount > 0">
-          <el-icon><Edit /></el-icon>
-          {{ workspaceStore.modifiedCount }} {{ $t('workspace.statusModified') }}
-        </span>
-        <span class="status-item" v-if="workspaceStore.addedCount > 0">
-          <el-icon><Plus /></el-icon>
-          {{ workspaceStore.addedCount }} {{ $t('workspace.statusAdded') }}
-        </span>
-        <span class="status-item version">v0.2.4</span>
+      <section class="route-workbench">
+        <header class="route-header">
+          <div class="route-title">
+            <span class="route-accent"></span>
+            <strong>{{ currentRouteTitle }}</strong>
+          </div>
+          <span class="route-repository">{{ repositoryName }}</span>
+        </header>
+        <div class="route-content">
+          <router-view v-slot="{ Component, route }">
+            <keep-alive :include="cachedViews">
+              <component :is="Component" :key="route.path" />
+            </keep-alive>
+          </router-view>
+        </div>
+      </section>
+    </main>
+
+    <footer class="fork-status">
+      <span>{{ workspaceStore.currentPath || $t('workspace.noWorkspace') }}</span>
+      <div>
+        <span v-if="workspaceStore.hasChanges">{{ workspaceStore.statusList.length }} changes</span>
+        <span v-if="workspaceStore.svnInfo">r{{ workspaceStore.svnInfo.revision }}</span>
+        <span>v{{ appVersion }}</span>
       </div>
     </footer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { computed, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { useI18n } from 'vue-i18n'
 import { useWorkspaceStore } from '@/stores/workspace'
-import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import { useWorkspace } from '@/composables/useWorkspace'
-import {
-  Connection,
-  Document,
-  Download,
-  Edit,
-  HomeFilled,
-  Upload,
-} from '@element-plus/icons-vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
+import packageInfo from '../../package.json'
 
 const router = useRouter()
 const route = useRoute()
+const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
 const { refreshStatus } = useWorkspace()
-
+const appVersion = packageInfo.version
 const cachedViews = ref(['WorkspaceView', 'LogView'])
 
-const navigateTo = (name: string) => {
-  router.push({ name })
-}
+const repositoryName = computed(() => {
+  const path = workspaceStore.currentPath
+  if (!path) return 'Welcome'
+  return path.split(/[\\/]/).filter(Boolean).pop() || path
+})
 
-const openSettings = () => {
-  router.push({ name: 'settings' })
-}
+const routeName = computed(() => String(route.name || 'workspace'))
+const currentRouteTitle = computed(() => {
+  const titleKey = route.meta.title
+  return t(typeof titleKey === 'string' ? titleKey : 'menu.workspace')
+})
+
+const navigateTo = (name: string) => router.push({ name })
 </script>
 
 <style scoped>
-.app-container {
-  display: flex;
-  flex-direction: column;
+.fork-shell {
+  display: grid;
+  grid-template-rows: 56px minmax(0, 1fr) 24px;
   height: 100vh;
   overflow: hidden;
+  color: #1f2937;
+  background: #f8fafc;
 }
 
-/* 工具栏 */
-.toolbar {
+.fork-toolbar {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
-  height: 40px;
-  padding: 0 12px;
-  background: var(--md-sys-color-surface);
-  border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  flex-shrink: 0;
+  padding: 4px 8px;
+  background: #f7f9fc;
+  border-bottom: 1px solid #cbd5e1;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
 }
 
-.toolbar-left,
-.toolbar-right {
+.toolbar-group {
+  align-items: stretch;
+  display: flex;
+  min-width: 330px;
+  gap: 2px;
+}
+
+.toolbar-group-right {
+  justify-content: flex-end;
+}
+
+.brand-button {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 7px;
+  min-width: 104px;
+  padding: 0 9px 0 5px;
+  border: 0;
+  border-radius: 5px;
+  color: #0f2740;
+  background: transparent;
+  cursor: pointer;
 }
 
-.logo {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-right: 8px;
+.brand-button:hover {
+  background: #edf3f9;
 }
 
-.logo-icon {
-  font-size: 20px;
-  color: var(--md-sys-color-primary);
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: #fff;
+  background: linear-gradient(145deg, #126f9b, #074968);
+  box-shadow: 0 1px 2px rgba(7, 73, 104, .28);
 }
 
-.logo-text {
-  font-size: 14px;
+.brand-mark svg {
+  width: 24px;
+  fill: currentColor;
+}
+
+.brand-mark .brand-cut {
+  fill: #0b5b80;
+}
+
+.brand-mark .brand-branch {
+  fill: none;
+  stroke: #73d6c9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 20px;
+}
+
+.brand-mark .brand-node {
+  fill: #fff;
+  stroke: #73d6c9;
+  stroke-width: 13px;
+}
+
+.brand-name {
+  font-size: 12px;
   font-weight: 700;
-  color: var(--el-text-color-primary);
+  letter-spacing: -.01em;
 }
 
 .toolbar-divider {
   width: 1px;
-  height: 20px;
-  background: var(--md-sys-color-outline-variant);
+  height: 30px;
+  align-self: center;
+  margin: 0 5px;
+  background: #d5dde6;
 }
 
-.toolbar-actions {
+.tool-button {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 2px;
+  justify-content: center;
+  min-width: 54px;
+  gap: 1px;
+  border: 0;
+  border-radius: 5px;
+  color: #526173;
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
 }
 
-.toolbar-actions .el-button {
-  height: 32px;
-  padding: 0 8px;
+.tool-button:hover {
+  background: #edf3f9;
+  color: #123a55;
 }
 
-.workspace-info {
+.tool-button.active {
+  color: #075a82;
+  background: #e2f0f7;
+}
+
+.tool-button .el-icon {
+  font-size: 18px;
+}
+
+.repository-title {
+  position: absolute;
+  top: 6px;
+  left: 50%;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  background: var(--el-fill-color-light);
-  border-radius: var(--app-radius-sm);
+  min-width: 220px;
+  padding: 4px 30px;
+  transform: translateX(-50%);
+  border: 0;
+  border: 1px solid #d6dee7;
+  border-radius: 6px;
+  background: #fff;
+  color: #607083;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.repository-title strong {
+  color: #21354a;
   font-size: 12px;
-  color: var(--el-text-color-regular);
 }
 
-.workspace-info .el-icon {
-  font-size: 14px;
-  color: var(--md-sys-color-primary);
+.fork-content {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+  background: #f8fafc;
 }
 
-.workspace-path {
-  max-width: 300px;
+.shell-sidebar {
+  min-height: 0;
+  overflow: auto;
+  background: #f1f5f9;
+  border-right: 1px solid #cbd5e1;
+}
+
+.shell-repository {
+  display: flex;
+  align-items: center;
+  min-height: 50px;
+  gap: 9px;
+  padding: 7px 10px;
+  border-bottom: 1px solid #d8e0e8;
+  color: #21354a;
+  font-size: 11px;
+}
+
+.repository-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  color: #fff;
+  background: #0b668f;
+}
+
+.repository-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.repository-copy strong,
+.repository-copy small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-/* 主内容 */
-.main-content {
-  flex: 1;
-  overflow: hidden;
+.repository-copy small {
+  color: #718096;
+  font-size: 9px;
 }
 
-/* 状态栏 */
-.status-bar {
+.sidebar-section {
+  padding: 9px 7px 2px;
+}
+
+.sidebar-heading {
+  padding: 3px 7px 5px;
+  color: #7a899b;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+
+.sidebar-section button {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 28px;
+  gap: 7px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #425466;
+  font-size: 11px;
+  text-align: left;
+}
+
+.sidebar-section button:hover {
+  background: #e6edf4;
+}
+
+.sidebar-section button.active {
+  color: #fff;
+  background: #0b668f;
+  box-shadow: 0 1px 2px rgba(11, 102, 143, .2);
+}
+
+.sidebar-section button span {
+  flex: 1;
+}
+
+.sidebar-section button b {
+  font-size: 10px;
+}
+
+.route-workbench {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+}
+
+.route-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  height: 24px;
   padding: 0 12px;
-  background: var(--md-sys-color-surface-container);
-  border-top: 1px solid var(--md-sys-color-outline-variant);
+  background: #fff;
+  border-bottom: 1px solid #d5dde6;
+  color: #26394d;
   font-size: 11px;
-  color: var(--el-text-color-secondary);
-  flex-shrink: 0;
 }
 
-.status-left,
-.status-right {
+.route-title {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
 }
 
-.status-item {
+.route-accent {
+  width: 3px;
+  height: 15px;
+  border-radius: 2px;
+  background: #0b668f;
+}
+
+.route-repository {
+  color: #8290a1;
+  font-size: 10px;
+}
+
+.route-content {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.route-content :deep(.left-panel),
+.route-content :deep(.welcome-sidebar) {
+  display: none;
+}
+
+.route-content :deep(.workspace-layout) {
+  height: 100%;
+}
+
+.route-content :deep(.empty-state) {
+  display: block;
+  height: 100%;
+}
+
+.route-content :deep(.empty-content) {
+  margin: 42px 44px;
+}
+
+.route-content :deep(.checkout-view),
+.route-content :deep(.commit-view),
+.route-content :deep(.settings-view),
+.route-content :deep(.log-view),
+.route-content :deep(.diff-view),
+.route-content :deep(.blame-view) {
+  width: 100%;
+  max-width: none;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+.route-content :deep(.el-card) {
+  min-height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
+.route-content :deep(.el-card__header) {
+  padding: 8px 12px;
+}
+
+.route-content :deep(.el-card__body) {
+  padding: 12px;
+}
+
+.fork-status {
   display: flex;
   align-items: center;
-  gap: 4px;
+  justify-content: space-between;
+  padding: 0 9px;
+  border-top: 1px solid #cbd5e1;
+  background: #eef3f7;
+  color: #65768a;
+  font-size: 10px;
 }
 
-.status-item .el-icon {
-  font-size: 12px;
+.fork-status div {
+  display: flex;
+  gap: 14px;
 }
 
-.status-item.version {
-  padding: 0 6px;
-  background: var(--md-sys-color-primary-container);
-  color: var(--md-sys-color-primary);
-  border-radius: var(--app-radius-xs);
-  font-weight: 600;
-}
-
-/* 过渡动画 */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.15s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-/* 响应式 */
-@media (max-width: 860px) {
-  .toolbar-actions {
+@media (max-width: 900px) {
+  .repository-title,
+  .tool-button span,
+  .brand-name {
     display: none;
   }
-  
-  .workspace-info {
+  .toolbar-group {
+    min-width: 0;
+  }
+  .tool-button {
+    min-width: 38px;
+  }
+  .fork-content {
+    grid-template-columns: 1fr;
+  }
+  .shell-sidebar {
     display: none;
   }
 }

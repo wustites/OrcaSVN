@@ -8,16 +8,8 @@
             {{ $t('log.title') }}
           </span>
           <div class="header-actions">
-            <el-input
-              v-model.number="limit"
-              type="number"
-              :min="1"
-              :max="1000"
-              style="width: 120px"
-              :placeholder="$t('log.quantity')"
-              size="small"
-            />
-            <el-button @click="loadLogs" :loading="loading" type="primary" size="small">
+            <span class="loaded-count">{{ $t('log.loadedCount', { count: logs.length }) }}</span>
+            <el-button @click="reloadLogs" :loading="loading" type="primary" size="small">
               <el-icon><Refresh /></el-icon>
               {{ $t('log.load') }}
             </el-button>
@@ -37,7 +29,7 @@
         </el-empty>
       </div>
 
-      <div v-else class="log-content">
+      <div v-else ref="logScroller" class="log-content" @scroll="handleScroll">
         <div class="log-filters">
           <el-input
             v-model="filters.author"
@@ -51,20 +43,26 @@
             clearable
             size="small"
           />
-          <el-input
-            v-model="filters.dateFrom"
-            type="date"
-            :placeholder="$t('log.dateFrom')"
-            clearable
-            size="small"
-          />
-          <el-input
-            v-model="filters.dateTo"
-            type="date"
-            :placeholder="$t('log.dateTo')"
-            clearable
-            size="small"
-          />
+          <label class="date-filter">
+            <span>{{ $t('log.dateFrom') }}</span>
+            <input
+              v-model="filters.dateFrom"
+              type="text"
+              inputmode="numeric"
+              placeholder="YYYY/MM/DD"
+              :aria-label="$t('log.dateFrom')"
+            />
+          </label>
+          <label class="date-filter">
+            <span>{{ $t('log.dateTo') }}</span>
+            <input
+              v-model="filters.dateTo"
+              type="text"
+              inputmode="numeric"
+              placeholder="YYYY/MM/DD"
+              :aria-label="$t('log.dateTo')"
+            />
+          </label>
           <el-button size="small" @click="resetFilters">
             <el-icon><RefreshLeft /></el-icon>
             {{ $t('common.reset') }}
@@ -74,7 +72,6 @@
         <el-table
           :data="filteredLogs"
           style="width: 100%"
-          max-height="600"
           @row-click="handleRowClick"
           row-key="revision"
           stripe
@@ -107,7 +104,13 @@
               <span class="message-text">{{ row.message }}</span>
             </template>
           </el-table-column>
-          <el-table-column :label="$t('log.changedFiles')" width="110" align="center">
+          <el-table-column
+            :label="$t('log.changedFiles')"
+            width="150"
+            align="center"
+            class-name="changed-files-column"
+            label-class-name="changed-files-header"
+          >
             <template #default="{ row }">
               <el-tag size="small" effect="plain">
                 {{ row.changed_paths?.length || 0 }}
@@ -115,6 +118,11 @@
             </template>
           </el-table-column>
         </el-table>
+        <div class="load-more-state">
+          <span v-if="loadingMore">{{ $t('log.loadingMore') }}</span>
+          <span v-else-if="!hasMore && logs.length > 0">{{ $t('log.allLoaded') }}</span>
+          <span v-else-if="hasMore">{{ $t('log.scrollForMore') }}</span>
+        </div>
       </div>
 
       <el-dialog
@@ -163,6 +171,7 @@
               max-height="260"
               stripe
               class="changed-files-table"
+              @row-dblclick="openChangedPathDiff"
             >
               <el-table-column :label="$t('commit.status')" width="96" align="center">
                 <template #default="{ row }">
@@ -191,20 +200,27 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, onMounted } from 'vue'
+import { computed, nextTick, onActivated, onMounted, reactive, ref, watch } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnLog } from '@/api/svn'
-import type { SvnLogEntry } from '@/types'
+import type { SvnLogEntry, SvnLogPath } from '@/types'
 import { useI18n } from 'vue-i18n'
 import { useWorkspace } from '@/composables/useWorkspace'
+import { useSettings } from '@/composables/useSettings'
+import { useRouter } from 'vue-router'
 
 const { t, locale } = useI18n()
+const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog } = useWorkspace()
+const { settings } = useSettings()
 
-const limit = ref(50)
 const logs = ref<SvnLogEntry[]>([])
 const loading = ref(false)
+const loadingMore = ref(false)
+const hasMore = ref(true)
+const logScroller = ref<HTMLElement | null>(null)
+let requestGeneration = 0
 const dialogVisible = ref(false)
 const selectedLog = ref<SvnLogEntry | null>(null)
 const filters = reactive({
@@ -213,12 +229,25 @@ const filters = reactive({
   dateFrom: '',
   dateTo: '',
 })
+const pageSize = computed(() => Math.max(1, settings.logLimit || 50))
+
+const parseFilterDate = (value: string, endOfDay = false): Date | null => {
+  const match = value.trim().match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/)
+  if (!match) return null
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  const day = Number(match[3])
+  const date = new Date(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0)
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
+  return date
+}
 
 const filteredLogs = computed(() => {
   const author = filters.author.trim().toLowerCase()
   const keyword = filters.keyword.trim().toLowerCase()
-  const from = filters.dateFrom ? new Date(`${filters.dateFrom}T00:00:00`) : null
-  const to = filters.dateTo ? new Date(`${filters.dateTo}T23:59:59.999`) : null
+  const from = parseFilterDate(filters.dateFrom)
+  const to = parseFilterDate(filters.dateTo, true)
 
   return logs.value.filter((entry) => {
     const date = new Date(entry.date)
@@ -237,26 +266,87 @@ const filteredLogs = computed(() => {
 const openWorkspace = async () => {
   const success = await openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
   if (success) {
-    loadLogs()
+    reloadLogs()
   }
 }
 
-const loadLogs = async () => {
-  if (!workspaceStore.currentPath) return
+const fetchLogPage = async (generation: number, startRev?: number) => {
+  if (!workspaceStore.currentPath || loading.value || loadingMore.value || !hasMore.value) return
 
-  loading.value = true
+  const requestedPath = workspaceStore.currentPath
+  const initialLoad = startRev === undefined
+  if (initialLoad) loading.value = true
+  else loadingMore.value = true
   try {
-    logs.value = await svnLog(workspaceStore.currentPath, limit.value)
+    const batch = await svnLog(
+      requestedPath,
+      pageSize.value,
+      startRev,
+      startRev === undefined ? undefined : 1
+    )
+    if (generation !== requestGeneration || requestedPath !== workspaceStore.currentPath) return
+    const knownRevisions = new Set(logs.value.map(entry => entry.revision))
+    const newEntries = batch.filter(entry => !knownRevisions.has(entry.revision))
+    logs.value = initialLoad ? batch : [...logs.value, ...newEntries]
+    hasMore.value = batch.length >= pageSize.value && batch[batch.length - 1]?.revision !== 1
   } catch (err) {
-    workspaceStore.setError(String(err))
+    if (generation === requestGeneration) workspaceStore.setError(String(err))
   } finally {
-    loading.value = false
+    if (generation === requestGeneration) {
+      loading.value = false
+      loadingMore.value = false
+    }
+  }
+}
+
+const reloadLogs = async () => {
+  const generation = ++requestGeneration
+  logs.value = []
+  hasMore.value = true
+  loading.value = false
+  loadingMore.value = false
+  await fetchLogPage(generation)
+  await nextTick()
+  if (logScroller.value) logScroller.value.scrollTop = 0
+}
+
+const loadMore = async () => {
+  const oldestRevision = logs.value[logs.value.length - 1]?.revision
+  if (!oldestRevision || oldestRevision <= 1) {
+    hasMore.value = false
+    return
+  }
+  await fetchLogPage(requestGeneration, oldestRevision - 1)
+}
+
+const handleScroll = () => {
+  const scroller = logScroller.value
+  if (!scroller || !hasMore.value || loading.value || loadingMore.value) return
+  if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 160) {
+    loadMore()
   }
 }
 
 const handleRowClick = (row: SvnLogEntry) => {
   selectedLog.value = row
   dialogVisible.value = true
+}
+
+const openChangedPathDiff = (row: SvnLogPath) => {
+  if (!selectedLog.value || !workspaceStore.svnInfo) return
+
+  const repositoryRoot = workspaceStore.svnInfo.repository_root.replace(/\/+$/, '')
+  const repositoryPath = row.path.startsWith('/') ? row.path : `/${row.path}`
+  const revision = selectedLog.value.revision
+  const pegRevision = row.action === 'D' ? Math.max(0, revision - 1) : revision
+  dialogVisible.value = false
+  router.push({
+    name: 'diff',
+    query: {
+      path: `${repositoryRoot}${repositoryPath}@${pegRevision}`,
+      revision: String(revision),
+    },
+  })
 }
 
 const resetFilters = () => {
@@ -290,9 +380,27 @@ const formatDate = (dateStr: string): string => {
 
 onMounted(() => {
   if (workspaceStore.currentPath) {
-    loadLogs()
+    reloadLogs()
   }
 })
+
+onActivated(() => {
+  if (workspaceStore.currentPath && logs.value.length === 0) reloadLogs()
+})
+
+watch(
+  () => workspaceStore.currentPath,
+  (path, oldPath) => {
+    if (path && path !== oldPath) reloadLogs()
+    if (!path) {
+      requestGeneration += 1
+      logs.value = []
+      hasMore.value = true
+      loading.value = false
+      loadingMore.value = false
+    }
+  }
+)
 </script>
 
 <style scoped>
@@ -326,8 +434,14 @@ onMounted(() => {
 }
 
 .header-actions {
+  align-items: center;
   display: flex;
   gap: var(--app-spacing-sm);
+}
+
+.loaded-count {
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
 }
 
 .no-workspace {
@@ -356,9 +470,56 @@ onMounted(() => {
   margin-bottom: var(--app-spacing);
 }
 
+.date-filter {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 28px;
+  overflow: hidden;
+  border: 1px solid var(--md-sys-color-outline-variant);
+  border-radius: 4px;
+  background: #fff;
+}
+
+.date-filter:focus-within {
+  border-color: var(--md-sys-color-primary);
+}
+
+.date-filter span {
+  flex-shrink: 0;
+  padding: 0 7px;
+  border-right: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--el-text-color-secondary);
+  font-size: 10px;
+}
+
+.date-filter input {
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0 6px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font: inherit;
+}
+
 .log-table {
   border-radius: var(--app-radius-md);
   overflow: hidden;
+}
+
+.log-table :deep(.changed-files-column .cell),
+.log-table :deep(.changed-files-header .cell) {
+  white-space: nowrap;
+}
+
+.load-more-state {
+  padding: 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 11px;
+  text-align: center;
 }
 
 .author-cell,
@@ -454,6 +615,10 @@ onMounted(() => {
 .changed-files-table {
   border-radius: var(--app-radius-md);
   overflow: hidden;
+}
+
+.changed-files-table :deep(.el-table__row) {
+  cursor: pointer;
 }
 
 .file-path {

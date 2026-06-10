@@ -2,18 +2,29 @@
   <div class="workspace-view">
     <!-- 未打开工作区时的空状态 -->
     <div v-if="!workspaceStore.currentPath" class="empty-state">
-      <div class="empty-content">
-        <div class="empty-icon">
-          <el-icon><FolderOpened /></el-icon>
+      <aside class="welcome-sidebar">
+        <div class="sidebar-section">
+          <div class="sidebar-heading">{{ $t('workspace.quickActions') }}</div>
+          <button class="sidebar-row active" @click="openWorkspace">
+            <el-icon><FolderOpened /></el-icon>
+            {{ $t('workspace.openWorkspace') }}
+          </button>
+          <button class="sidebar-row" @click="doCheckout">
+            <el-icon><Download /></el-icon>
+            {{ $t('common.checkout') }}
+          </button>
         </div>
-        <h2>{{ $t('workspace.emptyWorkspace') }}</h2>
+      </aside>
+      <div class="empty-content">
+        <div class="welcome-mark"><el-icon><FolderOpened /></el-icon></div>
+        <h2>Welcome to OrcaSVN</h2>
         <p>{{ $t('workspace.emptyDescription') }}</p>
         <div class="empty-actions">
-          <el-button type="primary" @click="openWorkspace" size="large">
+          <el-button type="primary" @click="openWorkspace">
             <el-icon><FolderOpened /></el-icon>
             {{ $t('workspace.openWorkspace') }}
           </el-button>
-          <el-button @click="doCheckout" size="large">
+          <el-button @click="doCheckout">
             <el-icon><Download /></el-icon>
             {{ $t('common.checkout') }}
           </el-button>
@@ -25,61 +36,40 @@
     <div v-else class="workspace-layout">
       <!-- 左侧面板：工作区信息 -->
       <aside class="left-panel">
-        <div class="panel-header">
-          <span class="panel-title">
-            <el-icon><InfoFilled /></el-icon>
-            {{ $t('workspace.repositoryInfo') }}
-          </span>
-          <el-button text size="small" @click="closeWorkspace">
-            <el-icon><Close /></el-icon>
-          </el-button>
+        <div class="repository-name">
+          <strong>{{ workspaceName }}</strong>
+          <button @click="closeWorkspace"><el-icon><Close /></el-icon></button>
         </div>
-        <div class="panel-content">
-          <div v-if="workspaceStore.svnInfo" class="info-list">
-            <div class="info-item">
-              <span class="info-label">{{ $t('workspace.path') }}</span>
-              <span class="info-value path-text">{{ workspaceStore.svnInfo.path }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">URL</span>
-              <span class="info-value url-text">{{ workspaceStore.svnInfo.url }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">{{ $t('workspace.repositoryRoot') }}</span>
-              <span class="info-value path-text">{{ workspaceStore.svnInfo.repository_root }}</span>
-            </div>
-            <div class="info-item">
-              <span class="info-label">{{ $t('workspace.revision') }}</span>
-              <el-tag type="primary" size="small">r{{ workspaceStore.svnInfo.revision }}</el-tag>
-            </div>
-          </div>
-          <div v-else-if="!workspaceStore.isLoading" class="no-info">
-            <span>{{ $t('workspace.noRepositoryInfo') }}</span>
-          </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">WORKING COPY</div>
+          <button class="sidebar-row active" @click="setFilter('all')">
+            <el-icon><Document /></el-icon>
+            <span>{{ $t('workspace.fileStatus') }}</span>
+            <b>{{ workspaceStore.statusList.length }}</b>
+          </button>
+          <button class="sidebar-row" @click="doCommit">
+            <el-icon><Upload /></el-icon>
+            <span>{{ $t('common.commit') }}</span>
+          </button>
         </div>
-
-        <!-- 快速操作 -->
-        <div class="panel-section">
-          <div class="panel-header">
-            <span class="panel-title">
-              <el-icon><Operation /></el-icon>
-              {{ $t('workspace.quickActions') }}
-            </span>
-          </div>
-          <div class="quick-actions">
-            <el-button @click="doUpdate" :loading="isUpdating" size="small">
-              <el-icon><RefreshRight /></el-icon>
-              {{ $t('common.update') }}
-            </el-button>
-            <el-button @click="doCommit" size="small">
-              <el-icon><Upload /></el-icon>
-              {{ $t('common.commit') }}
-            </el-button>
-            <el-button @click="doCleanup" size="small">
-              <el-icon><Brush /></el-icon>
-              {{ $t('common.cleanup') }}
-            </el-button>
-          </div>
+        <div class="sidebar-section">
+          <div class="sidebar-heading">REPOSITORY</div>
+          <button class="sidebar-row" @click="router.push({ name: 'log' })">
+            <el-icon><List /></el-icon>
+            <span>{{ $t('menu.log') }}</span>
+          </button>
+          <button class="sidebar-row" @click="router.push({ name: 'blame' })">
+            <el-icon><Edit /></el-icon>
+            <span>{{ $t('menu.blame') }}</span>
+          </button>
+        </div>
+        <div v-if="workspaceStore.svnInfo" class="repository-meta">
+          <div><span>URL</span><strong>{{ workspaceStore.svnInfo.url }}</strong></div>
+          <div><span>{{ $t('workspace.revision') }}</span><strong>r{{ workspaceStore.svnInfo.revision }}</strong></div>
+        </div>
+        <div class="sidebar-actions">
+          <button @click="doUpdate" :disabled="isUpdating"><el-icon><RefreshRight /></el-icon>{{ $t('common.update') }}</button>
+          <button @click="doCleanup"><el-icon><Brush /></el-icon>{{ $t('common.cleanup') }}</button>
         </div>
       </aside>
 
@@ -100,16 +90,20 @@
         <!-- 文件状态统计 -->
         <div class="status-summary">
           <div class="status-badge modified" :class="{ active: filter === 'modified' }" @click="setFilter('modified')">
-            <span class="badge-count">{{ workspaceStore.modifiedCount }}</span>
-            <span class="badge-label">{{ $t('workspace.statusModified') }}</span>
+            <span class="badge-count">{{ workspaceStore.changedCount }}</span>
+            <span class="badge-label">{{ $t('workspace.statusChanged') }}</span>
           </div>
           <div class="status-badge added" :class="{ active: filter === 'added' }" @click="setFilter('added')">
-            <span class="badge-count">{{ workspaceStore.addedCount }}</span>
-            <span class="badge-label">{{ $t('workspace.statusAdded') }}</span>
+            <span class="badge-count">{{ workspaceStore.unversionedCount }}</span>
+            <span class="badge-label">{{ $t('workspace.statusUnversioned') }}</span>
           </div>
-          <div class="status-badge deleted" :class="{ active: filter === 'deleted' }" @click="setFilter('deleted')">
-            <span class="badge-count">{{ workspaceStore.deletedCount }}</span>
-            <span class="badge-label">{{ $t('workspace.statusDeleted') }}</span>
+          <div class="status-badge conflicted" :class="{ active: filter === 'conflicted' }" @click="setFilter('conflicted')">
+            <span class="badge-count">{{ workspaceStore.conflictedCount }}</span>
+            <span class="badge-label">{{ $t('status.conflicted') }}</span>
+          </div>
+          <div class="status-badge missing" :class="{ active: filter === 'missing' }" @click="setFilter('missing')">
+            <span class="badge-count">{{ workspaceStore.missingCount }}</span>
+            <span class="badge-label">{{ $t('status.missing') }}</span>
           </div>
           <div class="status-badge all" :class="{ active: filter === 'all' }" @click="setFilter('all')">
             <span class="badge-count">{{ workspaceStore.statusList.length }}</span>
@@ -198,11 +192,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnUpdate, svnCleanup, svnRevert, svnDiff } from '@/api/svn'
-import { open } from '@tauri-apps/plugin-dialog'
 import { useI18n } from 'vue-i18n'
 import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
 import { useWorkspace } from '@/composables/useWorkspace'
@@ -213,11 +206,15 @@ const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog, refreshStatus } = useWorkspace()
 
-const filter = ref<'all' | 'modified' | 'added' | 'deleted'>('all')
+const filter = ref<'all' | 'modified' | 'added' | 'conflicted' | 'missing'>('all')
 const selectedFile = ref<string | null>(null)
 const isUpdating = ref(false)
 const isLoadingDiff = ref(false)
 const diffResult = ref<DiffResult | null>(null)
+const workspaceName = computed(() => {
+  const path = workspaceStore.currentPath || ''
+  return path.split(/[\\/]/).filter(Boolean).pop() || path
+})
 
 type DiffLineType = 'added' | 'removed' | 'context' | 'meta'
 
@@ -232,9 +229,10 @@ interface DiffLineRow {
 const filteredFiles = computed(() => {
   if (filter.value === 'all') return workspaceStore.statusList
   return workspaceStore.statusList.filter(f => {
-    if (filter.value === 'modified') return f.status_code === 'modified'
-    if (filter.value === 'added') return f.status_code === 'added' || f.status_code === 'unversioned'
-    if (filter.value === 'deleted') return f.status_code === 'deleted'
+    if (filter.value === 'modified') return ['modified', 'added', 'deleted', 'replaced'].includes(f.status_code)
+    if (filter.value === 'added') return f.status_code === 'unversioned'
+    if (filter.value === 'conflicted') return f.status_code === 'conflicted' || f.prop_status === 'conflicted'
+    if (filter.value === 'missing') return f.status_code === 'missing'
     return true
   })
 })
@@ -310,7 +308,7 @@ const doUpdate = async () => {
     await svnUpdate(workspaceStore.currentPath)
     await refreshStatus()
   } catch (err) {
-    workspaceStore.error = String(err)
+    workspaceStore.setError(String(err))
   } finally {
     isUpdating.value = false
   }
@@ -322,7 +320,7 @@ const doCleanup = async () => {
     await svnCleanup(workspaceStore.currentPath)
     await refreshStatus()
   } catch (err) {
-    workspaceStore.error = String(err)
+    workspaceStore.setError(String(err))
   }
 }
 
@@ -340,7 +338,7 @@ const revertFile = async (path: string) => {
       diffResult.value = null
     }
   } catch (err) {
-    workspaceStore.error = String(err)
+    workspaceStore.setError(String(err))
   }
 }
 </script>
@@ -568,6 +566,11 @@ const revertFile = async (path: string) => {
   color: var(--md-sys-color-error);
 }
 
+.status-badge.conflicted .badge-count,
+.status-badge.missing .badge-count {
+  color: var(--md-sys-color-error);
+}
+
 /* 文件列表 */
 .file-list {
   flex: 1;
@@ -605,22 +608,26 @@ const revertFile = async (path: string) => {
   text-transform: uppercase;
 }
 
-.file-status.modified {
+.file-status.status-modified,
+.file-status.status-replaced {
   background: #fef9c3;
   color: #a16207;
 }
 
-.file-status.added {
+.file-status.status-added {
   background: #dcfce7;
   color: #15803d;
 }
 
-.file-status.deleted {
+.file-status.status-deleted,
+.file-status.status-missing,
+.file-status.status-conflicted,
+.file-status.status-obstructed {
   background: #fee2e2;
   color: #dc2626;
 }
 
-.file-status.unversioned {
+.file-status.status-unversioned {
   background: #e0e7ff;
   color: #6366f1;
 }
@@ -821,6 +828,293 @@ const revertFile = async (path: string) => {
   }
   
   .right-panel {
+    display: none;
+  }
+}
+</style>
+
+<style scoped>
+/* Fork-like workspace layout overrides */
+.empty-state {
+  display: grid;
+  grid-template-columns: 210px 1fr;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 0;
+  background: #fff;
+}
+
+.welcome-sidebar,
+.left-panel {
+  width: 210px;
+  background: linear-gradient(90deg, #eeeeee, #e8e8e8);
+  border-right: 1px solid #c8c8c8;
+  color: #444;
+}
+
+.empty-content {
+  align-self: start;
+  max-width: 680px;
+  margin: 42px 44px;
+  text-align: left;
+}
+
+.welcome-mark {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  margin-bottom: 20px;
+  border-radius: 11px;
+  color: #fff;
+  background: linear-gradient(145deg, #42a5ff, #0569d7);
+  font-size: 28px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.18);
+}
+
+.empty-content h2 {
+  margin-bottom: 8px;
+  font-size: 24px;
+  font-weight: 500;
+}
+
+.empty-content p {
+  margin-bottom: 20px;
+  color: #777;
+}
+
+.empty-actions {
+  justify-content: flex-start;
+}
+
+.workspace-layout {
+  background: #fff;
+}
+
+.left-panel {
+  flex-shrink: 0;
+}
+
+.repository-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 37px;
+  padding: 0 9px 0 12px;
+  border-bottom: 1px solid #c8c8c8;
+  color: #333;
+  font-size: 12px;
+}
+
+.repository-name button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #777;
+}
+
+.repository-name button:hover,
+.sidebar-row:hover {
+  background: rgba(255, 255, 255, 0.65);
+}
+
+.sidebar-section {
+  padding: 8px 6px 3px;
+}
+
+.sidebar-heading {
+  padding: 3px 7px;
+  color: #707070;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .06em;
+}
+
+.sidebar-row {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  height: 25px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #444;
+  font-size: 11px;
+  text-align: left;
+}
+
+.sidebar-row.active {
+  color: #fff;
+  background: #1473e6;
+}
+
+.sidebar-row span {
+  flex: 1;
+}
+
+.sidebar-row b {
+  font-size: 10px;
+}
+
+.repository-meta {
+  margin: 10px 12px;
+  padding-top: 8px;
+  border-top: 1px solid #c9c9c9;
+}
+
+.repository-meta div {
+  margin-bottom: 9px;
+}
+
+.repository-meta span,
+.repository-meta strong {
+  display: block;
+}
+
+.repository-meta span {
+  color: #888;
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.repository-meta strong {
+  overflow: hidden;
+  margin-top: 2px;
+  color: #555;
+  font-size: 10px;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-actions {
+  display: grid;
+  gap: 4px;
+  margin-top: auto;
+  padding: 9px;
+  border-top: 1px solid #c8c8c8;
+}
+
+.sidebar-actions button {
+  display: flex;
+  align-items: center;
+  height: 27px;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid #c3c3c3;
+  border-radius: 4px;
+  background: linear-gradient(#fff, #e9e9e9);
+  color: #444;
+  font-size: 10px;
+}
+
+.center-panel,
+.right-panel {
+  background: #fff;
+}
+
+.center-panel {
+  min-width: 320px;
+}
+
+.right-panel {
+  width: 52%;
+  min-width: 430px;
+  background: #fff;
+  border-left: 1px solid #c8c8c8;
+}
+
+.panel-header {
+  height: 37px;
+  padding: 0 9px;
+  background: linear-gradient(#f7f7f7, #e9e9e9);
+  border-bottom: 1px solid #c8c8c8;
+}
+
+.panel-title {
+  color: #444;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.status-summary {
+  gap: 3px;
+  padding: 5px 7px;
+  background: #f4f4f4;
+  border-bottom: 1px solid #d5d5d5;
+}
+
+.status-badge {
+  gap: 5px;
+  padding: 2px 7px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  font-size: 10px;
+}
+
+.status-badge.active {
+  border-color: #b9b9b9;
+  background: #ddd;
+  color: #222;
+}
+
+.file-item {
+  min-height: 27px;
+  gap: 7px;
+  padding: 3px 8px;
+  border-bottom: 1px solid #ededed;
+}
+
+.file-item.selected {
+  color: #fff;
+  background: #1473e6;
+}
+
+.file-status {
+  min-width: 18px;
+  height: 17px;
+  padding: 0 3px;
+  font-size: 8px;
+}
+
+.file-path {
+  font-size: 11px;
+}
+
+.diff-header {
+  min-height: 31px;
+  padding: 4px 8px;
+  background: #f7f7f7;
+}
+
+.diff-lines {
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.diff-row {
+  grid-template-columns: 38px 18px 1fr;
+}
+
+.diff-line-number,
+.diff-marker,
+.diff-code {
+  padding-top: 1px;
+  padding-bottom: 1px;
+}
+
+@media (max-width: 860px) {
+  .empty-state {
+    grid-template-columns: 1fr;
+  }
+  .welcome-sidebar {
     display: none;
   }
 }

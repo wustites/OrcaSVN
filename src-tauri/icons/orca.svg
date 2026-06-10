@@ -1,66 +1,46 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 650 650" width="100%" height="100%">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <defs>
-    <!-- Gradients for a polished look -->
-    <linearGradient id="waterGrad" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#E1F5FE" />
-      <stop offset="100%" stop-color="#B3E5FC" />
+    <linearGradient id="ocean" x1="72" y1="52" x2="440" y2="466" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1684ad"/>
+      <stop offset="0.52" stop-color="#0b668f"/>
+      <stop offset="1" stop-color="#06435f"/>
     </linearGradient>
-    <linearGradient id="bodyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1A1D20" />
-      <stop offset="100%" stop-color="#0D0E10" />
+    <linearGradient id="fin" x1="130" y1="167" x2="387" y2="361" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#dceef6"/>
     </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="12" stdDeviation="14" flood-color="#052f44" flood-opacity="0.28"/>
+    </filter>
   </defs>
 
-  <g transform="translate(0 150)">
-  <!-- Background Circle (Water) -->
-  <circle cx="325" cy="175" r="160" fill="url(#waterGrad)" />
+  <rect x="28" y="28" width="456" height="456" rx="108" fill="url(#ocean)"/>
+  <path d="M92 132C160 78 306 70 410 127" fill="none" stroke="#7fc4db" stroke-width="8" stroke-linecap="round" opacity="0.38"/>
 
-  <!-- Saddle Patch (Grey marking behind the dorsal fin) -->
-  <path d="M 285 110 Q 320 95, 360 110 Q 350 125, 310 125 Z" fill="#90A4AE" opacity="0.6" />
+  <g filter="url(#shadow)">
+    <path
+      d="M91 297C132 217 214 170 345 166C322 187 309 211 306 237C347 241 385 258 420 289C358 288 315 305 288 340C221 361 155 347 91 297Z"
+      fill="url(#fin)"
+    />
+    <path
+      d="M153 288C188 238 233 209 290 201C270 232 269 263 286 294C235 310 191 308 153 288Z"
+      fill="#0b668f"
+    />
+    <path
+      d="M96 297C153 327 217 336 288 340C221 361 155 347 91 297Z"
+      fill="#b8dce9"
+      opacity="0.78"
+    />
+  </g>
 
-  <!-- Main Body (Black) -->
-  <path d="M 80 180 
-           C 60 180, 60 140, 100 120 
-           C 150 100, 220 100, 300 110 
-           C 400 120, 480 150, 510 165 
-           C 530 120, 550 120, 570 145 
-           Q 555 160, 550 165 
-           C 555 210, 530 215, 510 165 
-           C 480 195, 400 220, 300 225 
-           C 200 230, 100 210, 80 180 Z" 
-        fill="url(#bodyGrad)" />
-
-  <!-- Dorsal Fin -->
-  <path d="M 230 105 Q 260 15, 280 10 Q 295 50, 285 112 Z" fill="url(#bodyGrad)" />
-
-  <!-- White Belly Patch -->
-  <path d="M 85 190 
-           C 100 210, 200 220, 300 215 
-           C 400 210, 450 190, 500 175 
-           C 450 185, 380 200, 300 205 
-           C 200 210, 100 200, 85 190 Z" 
-        fill="#F2F4F8" />
-
-  <!-- Pectoral Fin -->
-  <path d="M 170 210 Q 190 250, 240 230 Q 220 200, 190 195 Z" fill="url(#bodyGrad)" />
-
-  <!-- Eye Patch -->
-  <ellipse cx="140" cy="150" rx="15" ry="7" transform="rotate(-15 140 150)" fill="#F2F4F8" />
-
-  <!-- Eye -->
-  <circle cx="120" cy="150" r="4" fill="#1A1D20" />
-
-  <!-- Mouth Line -->
-  <path d="M 70 180 Q 90 185, 110 180" stroke="#1A1D20" stroke-width="2" fill="none" stroke-linecap="round" />
-
-  <!-- Sleek Highlight on the Back -->
-  <path d="M 120 120 C 180 105, 250 105, 300 112" stroke="#F2F4F8" stroke-width="2" fill="none" opacity="0.3" stroke-linecap="round" />
-
-  <!-- Water Splash & Droplets (Tail) -->
-  <path d="M 540 140 Q 550 110, 560 140 Q 570 100, 580 140" stroke="#FFFFFF" stroke-width="3" fill="none" stroke-linecap="round" opacity="0.8" />
-  <circle cx="545" cy="100" r="3" fill="#FFFFFF" opacity="0.9" />
-  <circle cx="565" cy="90" r="4" fill="#FFFFFF" opacity="0.9" />
-  <circle cx="575" cy="115" r="2" fill="#FFFFFF" opacity="0.9" />
-  <circle cx="585" cy="105" r="2.5" fill="#FFFFFF" opacity="0.9" />
+  <g fill="none" stroke="#73d6c9" stroke-width="13" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M326 207V143"/>
+    <path d="M326 143L374 114"/>
+    <path d="M326 143L281 112"/>
+  </g>
+  <g fill="#ffffff" stroke="#73d6c9" stroke-width="10">
+    <circle cx="326" cy="207" r="13"/>
+    <circle cx="374" cy="114" r="13"/>
+    <circle cx="281" cy="112" r="13"/>
   </g>
 </svg>
