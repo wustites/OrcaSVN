@@ -1,6 +1,6 @@
 <template>
-  <el-dropdown @command="handleLanguageChange">
-    <el-button text>
+  <el-dropdown popper-class="language-dropdown" @command="handleLanguageChange">
+    <el-button text class="language-switcher-button">
       <svg class="language-icon" viewBox="0 0 24 24" aria-hidden="true">
         <circle cx="12" cy="12" r="9" />
         <path d="M3 12h18" />

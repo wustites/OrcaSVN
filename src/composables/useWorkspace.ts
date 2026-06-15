@@ -5,16 +5,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 export function useWorkspace() {
   const workspaceStore = useWorkspaceStore()
 
-  async function openWorkspace(selectDialogTitle: string): Promise<boolean> {
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: selectDialogTitle,
-    })
-
-    if (!selected) return false
-
-    const path = Array.isArray(selected) ? selected[0] : selected
+  async function loadWorkspace(path: string): Promise<boolean> {
     workspaceStore.setLoading(true)
     workspaceStore.setError(null)
 
@@ -36,6 +27,25 @@ export function useWorkspace() {
     }
   }
 
+  async function openWorkspace(selectDialogTitle: string): Promise<boolean> {
+    const selected = await open({
+      directory: true,
+      multiple: false,
+      title: selectDialogTitle,
+    })
+
+    if (!selected) return false
+
+    const path = Array.isArray(selected) ? selected[0] : selected
+    return loadWorkspace(path)
+  }
+
+  async function restoreLastWorkspace(): Promise<boolean> {
+    const path = workspaceStore.getLastWorkspacePath()
+    if (!path) return false
+    return loadWorkspace(path)
+  }
+
   async function refreshStatus(): Promise<void> {
     if (!workspaceStore.currentPath) return
 
@@ -55,5 +65,5 @@ export function useWorkspace() {
     }
   }
 
-  return { openWorkspace, refreshStatus }
+  return { openWorkspace, restoreLastWorkspace, refreshStatus }
 }

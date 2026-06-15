@@ -299,7 +299,9 @@ const fetchLogPage = async (generation: number, startRev?: number) => {
   }
 }
 
-const reloadLogs = async () => {
+const reloadLogs = async (force = false) => {
+  if (!force && (loading.value || loadingMore.value)) return
+
   const generation = ++requestGeneration
   logs.value = []
   hasMore.value = true
@@ -391,7 +393,7 @@ onActivated(() => {
 watch(
   () => workspaceStore.currentPath,
   (path, oldPath) => {
-    if (path && path !== oldPath) reloadLogs()
+    if (path && path !== oldPath) reloadLogs(true)
     if (!path) {
       requestGeneration += 1
       logs.value = []

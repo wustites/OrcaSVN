@@ -1020,12 +1020,15 @@ const revertFile = async (path: string) => {
 }
 
 .center-panel {
-  min-width: 320px;
+  flex: 1 1 33.333%;
+  width: 33.333%;
+  min-width: 260px;
 }
 
 .right-panel {
-  width: 52%;
-  min-width: 430px;
+  flex: 2 1 66.667%;
+  width: 66.667%;
+  min-width: 420px;
   background: #fff;
   border-left: 1px solid #c8c8c8;
 }

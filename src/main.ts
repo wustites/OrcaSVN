@@ -68,7 +68,10 @@ import {
 import router from './router'
 import i18n from './i18n'
 import App from './App.vue'
+import { initializeTheme } from './composables/useTheme'
 import './style.css'
+
+initializeTheme()
 
 const app = createApp(App)
 const pinia = createPinia()

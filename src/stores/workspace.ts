@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SvnStatus, SvnInfo } from '@/types'
 
+const LAST_WORKSPACE_KEY = 'orcasvn-last-workspace'
+
 export const useWorkspaceStore = defineStore('workspace', () => {
   const currentPath = ref<string | null>(null)
   const svnInfo = ref<SvnInfo | null>(null)
@@ -44,6 +46,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function setCurrentPath(path: string) {
     currentPath.value = path
+    localStorage.setItem(LAST_WORKSPACE_KEY, path)
+  }
+
+  function getLastWorkspacePath() {
+    return localStorage.getItem(LAST_WORKSPACE_KEY)
   }
 
   function setStatusList(list: SvnStatus[]) {
@@ -63,6 +70,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   function clearWorkspace() {
+    localStorage.removeItem(LAST_WORKSPACE_KEY)
     currentPath.value = null
     svnInfo.value = null
     statusList.value = []
@@ -84,6 +92,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     conflictedCount,
     missingCount,
     setCurrentPath,
+    getLastWorkspacePath,
     setStatusList,
     setSvnInfo,
     setLoading,

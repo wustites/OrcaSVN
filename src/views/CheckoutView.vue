@@ -12,7 +12,7 @@
 
       <el-form
         :model="form"
-        label-width="190px"
+        label-width="120px"
         class="checkout-form"
         label-position="left"
         require-asterisk-position="right"
@@ -163,10 +163,12 @@ const resetForm = () => {
 .checkout-view {
   max-width: 800px;
   margin: 0 auto;
+  background: var(--md-sys-color-surface);
 }
 
 .checkout-card {
   border-radius: var(--app-radius-lg);
+  background: var(--md-sys-color-surface);
 }
 
 .card-header {
@@ -196,21 +198,14 @@ const resetForm = () => {
   white-space: nowrap;
 }
 
-.checkout-form :deep(.el-form-item__label::before) {
-  content: "";
-  display: inline-block;
-  width: 14px;
-  margin-right: 5px;
-  text-align: center;
-}
-
 .checkout-form :deep(.el-form-item.is-required .el-form-item__label::before) {
-  content: "*";
-  color: var(--el-color-danger);
+  display: none;
 }
 
 .checkout-form :deep(.el-form-item.is-required .el-form-item__label::after) {
-  display: none;
+  content: "*";
+  margin-left: 5px;
+  color: var(--el-color-danger);
 }
 
 .form-item {

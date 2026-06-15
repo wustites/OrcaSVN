@@ -129,7 +129,7 @@
           <div class="about-details">
             <div class="detail-item">
               <span class="detail-label">{{ $t('common.version') }}：</span>
-              <el-tag size="small" type="primary">0.2.0</el-tag>
+              <el-tag size="small" type="primary">{{ appVersion }}</el-tag>
             </div>
             <div class="detail-item">
               <span class="detail-label">{{ $t('common.techStack') }}：</span>
@@ -147,10 +147,13 @@ import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useLocale } from '@/composables/useLocale'
 import { useSettings } from '@/composables/useSettings'
+import { applyTheme } from '@/composables/useTheme'
+import packageInfo from '../../package.json'
 
 const { t } = useI18n()
 const { setLocale } = useLocale()
 const { settings, resetSettings } = useSettings()
+const appVersion = packageInfo.version
 
 const languages = computed(() => [
   { label: t('language.zhCN'), value: 'zh-CN' },
@@ -164,22 +167,6 @@ const currentLanguage = computed({
   get: () => settings.language,
   set: (val: string) => setLocale(val),
 })
-
-function applyTheme(theme: string) {
-  const root = document.documentElement
-  root.classList.remove('theme-light', 'theme-dark')
-
-  if (theme === 'dark') {
-    root.classList.add('theme-dark')
-  } else if (theme === 'light') {
-    root.classList.add('theme-light')
-  } else {
-    // auto: follow system
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      root.classList.add('theme-dark')
-    }
-  }
-}
 
 function handleSave() {
   setLocale(settings.language)

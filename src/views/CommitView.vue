@@ -237,10 +237,12 @@ const resetForm = () => {
 .commit-view {
   max-width: 900px;
   margin: 0 auto;
+  background: var(--md-sys-color-surface);
 }
 
 .commit-card {
   border-radius: var(--app-radius-lg);
+  background: var(--md-sys-color-surface);
 }
 
 .card-header {

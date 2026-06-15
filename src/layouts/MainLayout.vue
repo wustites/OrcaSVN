@@ -138,7 +138,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -150,7 +150,7 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
-const { refreshStatus } = useWorkspace()
+const { refreshStatus, restoreLastWorkspace } = useWorkspace()
 const appVersion = packageInfo.version
 const cachedViews = ref(['WorkspaceView', 'LogView'])
 
@@ -167,6 +167,8 @@ const currentRouteTitle = computed(() => {
 })
 
 const navigateTo = (name: string) => router.push({ name })
+
+onMounted(restoreLastWorkspace)
 </script>
 
 <style scoped>
@@ -459,6 +461,7 @@ const navigateTo = (name: string) => router.push({ name })
   min-width: 0;
   min-height: 0;
   overflow: auto;
+  background: #fff;
 }
 
 .route-content :deep(.left-panel),
@@ -504,6 +507,28 @@ const navigateTo = (name: string) => router.push({ name })
 
 .route-content :deep(.el-card__body) {
   padding: 12px;
+}
+
+.route-content :deep(.checkout-view),
+.route-content :deep(.commit-view) {
+  display: flex;
+  min-height: 100%;
+  background: var(--md-sys-color-surface);
+}
+
+.route-content :deep(.checkout-card),
+.route-content :deep(.commit-card) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 100%;
+  background: var(--md-sys-color-surface);
+}
+
+.route-content :deep(.checkout-card > .el-card__body),
+.route-content :deep(.commit-card > .el-card__body) {
+  flex: 1;
+  background: var(--md-sys-color-surface);
 }
 
 .fork-status {

@@ -1,3 +1,4 @@
+use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 use thiserror::Error;
@@ -59,17 +60,34 @@ async fn execute_svn_inner(args: &[&str], path: Option<&str>) -> Result<String, 
             }
         })?;
 
+        // Drain both pipes while SVN is running. Large XML responses such as
+        // verbose logs can otherwise fill an OS pipe and block the child.
+        let mut stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| SvnError::CommandFailed("无法读取 SVN 标准输出".to_string()))?;
+        let mut stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| SvnError::CommandFailed("无法读取 SVN 错误输出".to_string()))?;
+        let stdout_reader = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stdout.read_to_end(&mut bytes).map(|_| bytes)
+        });
+        let stderr_reader = std::thread::spawn(move || {
+            let mut bytes = Vec::new();
+            stderr.read_to_end(&mut bytes).map(|_| bytes)
+        });
+
         let started = Instant::now();
-        let output = loop {
+        let status = loop {
             match child.try_wait() {
-                Ok(Some(_)) => {
-                    break child
-                        .wait_with_output()
-                        .map_err(|e| SvnError::CommandFailed(e.to_string()))?
-                }
+                Ok(Some(status)) => break status,
                 Ok(None) if started.elapsed() >= SVN_TIMEOUT => {
                     let _ = child.kill();
                     let _ = child.wait();
+                    let _ = stdout_reader.join();
+                    let _ = stderr_reader.join();
                     return Err(SvnError::Timeout);
                 }
                 Ok(None) => std::thread::sleep(Duration::from_millis(100)),
@@ -77,10 +95,18 @@ async fn execute_svn_inner(args: &[&str], path: Option<&str>) -> Result<String, 
             }
         };
 
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let stdout = stdout_reader
+            .join()
+            .map_err(|_| SvnError::CommandFailed("读取 SVN 标准输出失败".to_string()))?
+            .map_err(|e| SvnError::CommandFailed(e.to_string()))?;
+        let stderr = stderr_reader
+            .join()
+            .map_err(|_| SvnError::CommandFailed("读取 SVN 错误输出失败".to_string()))?
+            .map_err(|e| SvnError::CommandFailed(e.to_string()))?;
+        let stdout = String::from_utf8_lossy(&stdout).to_string();
+        let stderr = String::from_utf8_lossy(&stderr).to_string();
 
-        if output.status.success() {
+        if status.success() {
             Ok(stdout)
         } else {
             Err(SvnError::CommandFailed(format!("{}\n{}", stdout, stderr)))
