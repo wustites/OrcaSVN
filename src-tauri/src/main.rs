@@ -273,10 +273,21 @@ async fn svn_log(
     limit: Option<u32>,
     start_rev: Option<u64>,
     end_rev: Option<u64>,
+    keyword: Option<String>,
+    date_from: Option<String>,
+    date_to: Option<String>,
 ) -> Result<Vec<SvnLogEntry>, String> {
-    svn::log(&path, limit, start_rev, end_rev)
-        .await
-        .map_err(|e| e.to_string())
+    svn::log(
+        &path,
+        limit,
+        start_rev,
+        end_rev,
+        keyword.as_deref(),
+        date_from.as_deref(),
+        date_to.as_deref(),
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

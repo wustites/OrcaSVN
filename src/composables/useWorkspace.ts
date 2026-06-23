@@ -9,13 +9,15 @@ export function useWorkspace() {
     workspaceStore.setLoading(true)
     workspaceStore.setError(null)
 
+    // 提前设置 currentPath，让 LogView 的 svn log 与 status+info 并行执行
+    workspaceStore.setCurrentPath(path)
+
     try {
       const [status, info] = await Promise.all([
         svnStatus(path),
         svnInfo(path),
       ])
 
-      workspaceStore.setCurrentPath(path)
       workspaceStore.setStatusList(status)
       workspaceStore.setSvnInfo(info)
       return true

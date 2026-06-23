@@ -103,25 +103,43 @@ pub async fn log(
     limit: Option<u32>,
     start_rev: Option<u64>,
     end_rev: Option<u64>,
+    keyword: Option<&str>,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
 ) -> Result<Vec<SvnLogEntry>, SvnError> {
-    let mut args: Vec<String> = vec![
-        "log".to_string(),
-        "--xml".to_string(),
-        "--verbose".to_string(),
-    ];
+    let mut args: Vec<String> = vec!["log".to_string(), "--xml".to_string(), "--verbose".to_string()];
 
     if let Some(lim) = limit {
         args.push("-l".to_string());
         args.push(lim.to_string());
     }
 
-    if let Some(start) = start_rev {
+    // 日期范围优先于修订号范围（服务器端过滤）
+    if let Some(from) = date_from {
+        let end = date_to.unwrap_or("HEAD");
+        let range = if let Some(rev) = start_rev {
+            // load-more：用修订号作为上界，但保持下界为开始日期
+            format!("{{{}}}:{}", from, rev)
+        } else {
+            format!("{{{}}}:{{{}}}", from, end)
+        };
+        args.push("-r".to_string());
+        args.push(range);
+    } else if let Some(start) = start_rev {
         if let Some(end) = end_rev {
             args.push("-r".to_string());
             args.push(format!("{}:{}", start, end));
         } else {
             args.push("-r".to_string());
             args.push(format!("{}:HEAD", start));
+        }
+    }
+
+    // 关键字搜索（--search 自 Subversion 1.8 支持）
+    if let Some(kw) = keyword {
+        if !kw.is_empty() {
+            args.push("--search".to_string());
+            args.push(kw.to_string());
         }
     }
 

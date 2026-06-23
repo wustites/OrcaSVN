@@ -6,6 +6,7 @@ import { ElBreadcrumb, ElBreadcrumbItem } from 'element-plus/es/components/bread
 import { ElButton } from 'element-plus/es/components/button/index'
 import { ElCard } from 'element-plus/es/components/card/index'
 import { ElConfigProvider } from 'element-plus/es/components/config-provider/index'
+import { ElDatePicker } from 'element-plus/es/components/date-picker/index'
 import { ElDescriptions, ElDescriptionsItem } from 'element-plus/es/components/descriptions/index'
 import { ElDialog } from 'element-plus/es/components/dialog/index'
 import { ElDivider } from 'element-plus/es/components/divider/index'
@@ -85,6 +86,7 @@ const components = [
   ElCard,
   ElConfigProvider,
   ElContainer,
+  ElDatePicker,
   ElDescriptions,
   ElDescriptionsItem,
   ElDialog,

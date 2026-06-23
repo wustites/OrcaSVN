@@ -29,9 +29,12 @@ export async function svnLog(
   path: string,
   limit?: number,
   startRev?: number,
-  endRev?: number
+  endRev?: number,
+  keyword?: string,
+  dateFrom?: string,
+  dateTo?: string
 ): Promise<SvnLogEntry[]> {
-  return invoke<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev })
+  return invoke<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev, keyword, dateFrom, dateTo })
 }
 
 export async function svnInfo(path: string): Promise<SvnInfo> {

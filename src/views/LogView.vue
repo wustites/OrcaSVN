@@ -204,7 +204,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnLog } from '@/api/svn'
 import type { SvnLogEntry, SvnLogPath } from '@/types'
@@ -228,6 +228,7 @@ let requestGeneration = 0
 const dialogVisible = ref(false)
 const selectedLog = ref<SvnLogEntry | null>(null)
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000
+const MAX_CACHE_SIZE = 50
 type LogCacheEntry = {
   entries: SvnLogEntry[]
   cachedAt: number
@@ -268,12 +269,12 @@ const parseFilterDate = (value: string, endOfDay = false): Date | null => {
   return date
 }
 
-const getLogCacheKey = (path: string, limit: number, startRev?: number, endRev?: number) => {
-  return JSON.stringify({ path, limit, startRev: startRev ?? null, endRev: endRev ?? null })
+const getLogCacheKey = (path: string, limit: number, startRev?: number, endRev?: number, keyword?: string, dateFrom?: string, dateTo?: string) => {
+  return `${path}|${limit}|${startRev ?? ''}|${endRev ?? ''}|${keyword ?? ''}|${dateFrom ?? ''}|${dateTo ?? ''}`
 }
 
-const getCachedLogPage = (path: string, limit: number, startRev?: number, endRev?: number) => {
-  const key = getLogCacheKey(path, limit, startRev, endRev)
+const getCachedLogPage = (path: string, limit: number, startRev?: number, endRev?: number, keyword?: string, dateFrom?: string, dateTo?: string) => {
+  const key = getLogCacheKey(path, limit, startRev, endRev, keyword, dateFrom, dateTo)
   const cached = logPageCache.get(key)
   if (!cached) return null
   if (Date.now() - cached.cachedAt > LOG_CACHE_TTL_MS) {
@@ -288,9 +289,25 @@ const setCachedLogPage = (
   limit: number,
   entries: SvnLogEntry[],
   startRev?: number,
-  endRev?: number
+  endRev?: number,
+  keyword?: string,
+  dateFrom?: string,
+  dateTo?: string
 ) => {
-  const key = getLogCacheKey(path, limit, startRev, endRev)
+  // 缓存达到上限时淘汰最旧的条目
+  if (logPageCache.size >= MAX_CACHE_SIZE) {
+    let oldestKey: string | undefined
+    let oldestTime = Infinity
+    for (const [k, v] of logPageCache) {
+      if (v.cachedAt < oldestTime) {
+        oldestTime = v.cachedAt
+        oldestKey = k
+      }
+    }
+    if (oldestKey) logPageCache.delete(oldestKey)
+  }
+
+  const key = getLogCacheKey(path, limit, startRev, endRev, keyword, dateFrom, dateTo)
   logPageCache.set(key, {
     entries: entries.map(entry => ({
       ...entry,
@@ -302,15 +319,10 @@ const setCachedLogPage = (
 }
 
 const clearLogCacheForPath = (path: string) => {
+  const prefix = `${path}|`
   let changed = false
   for (const key of logPageCache.keys()) {
-    try {
-      const parsed = JSON.parse(key) as { path?: string }
-      if (parsed.path === path) {
-        logPageCache.delete(key)
-        changed = true
-      }
-    } catch {
+    if (key.startsWith(prefix)) {
       logPageCache.delete(key)
       changed = true
     }
@@ -322,17 +334,13 @@ const getCachedAuthorsForPath = (path: string | null) => {
   if (!path) return []
   logCacheVersion.value
 
+  const prefix = `${path}|`
   const authors = new Set<string>()
   for (const [key, cached] of logPageCache.entries()) {
-    try {
-      const parsed = JSON.parse(key) as { path?: string }
-      if (parsed.path !== path) continue
-      cached.entries.forEach(entry => {
-        if (entry.author) authors.add(entry.author)
-      })
-    } catch {
-      // Ignore malformed cache keys; they will be removed by the next explicit refresh.
-    }
+    if (!key.startsWith(prefix)) continue
+    cached.entries.forEach(entry => {
+      if (entry.author) authors.add(entry.author)
+    })
   }
   return [...authors]
 }
@@ -371,17 +379,28 @@ const filteredLogs = computed(() => {
   const from = parseFilterDate(filters.dateFrom)
   const to = parseFilterDate(filters.dateTo, true)
 
-  return logs.value.filter((entry) => {
-    const date = new Date(entry.date)
-    const paths = entry.changed_paths?.map((item) => item.path).join('\n') || ''
-    const searchable = `${entry.message}\n${paths}\nr${entry.revision}`.toLowerCase()
+  // 没有过滤条件时直接返回，避免遍历和字符串/Date计算
+  if (!author && !keyword && !from && !to) return logs.value
 
-    return (
-      (!author || entry.author.toLowerCase().includes(author)) &&
-      (!keyword || searchable.includes(keyword)) &&
-      (!from || date >= from) &&
-      (!to || date <= to)
-    )
+  return logs.value.filter((entry) => {
+    // 作者过滤（轻量，优先检查）
+    if (author && !entry.author.toLowerCase().includes(author)) return false
+
+    // 关键字过滤（仅在需要时构造 searchable 字符串）
+    if (keyword) {
+      const paths = entry.changed_paths?.map((item) => item.path).join('\n') || ''
+      const searchable = `${entry.message}\n${paths}\nr${entry.revision}`.toLowerCase()
+      if (!searchable.includes(keyword)) return false
+    }
+
+    // 日期过滤（仅在需要时解析 Date）
+    if (from || to) {
+      const date = new Date(entry.date)
+      if (from && date < from) return false
+      if (to && date > to) return false
+    }
+
+    return true
   })
 })
 
@@ -399,12 +418,18 @@ const fetchLogPage = async (generation: number, startRev?: number, refreshCache 
   const limit = pageSize.value
   const endRev = startRev === undefined ? undefined : 1
   const initialLoad = startRev === undefined
+
+  // 读取当前激活的过滤条件，传递给后端实现服务器端过滤
+  const kw = filters.keyword.trim() || undefined
+  const df = filters.dateFrom || undefined
+  const dt = filters.dateTo || undefined
+
   if (initialLoad) loading.value = true
   else loadingMore.value = true
   try {
-    const cachedBatch = refreshCache ? null : getCachedLogPage(requestedPath, limit, startRev, endRev)
-    const batch = cachedBatch || await svnLog(requestedPath, limit, startRev, endRev)
-    if (!cachedBatch) setCachedLogPage(requestedPath, limit, batch, startRev, endRev)
+    const cachedBatch = refreshCache ? null : getCachedLogPage(requestedPath, limit, startRev, endRev, kw, df, dt)
+    const batch = cachedBatch || await svnLog(requestedPath, limit, startRev, endRev, kw, df, dt)
+    if (!cachedBatch) setCachedLogPage(requestedPath, limit, batch, startRev, endRev, kw, df, dt)
     if (generation !== requestGeneration || requestedPath !== workspaceStore.currentPath) return
     const knownRevisions = new Set(logs.value.map(entry => entry.revision))
     const newEntries = batch.filter(entry => !knownRevisions.has(entry.revision))
@@ -500,16 +525,6 @@ const formatDate = (dateStr: string): string => {
   return date.toLocaleString(locale.value)
 }
 
-onMounted(() => {
-  if (workspaceStore.currentPath) {
-    reloadLogs()
-  }
-})
-
-onActivated(() => {
-  if (workspaceStore.currentPath && logs.value.length === 0) reloadLogs()
-})
-
 watch(
   () => workspaceStore.currentPath,
   (path, oldPath) => {
@@ -525,7 +540,8 @@ watch(
       loading.value = false
       loadingMore.value = false
     }
-  }
+  },
+  { immediate: true }
 )
 
 </script>

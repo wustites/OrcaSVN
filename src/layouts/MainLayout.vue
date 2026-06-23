@@ -179,7 +179,7 @@ const workspaceStore = useWorkspaceStore()
 const { refreshStatus, restoreLastWorkspace } = useWorkspace()
 const appVersion = packageInfo.version
 const cachedViews = ref(['WorkspaceView', 'LogView'])
-const statusRefreshIntervalMs = 10_000
+const statusRefreshIntervalMs = 30_000
 let statusRefreshTimer: number | undefined
 
 const repositoryName = computed(() => {
