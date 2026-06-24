@@ -36,6 +36,11 @@ export interface SvnInfo {
   schedule: string
 }
 
+export interface SvnAuthUser {
+  username: string
+  realm: string
+}
+
 export interface DiffResult {
   path: string
   diff: string

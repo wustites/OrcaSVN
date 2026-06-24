@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { CommandResult, SvnStatus, SvnLogEntry, SvnInfo, DiffResult, BlameLine } from '@/types'
+import type { CommandResult, SvnStatus, SvnLogEntry, SvnInfo, SvnAuthUser, DiffResult, BlameLine } from '@/types'
 
 export async function svnCheckout(
   url: string,
@@ -35,6 +35,10 @@ export async function svnLog(
   dateTo?: string
 ): Promise<SvnLogEntry[]> {
   return invoke<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev, keyword, dateFrom, dateTo })
+}
+
+export async function svnCurrentUser(path: string): Promise<SvnAuthUser | null> {
+  return invoke<SvnAuthUser | null>('svn_current_user', { path })
 }
 
 export async function svnInfo(path: string): Promise<SvnInfo> {
