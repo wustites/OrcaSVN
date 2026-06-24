@@ -210,6 +210,12 @@ pub struct SvnInfo {
     pub schedule: String,
 }
 
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct SvnAuthUser {
+    pub username: String,
+    pub realm: String,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DiffResult {
     pub path: String,
@@ -288,6 +294,11 @@ async fn svn_log(
     )
     .await
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn svn_current_user(path: String) -> Result<Option<SvnAuthUser>, String> {
+    svn::current_user(&path).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -420,6 +431,7 @@ fn main() {
             svn_commit,
             svn_status,
             svn_log,
+            svn_current_user,
             svn_info,
             svn_diff,
             svn_blame,

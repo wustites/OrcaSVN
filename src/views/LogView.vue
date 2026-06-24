@@ -36,6 +36,7 @@
             :placeholder="$t('log.searchAuthor')"
             class="author-select"
             filterable
+            clearable
             :disabled="authorOptions.length === 0"
             size="small"
           >
@@ -206,7 +207,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { svnLog } from '@/api/svn'
+import { svnCurrentUser, svnLog } from '@/api/svn'
 import type { SvnLogEntry, SvnLogPath } from '@/types'
 import { useI18n } from 'vue-i18n'
 import { useWorkspace } from '@/composables/useWorkspace'
@@ -225,6 +226,7 @@ const loadingMore = ref(false)
 const hasMore = ref(true)
 const logScroller = ref<HTMLElement | null>(null)
 let requestGeneration = 0
+let authorRequestGeneration = 0
 const dialogVisible = ref(false)
 const selectedLog = ref<SvnLogEntry | null>(null)
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000
@@ -355,7 +357,7 @@ const knownAuthors = computed(() => {
 })
 
 const authorOptions = computed(() => {
-  const self = currentAuthor.value || knownAuthors.value[0] || ''
+  const self = currentAuthor.value
   const otherAuthors = knownAuthors.value
     .filter(author => author && author !== self)
     .sort((a, b) => a.localeCompare(b, locale.value))
@@ -366,11 +368,18 @@ const authorOptions = computed(() => {
   ]
 })
 
-const setDefaultAuthorFromLogs = (entries: SvnLogEntry[]) => {
-  const author = entries.find(entry => entry.author)?.author
-  if (!author) return
-  if (!currentAuthor.value) currentAuthor.value = author
-  if (!filters.author) filters.author = currentAuthor.value
+const loadCurrentAuthor = async (path: string) => {
+  const generation = ++authorRequestGeneration
+  try {
+    const authUser = await svnCurrentUser(path)
+    if (generation === authorRequestGeneration && path === workspaceStore.currentPath) {
+      currentAuthor.value = authUser?.username || ''
+    }
+  } catch {
+    if (generation === authorRequestGeneration && path === workspaceStore.currentPath) {
+      currentAuthor.value = ''
+    }
+  }
 }
 
 const filteredLogs = computed(() => {
@@ -384,7 +393,7 @@ const filteredLogs = computed(() => {
 
   return logs.value.filter((entry) => {
     // 作者过滤（轻量，优先检查）
-    if (author && !entry.author.toLowerCase().includes(author)) return false
+    if (author && entry.author.toLowerCase() !== author) return false
 
     // 关键字过滤（仅在需要时构造 searchable 字符串）
     if (keyword) {
@@ -434,7 +443,6 @@ const fetchLogPage = async (generation: number, startRev?: number, refreshCache 
     const knownRevisions = new Set(logs.value.map(entry => entry.revision))
     const newEntries = batch.filter(entry => !knownRevisions.has(entry.revision))
     logs.value = initialLoad ? batch : [...logs.value, ...newEntries]
-    if (initialLoad) setDefaultAuthorFromLogs(batch)
     hasMore.value = batch.length >= limit && batch[batch.length - 1]?.revision !== 1
   } catch (err) {
     if (generation === requestGeneration) workspaceStore.setError(String(err))
@@ -530,10 +538,12 @@ watch(
   (path, oldPath) => {
     if (path && path !== oldPath) {
       currentAuthor.value = ''
+      loadCurrentAuthor(path)
       reloadLogs(true)
     }
     if (!path) {
       requestGeneration += 1
+      authorRequestGeneration += 1
       logs.value = []
       currentAuthor.value = ''
       hasMore.value = true

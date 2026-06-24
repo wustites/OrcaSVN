@@ -1,4 +1,4 @@
-use crate::{DiffResult, SvnInfo, SvnLogEntry, SvnStatus};
+use crate::{DiffResult, SvnAuthUser, SvnInfo, SvnLogEntry, SvnStatus};
 use serde::{Deserialize, Serialize};
 
 use super::executor::{execute_svn, SvnError};
@@ -107,7 +107,11 @@ pub async fn log(
     date_from: Option<&str>,
     date_to: Option<&str>,
 ) -> Result<Vec<SvnLogEntry>, SvnError> {
-    let mut args: Vec<String> = vec!["log".to_string(), "--xml".to_string(), "--verbose".to_string()];
+    let mut args: Vec<String> = vec![
+        "log".to_string(),
+        "--xml".to_string(),
+        "--verbose".to_string(),
+    ];
 
     if let Some(lim) = limit {
         args.push("-l".to_string());
@@ -133,6 +137,9 @@ pub async fn log(
             args.push("-r".to_string());
             args.push(format!("{}:HEAD", start));
         }
+    } else {
+        args.push("-r".to_string());
+        args.push("HEAD:1".to_string());
     }
 
     // 关键字搜索（--search 自 Subversion 1.8 支持）
@@ -148,10 +155,73 @@ pub async fn log(
     parse_log_xml(&output)
 }
 
+pub async fn current_user(path: &str) -> Result<Option<SvnAuthUser>, SvnError> {
+    let info = info(path).await?;
+    let output = execute_svn(&["auth"], Some(path)).await?;
+    Ok(parse_auth_user(&output, &info.repository_root))
+}
+
 pub async fn info(path: &str) -> Result<SvnInfo, SvnError> {
     let args = vec!["info", "--xml"];
     let output = execute_svn(&args, Some(path)).await?;
     parse_info_xml(&output)
+}
+
+fn parse_auth_user(output: &str, repository_root: &str) -> Option<SvnAuthUser> {
+    let root_key = normalize_url_key(repository_root);
+    let host_key = extract_url_host_key(repository_root);
+
+    output
+        .split("------------------------------------------------------------------------")
+        .filter_map(|block| {
+            let mut realm = "";
+            let mut username = "";
+            for line in block.lines() {
+                if let Some(value) = line.strip_prefix("Authentication realm:") {
+                    realm = value.trim();
+                } else if let Some(value) = line.strip_prefix("Username:") {
+                    username = value.trim();
+                }
+            }
+            if username.is_empty() {
+                return None;
+            }
+
+            let normalized_realm = normalize_url_key(realm);
+            let matches_root = !root_key.is_empty() && normalized_realm.contains(&root_key);
+            let matches_host = host_key
+                .as_ref()
+                .is_some_and(|host| normalized_realm.contains(host));
+            if matches_root || matches_host {
+                Some(SvnAuthUser {
+                    username: username.to_string(),
+                    realm: realm.to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .next()
+}
+
+fn normalize_url_key(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('<')
+        .trim_matches('>')
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
+fn extract_url_host_key(value: &str) -> Option<String> {
+    let normalized = normalize_url_key(value);
+    let (_, rest) = normalized.split_once("://")?;
+    let host = rest.split('/').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
