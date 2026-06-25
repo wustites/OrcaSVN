@@ -8,7 +8,7 @@
             {{ $t('update.title') }}
           </span>
           <div class="header-actions">
-            <el-button size="small" @click="loadUpdateState" :loading="loading">
+            <el-button size="small" @click="loadUpdateState(true)" :loading="loading">
               <el-icon><Refresh /></el-icon>
               {{ $t('update.check') }}
             </el-button>

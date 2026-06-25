@@ -7,13 +7,6 @@
             <el-icon><Document /></el-icon>
             {{ $t('log.title') }}
           </span>
-          <div class="header-actions">
-            <span class="loaded-count">{{ $t('log.loadedCount', { count: logs.length }) }}</span>
-            <el-button @click="reloadLogs(true)" :loading="loading" type="primary" size="small">
-              <el-icon><Refresh /></el-icon>
-              {{ $t('log.load') }}
-            </el-button>
-          </div>
         </div>
       </template>
 
@@ -39,6 +32,8 @@
             clearable
             :disabled="authorOptions.length === 0"
             size="small"
+            value-on-clear=""
+            @clear="clearAuthorFilter"
           >
             <el-option
               v-for="option in authorOptions"
@@ -75,7 +70,7 @@
         </div>
 
         <el-table
-          :data="filteredLogs"
+          :data="logs"
           style="width: 100%"
           @row-click="handleRowClick"
           row-key="revision"
@@ -205,20 +200,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnCurrentUser, svnLog } from '@/api/svn'
 import type { SvnLogEntry, SvnLogPath } from '@/types'
 import { useI18n } from 'vue-i18n'
 import { useWorkspace } from '@/composables/useWorkspace'
-import { useSettings } from '@/composables/useSettings'
 import { useRouter } from 'vue-router'
 
 const { t, locale } = useI18n()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog } = useWorkspace()
-const { settings } = useSettings()
 
 const logs = ref<SvnLogEntry[]>([])
 const loading = ref(false)
@@ -227,9 +220,14 @@ const hasMore = ref(true)
 const logScroller = ref<HTMLElement | null>(null)
 let requestGeneration = 0
 let authorRequestGeneration = 0
+const LOAD_MORE_THRESHOLD_PX = 160
+const FILTER_RELOAD_DELAY_MS = 250
+let filterReloadTimer: number | undefined
 const dialogVisible = ref(false)
 const selectedLog = ref<SvnLogEntry | null>(null)
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000
+const LOG_CACHE_KEY_VERSION = 'v3'
+const DEFAULT_LOG_PAGE_SIZE = 50
 const MAX_CACHE_SIZE = 50
 type LogCacheEntry = {
   entries: SvnLogEntry[]
@@ -240,7 +238,7 @@ const logCacheVersion = ref(0)
 const currentAuthor = ref('')
 
 const getDefaultFilters = () => ({
-  author: currentAuthor.value,
+  author: '',
   keyword: '',
   dateFrom: '',
   dateTo: '',
@@ -249,7 +247,9 @@ const getDefaultFilters = () => ({
 const filters = reactive({
   ...getDefaultFilters(),
 })
-const pageSize = computed(() => Math.max(1, settings.logLimit || 50))
+const hasActiveFilters = computed(() => {
+  return Boolean(filters.author.trim() || filters.keyword.trim() || filters.dateFrom || filters.dateTo)
+})
 
 const dateRange = computed<string[]>({
   get: () => filters.dateFrom && filters.dateTo ? [filters.dateFrom, filters.dateTo] : [],
@@ -259,24 +259,12 @@ const dateRange = computed<string[]>({
   },
 })
 
-const parseFilterDate = (value: string, endOfDay = false): Date | null => {
-  const match = value.trim().match(/^(\d{4})[/-](\d{1,2})[/-](\d{1,2})$/)
-  if (!match) return null
-
-  const year = Number(match[1])
-  const month = Number(match[2])
-  const day = Number(match[3])
-  const date = new Date(year, month - 1, day, endOfDay ? 23 : 0, endOfDay ? 59 : 0, endOfDay ? 59 : 0, endOfDay ? 999 : 0)
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null
-  return date
+const getLogCacheKey = (path: string, limit: number | undefined, startRev?: number, endRev?: number, keyword?: string, author?: string, dateFrom?: string, dateTo?: string) => {
+  return `${LOG_CACHE_KEY_VERSION}|${path}|${limit}|${startRev ?? ''}|${endRev ?? ''}|${keyword ?? ''}|${author ?? ''}|${dateFrom ?? ''}|${dateTo ?? ''}`
 }
 
-const getLogCacheKey = (path: string, limit: number, startRev?: number, endRev?: number, keyword?: string, dateFrom?: string, dateTo?: string) => {
-  return `${path}|${limit}|${startRev ?? ''}|${endRev ?? ''}|${keyword ?? ''}|${dateFrom ?? ''}|${dateTo ?? ''}`
-}
-
-const getCachedLogPage = (path: string, limit: number, startRev?: number, endRev?: number, keyword?: string, dateFrom?: string, dateTo?: string) => {
-  const key = getLogCacheKey(path, limit, startRev, endRev, keyword, dateFrom, dateTo)
+const getCachedLogPage = (path: string, limit: number | undefined, startRev?: number, endRev?: number, keyword?: string, author?: string, dateFrom?: string, dateTo?: string) => {
+  const key = getLogCacheKey(path, limit, startRev, endRev, keyword, author, dateFrom, dateTo)
   const cached = logPageCache.get(key)
   if (!cached) return null
   if (Date.now() - cached.cachedAt > LOG_CACHE_TTL_MS) {
@@ -288,11 +276,12 @@ const getCachedLogPage = (path: string, limit: number, startRev?: number, endRev
 
 const setCachedLogPage = (
   path: string,
-  limit: number,
+  limit: number | undefined,
   entries: SvnLogEntry[],
   startRev?: number,
   endRev?: number,
   keyword?: string,
+  author?: string,
   dateFrom?: string,
   dateTo?: string
 ) => {
@@ -309,7 +298,7 @@ const setCachedLogPage = (
     if (oldestKey) logPageCache.delete(oldestKey)
   }
 
-  const key = getLogCacheKey(path, limit, startRev, endRev, keyword, dateFrom, dateTo)
+  const key = getLogCacheKey(path, limit, startRev, endRev, keyword, author, dateFrom, dateTo)
   logPageCache.set(key, {
     entries: entries.map(entry => ({
       ...entry,
@@ -321,7 +310,7 @@ const setCachedLogPage = (
 }
 
 const clearLogCacheForPath = (path: string) => {
-  const prefix = `${path}|`
+  const prefix = `${LOG_CACHE_KEY_VERSION}|${path}|`
   let changed = false
   for (const key of logPageCache.keys()) {
     if (key.startsWith(prefix)) {
@@ -382,37 +371,6 @@ const loadCurrentAuthor = async (path: string) => {
   }
 }
 
-const filteredLogs = computed(() => {
-  const author = filters.author.trim().toLowerCase()
-  const keyword = filters.keyword.trim().toLowerCase()
-  const from = parseFilterDate(filters.dateFrom)
-  const to = parseFilterDate(filters.dateTo, true)
-
-  // 没有过滤条件时直接返回，避免遍历和字符串/Date计算
-  if (!author && !keyword && !from && !to) return logs.value
-
-  return logs.value.filter((entry) => {
-    // 作者过滤（轻量，优先检查）
-    if (author && entry.author.toLowerCase() !== author) return false
-
-    // 关键字过滤（仅在需要时构造 searchable 字符串）
-    if (keyword) {
-      const paths = entry.changed_paths?.map((item) => item.path).join('\n') || ''
-      const searchable = `${entry.message}\n${paths}\nr${entry.revision}`.toLowerCase()
-      if (!searchable.includes(keyword)) return false
-    }
-
-    // 日期过滤（仅在需要时解析 Date）
-    if (from || to) {
-      const date = new Date(entry.date)
-      if (from && date < from) return false
-      if (to && date > to) return false
-    }
-
-    return true
-  })
-})
-
 const openWorkspace = async () => {
   const success = await openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
   if (success) {
@@ -424,26 +382,28 @@ const fetchLogPage = async (generation: number, startRev?: number, refreshCache 
   if (!workspaceStore.currentPath || loading.value || loadingMore.value || !hasMore.value) return
 
   const requestedPath = workspaceStore.currentPath
-  const limit = pageSize.value
+  const filtered = hasActiveFilters.value
+  const limit = filtered ? undefined : DEFAULT_LOG_PAGE_SIZE
   const endRev = startRev === undefined ? undefined : 1
   const initialLoad = startRev === undefined
 
   // 读取当前激活的过滤条件，传递给后端实现服务器端过滤
   const kw = filters.keyword.trim() || undefined
+  const author = filters.author.trim() || undefined
   const df = filters.dateFrom || undefined
   const dt = filters.dateTo || undefined
 
   if (initialLoad) loading.value = true
   else loadingMore.value = true
   try {
-    const cachedBatch = refreshCache ? null : getCachedLogPage(requestedPath, limit, startRev, endRev, kw, df, dt)
-    const batch = cachedBatch || await svnLog(requestedPath, limit, startRev, endRev, kw, df, dt)
-    if (!cachedBatch) setCachedLogPage(requestedPath, limit, batch, startRev, endRev, kw, df, dt)
+    const cachedBatch = refreshCache ? null : getCachedLogPage(requestedPath, limit, startRev, endRev, kw, author, df, dt)
+    const batch = cachedBatch || await svnLog(requestedPath, limit, startRev, endRev, kw, author, df, dt)
+    if (!cachedBatch) setCachedLogPage(requestedPath, limit, batch, startRev, endRev, kw, author, df, dt)
     if (generation !== requestGeneration || requestedPath !== workspaceStore.currentPath) return
     const knownRevisions = new Set(logs.value.map(entry => entry.revision))
     const newEntries = batch.filter(entry => !knownRevisions.has(entry.revision))
     logs.value = initialLoad ? batch : [...logs.value, ...newEntries]
-    hasMore.value = batch.length >= limit && batch[batch.length - 1]?.revision !== 1
+    hasMore.value = !filtered && batch.length >= DEFAULT_LOG_PAGE_SIZE && batch[batch.length - 1]?.revision !== 1
   } catch (err) {
     if (generation === requestGeneration) workspaceStore.setError(String(err))
   } finally {
@@ -454,8 +414,8 @@ const fetchLogPage = async (generation: number, startRev?: number, refreshCache 
   }
 }
 
-const reloadLogs = async (refreshCache = false) => {
-  if (!refreshCache && (loading.value || loadingMore.value)) return
+const reloadLogs = async (refreshCache = false, restart = false) => {
+  if (!restart && !refreshCache && (loading.value || loadingMore.value)) return
   if (refreshCache && workspaceStore.currentPath) clearLogCacheForPath(workspaceStore.currentPath)
 
   const generation = ++requestGeneration
@@ -466,6 +426,7 @@ const reloadLogs = async (refreshCache = false) => {
   await fetchLogPage(generation, undefined, refreshCache)
   await nextTick()
   if (logScroller.value) logScroller.value.scrollTop = 0
+  await loadMoreIfNeeded(generation)
 }
 
 const loadMore = async () => {
@@ -475,14 +436,34 @@ const loadMore = async () => {
     return
   }
   await fetchLogPage(requestGeneration, oldestRevision - 1)
+  await nextTick()
+  await loadMoreIfNeeded(requestGeneration)
+}
+
+const shouldLoadMore = () => {
+  const scroller = logScroller.value
+  if (!scroller || !hasMore.value || loading.value || loadingMore.value) return false
+  return scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < LOAD_MORE_THRESHOLD_PX
+}
+
+const loadMoreIfNeeded = async (generation = requestGeneration) => {
+  if (generation !== requestGeneration || !shouldLoadMore()) return
+  await loadMore()
 }
 
 const handleScroll = () => {
-  const scroller = logScroller.value
-  if (!scroller || !hasMore.value || loading.value || loadingMore.value) return
-  if (scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight < 160) {
-    loadMore()
+  loadMoreIfNeeded()
+}
+
+const scheduleFilterReload = () => {
+  if (!workspaceStore.currentPath) return
+  if (filterReloadTimer !== undefined) {
+    window.clearTimeout(filterReloadTimer)
   }
+  filterReloadTimer = window.setTimeout(() => {
+    filterReloadTimer = undefined
+    reloadLogs(true, true)
+  }, FILTER_RELOAD_DELAY_MS)
 }
 
 const handleRowClick = (row: SvnLogEntry) => {
@@ -509,6 +490,10 @@ const openChangedPathDiff = (row: SvnLogPath) => {
 
 const resetFilters = () => {
   Object.assign(filters, getDefaultFilters())
+}
+
+const clearAuthorFilter = () => {
+  filters.author = ''
 }
 
 const getActionLabel = (action: string) => {
@@ -553,6 +538,17 @@ watch(
   },
   { immediate: true }
 )
+
+watch(
+  () => [filters.author, filters.keyword, filters.dateFrom, filters.dateTo] as const,
+  scheduleFilterReload
+)
+
+onUnmounted(() => {
+  if (filterReloadTimer !== undefined) {
+    window.clearTimeout(filterReloadTimer)
+  }
+})
 
 </script>
 

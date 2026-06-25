@@ -79,17 +79,6 @@
               <el-option label="GB2312" value="gb2312" />
             </el-select>
           </el-form-item>
-
-          <el-form-item :label="$t('settings.logLimit')" class="form-item">
-            <el-input-number
-              v-model="settings.logLimit"
-              class="settings-control"
-              :min="1"
-              :max="1000"
-              :step="10"
-              controls-position="right"
-            />
-          </el-form-item>
         </div>
       </el-form>
 

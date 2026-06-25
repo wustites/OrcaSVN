@@ -285,6 +285,7 @@ async fn svn_log(
     start_rev: Option<u64>,
     end_rev: Option<u64>,
     keyword: Option<String>,
+    author: Option<String>,
     date_from: Option<String>,
     date_to: Option<String>,
 ) -> Result<Vec<SvnLogEntry>, String> {
@@ -294,6 +295,7 @@ async fn svn_log(
         start_rev,
         end_rev,
         keyword.as_deref(),
+        author.as_deref(),
         date_from.as_deref(),
         date_to.as_deref(),
     )

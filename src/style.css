@@ -1610,3 +1610,49 @@ html:not(.theme-dark) .settings-select-dropdown .el-select-dropdown__item.is-sel
   background: #17617d !important;
   background-color: #17617d !important;
 }
+
+.theme-dark .shell-sidebar .sidebar-section button {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid transparent;
+  color: #b9c6d0;
+  background: rgba(32, 45, 57, .42);
+  transition:
+    color var(--app-transition-fast),
+    background-color var(--app-transition-fast),
+    border-color var(--app-transition-fast),
+    box-shadow var(--app-transition-fast);
+}
+
+.theme-dark .shell-sidebar .sidebar-section button:hover {
+  color: #eef7fb !important;
+  background: #2d3d4b !important;
+  background-color: #2d3d4b !important;
+  border-color: #536473;
+}
+
+.theme-dark .shell-sidebar .sidebar-section button.active {
+  color: #ffffff !important;
+  background: #0f6f98 !important;
+  background-color: #0f6f98 !important;
+  border-color: #74c7e3;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .26);
+}
+
+.theme-dark .shell-sidebar .sidebar-section button.active:hover {
+  background: #177da6 !important;
+  background-color: #177da6 !important;
+  border-color: #8fd0e8;
+}
+
+.theme-dark .shell-sidebar .sidebar-section button b {
+  color: #d4e6ef;
+  background: rgba(15, 111, 152, .34);
+  border-radius: 8px;
+  padding: 0 5px;
+}
+
+.theme-dark .shell-sidebar .sidebar-section button.active b {
+  color: #073347;
+  background: #d8f2fb;
+}

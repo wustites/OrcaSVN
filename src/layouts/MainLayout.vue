@@ -186,7 +186,7 @@ const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
 const { refreshStatus, restoreLastWorkspace } = useWorkspace()
 const appVersion = packageInfo.version
-const cachedViews = ref(['WorkspaceView', 'LogView'])
+const cachedViews = ref(['WorkspaceView', 'LogView', 'UpdateView'])
 const statusRefreshIntervalMs = 30_000
 let statusRefreshTimer: number | undefined
 
@@ -582,7 +582,8 @@ onUnmounted(() => {
 
 .route-content :deep(.checkout-view),
 .route-content :deep(.commit-view),
-.route-content :deep(.update-view) {
+.route-content :deep(.update-view),
+.route-content :deep(.settings-view) {
   display: flex;
   min-height: 100%;
   background: var(--md-sys-color-surface);
@@ -590,7 +591,8 @@ onUnmounted(() => {
 
 .route-content :deep(.checkout-card),
 .route-content :deep(.commit-card),
-.route-content :deep(.update-card) {
+.route-content :deep(.update-card),
+.route-content :deep(.settings-card) {
   display: flex;
   flex: 1;
   flex-direction: column;
@@ -600,7 +602,8 @@ onUnmounted(() => {
 
 .route-content :deep(.checkout-card > .el-card__body),
 .route-content :deep(.commit-card > .el-card__body),
-.route-content :deep(.update-card > .el-card__body) {
+.route-content :deep(.update-card > .el-card__body),
+.route-content :deep(.settings-card > .el-card__body) {
   flex: 1;
   background: var(--md-sys-color-surface);
 }

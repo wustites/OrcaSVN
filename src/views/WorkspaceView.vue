@@ -658,6 +658,12 @@ const revertFile = async (file: SvnStatus) => {
   background: var(--el-fill-color);
 }
 
+.file-actions :deep(.el-button.el-button--danger:hover) {
+  color: #fff;
+  border-color: #bd3d45;
+  background: #bd3d45;
+}
+
 .file-action-trigger {
   display: inline-flex;
 }

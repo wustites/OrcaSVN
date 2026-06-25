@@ -31,10 +31,11 @@ export async function svnLog(
   startRev?: number,
   endRev?: number,
   keyword?: string,
+  author?: string,
   dateFrom?: string,
   dateTo?: string
 ): Promise<SvnLogEntry[]> {
-  return invoke<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev, keyword, dateFrom, dateTo })
+  return invoke<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev, keyword, author, dateFrom, dateTo })
 }
 
 export async function svnCurrentUser(path: string): Promise<SvnAuthUser | null> {
