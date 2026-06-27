@@ -226,7 +226,7 @@ let filterReloadTimer: number | undefined
 const dialogVisible = ref(false)
 const selectedLog = ref<SvnLogEntry | null>(null)
 const LOG_CACHE_TTL_MS = 5 * 60 * 1000
-const LOG_CACHE_KEY_VERSION = 'v3'
+const LOG_CACHE_KEY_VERSION = 'v4'
 const DEFAULT_LOG_PAGE_SIZE = 50
 const MAX_CACHE_SIZE = 50
 type LogCacheEntry = {
@@ -259,6 +259,21 @@ const dateRange = computed<string[]>({
   },
 })
 
+const cloneLogEntry = (entry: SvnLogEntry): SvnLogEntry => ({
+  ...entry,
+  changed_paths: [...(entry.changed_paths || [])],
+})
+
+const sortLogEntries = (entries: SvnLogEntry[]) => {
+  return [...entries].sort((a, b) => {
+    const revisionOrder = b.revision - a.revision
+    if (revisionOrder !== 0) return revisionOrder
+    return Date.parse(b.date || '') - Date.parse(a.date || '')
+  })
+}
+
+const normalizeLogEntries = (entries: SvnLogEntry[]) => sortLogEntries(entries.map(cloneLogEntry))
+
 const getLogCacheKey = (path: string, limit: number | undefined, startRev?: number, endRev?: number, keyword?: string, author?: string, dateFrom?: string, dateTo?: string) => {
   return `${LOG_CACHE_KEY_VERSION}|${path}|${limit}|${startRev ?? ''}|${endRev ?? ''}|${keyword ?? ''}|${author ?? ''}|${dateFrom ?? ''}|${dateTo ?? ''}`
 }
@@ -271,7 +286,7 @@ const getCachedLogPage = (path: string, limit: number | undefined, startRev?: nu
     logPageCache.delete(key)
     return null
   }
-  return cached.entries
+  return normalizeLogEntries(cached.entries)
 }
 
 const setCachedLogPage = (
@@ -300,10 +315,7 @@ const setCachedLogPage = (
 
   const key = getLogCacheKey(path, limit, startRev, endRev, keyword, author, dateFrom, dateTo)
   logPageCache.set(key, {
-    entries: entries.map(entry => ({
-      ...entry,
-      changed_paths: [...(entry.changed_paths || [])],
-    })),
+    entries: normalizeLogEntries(entries),
     cachedAt: Date.now(),
   })
   logCacheVersion.value += 1
@@ -325,7 +337,7 @@ const getCachedAuthorsForPath = (path: string | null) => {
   if (!path) return []
   logCacheVersion.value
 
-  const prefix = `${path}|`
+  const prefix = `${LOG_CACHE_KEY_VERSION}|${path}|`
   const authors = new Set<string>()
   for (const [key, cached] of logPageCache.entries()) {
     if (!key.startsWith(prefix)) continue
@@ -397,12 +409,12 @@ const fetchLogPage = async (generation: number, startRev?: number, refreshCache 
   else loadingMore.value = true
   try {
     const cachedBatch = refreshCache ? null : getCachedLogPage(requestedPath, limit, startRev, endRev, kw, author, df, dt)
-    const batch = cachedBatch || await svnLog(requestedPath, limit, startRev, endRev, kw, author, df, dt)
+    const batch = cachedBatch || normalizeLogEntries(await svnLog(requestedPath, limit, startRev, endRev, kw, author, df, dt))
     if (!cachedBatch) setCachedLogPage(requestedPath, limit, batch, startRev, endRev, kw, author, df, dt)
     if (generation !== requestGeneration || requestedPath !== workspaceStore.currentPath) return
     const knownRevisions = new Set(logs.value.map(entry => entry.revision))
     const newEntries = batch.filter(entry => !knownRevisions.has(entry.revision))
-    logs.value = initialLoad ? batch : [...logs.value, ...newEntries]
+    logs.value = initialLoad ? batch : sortLogEntries([...logs.value, ...newEntries])
     hasMore.value = !filtered && batch.length >= DEFAULT_LOG_PAGE_SIZE && batch[batch.length - 1]?.revision !== 1
   } catch (err) {
     if (generation === requestGeneration) workspaceStore.setError(String(err))

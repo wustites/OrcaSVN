@@ -1,6 +1,6 @@
 [package]
 name = "OrcaSVN"
-version = "0.4.6"
+version = "0.4.7"
 description = "OrcaSVN 客户端"
 authors = [""]
 license = "MIT"
