@@ -155,6 +155,8 @@ export default {
     enterCommitMessage: 'Please enter commit message',
     doCommit: 'Commit',
     filesCount: '{count} files',
+    searchFiles: 'Search files...',
+    committable: 'Modified',
   },
   update: {
     title: 'Check for Updates',
@@ -199,6 +201,10 @@ export default {
     selectFile: 'Select a file to view diff',
     fileOutsideWorkspace: 'Select a file inside the current workspace',
     noDiff: 'No diff',
+    previous: 'Previous',
+    next: 'Next',
+    backToCommit: 'Back to Commit',
+    fileList: 'File List',
   },
   blame: {
     title: 'Blame',

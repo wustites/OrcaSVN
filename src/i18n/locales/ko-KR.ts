@@ -155,6 +155,8 @@ export default {
     enterCommitMessage: '커밋 메시지를 입력하세요',
     doCommit: '커밋',
     filesCount: '{count}개',
+    searchFiles: '파일 검색...',
+    committable: '수정됨',
   },
   update: {
     title: '업데이트 확인',
@@ -199,6 +201,10 @@ export default {
     selectFile: '파일을 선택하여 비교 보기',
     fileOutsideWorkspace: '현재 작업 공간 안의 파일을 선택하세요',
     noDiff: '차이 없음',
+    previous: '이전',
+    next: '다음',
+    backToCommit: '커밋으로 돌아가기',
+    fileList: '파일 목록',
   },
   blame: {
     title: '코드 추적',

@@ -154,6 +154,7 @@
         width="60%"
         class="log-dialog"
         destroy-on-close
+        @close="onDialogClose"
       >
         <div v-if="selectedLog" class="log-detail">
           <el-descriptions :column="2" border class="detail-descriptions">
@@ -223,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onActivated, onUnmounted, reactive, ref, watch } from 'vue'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnCurrentUser, svnLog } from '@/api/svn'
 import type { SvnLogEntry, SvnLogPath } from '@/types'
@@ -513,18 +514,43 @@ const handleRowClick = (row: SvnLogEntry) => {
 const openChangedPathDiff = (row: SvnLogPath) => {
   if (!selectedLog.value || !workspaceStore.svnInfo) return
 
+  sessionStorage.setItem('orca_log_selection', String(selectedLog.value.revision))
+
   const repositoryRoot = workspaceStore.svnInfo.repository_root.replace(/\/+$/, '')
-  const repositoryPath = row.path.startsWith('/') ? row.path : `/${row.path}`
   const revision = selectedLog.value.revision
-  const pegRevision = row.action === 'D' ? Math.max(0, revision - 1) : revision
+  const currentRepoPath = row.path.startsWith('/') ? row.path : `/${row.path}`
+  const currentPegRev = row.action === 'D' ? Math.max(0, revision - 1) : revision
+
+  const allFiles = (selectedLog.value.changed_paths || []).map(p => {
+    const repoPath = p.path.startsWith('/') ? p.path : `/${p.path}`
+    const pegRev = p.action === 'D' ? Math.max(0, revision - 1) : revision
+    return {
+      display: repoPath,
+      query: `${repositoryRoot}${repoPath}@${pegRev}`,
+    }
+  })
+
+  const currentIndex = allFiles.findIndex(f => f.query === `${repositoryRoot}${currentRepoPath}@${currentPegRev}`)
+
+  sessionStorage.setItem('orca_diff_files', JSON.stringify({
+    files: allFiles.map(f => f.query),
+    displayNames: allFiles.map(f => f.display),
+    current: `${repositoryRoot}${currentRepoPath}@${currentPegRev}`,
+    index: Math.max(0, currentIndex),
+  }))
+
   dialogVisible.value = false
   router.push({
     name: 'diff',
     query: {
-      path: `${repositoryRoot}${repositoryPath}@${pegRevision}`,
+      path: `${repositoryRoot}${currentRepoPath}@${currentPegRev}`,
       revision: String(revision),
     },
   })
+}
+
+const onDialogClose = () => {
+  sessionStorage.removeItem('orca_log_selection')
 }
 
 const resetFilters = () => {
@@ -583,7 +609,23 @@ watch(
   scheduleFilterReload
 )
 
+onActivated(() => {
+  const saved = sessionStorage.getItem('orca_log_selection')
+  if (saved && !dialogVisible.value) {
+    const revision = Number(saved)
+    if (!isNaN(revision)) {
+      const log = logs.value.find(l => l.revision === revision)
+      if (log) {
+        selectedLog.value = log
+        dialogVisible.value = true
+      }
+    }
+    sessionStorage.removeItem('orca_log_selection')
+  }
+})
+
 onUnmounted(() => {
+  sessionStorage.removeItem('orca_log_selection')
   if (filterReloadTimer !== undefined) {
     window.clearTimeout(filterReloadTimer)
   }

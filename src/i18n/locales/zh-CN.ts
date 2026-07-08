@@ -155,6 +155,8 @@ export default {
     enterCommitMessage: '请输入提交信息',
     doCommit: '提交',
     filesCount: '{count} 个',
+    searchFiles: '搜索文件...',
+    committable: '已修改',
   },
   update: {
     title: '检查更新',
@@ -199,6 +201,10 @@ export default {
     selectFile: '选择文件查看差异',
     fileOutsideWorkspace: '请选择当前工作区内的文件',
     noDiff: '没有差异',
+    previous: '上一个',
+    next: '下一个',
+    backToCommit: '返回提交',
+    fileList: '文件列表',
   },
   blame: {
     title: '代码追溯',

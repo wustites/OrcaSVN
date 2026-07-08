@@ -155,6 +155,8 @@ export default {
     enterCommitMessage: '請輸入提交資訊',
     doCommit: '提交',
     filesCount: '{count} 個',
+    searchFiles: '搜尋檔案...',
+    committable: '已修改',
   },
   update: {
     title: '檢查更新',
@@ -199,6 +201,10 @@ export default {
     selectFile: '選擇檔案檢視差異',
     fileOutsideWorkspace: '請選擇目前工作區內的檔案',
     noDiff: '沒有差異',
+    previous: '上一個',
+    next: '下一個',
+    backToCommit: '返回提交',
+    fileList: '檔案列表',
   },
   blame: {
     title: '程式碼追溯',
