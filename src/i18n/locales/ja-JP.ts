@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN 実行ファイル',
     svnPathPlaceholder: 'svn 実行ファイルのパス',
     encoding: 'デフォルトのエンコーディング',
+    gitignore: '無視ファイル (.gitignore)',
+    gitignoreHint: '有効にすると .gitignore に一致するファイルが除外されます',
     logLimit: 'ログのデフォルト読み込み件数',
     theme: 'テーマ',
     themeLight: 'ライト',

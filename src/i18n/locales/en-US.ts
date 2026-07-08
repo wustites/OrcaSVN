@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN Executable',
     svnPathPlaceholder: 'svn executable path',
     encoding: 'Default Encoding',
+    gitignore: 'Ignore File (.gitignore)',
+    gitignoreHint: 'When enabled, files matching .gitignore will be filtered out',
     logLimit: 'Default Log Batch Size',
     theme: 'Theme',
     themeLight: 'Light',

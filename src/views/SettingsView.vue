@@ -79,6 +79,11 @@
               <el-option label="GB2312" value="gb2312" />
             </el-select>
           </el-form-item>
+
+          <el-form-item :label="$t('settings.gitignore')" class="form-item">
+            <el-switch v-model="settings.gitignoreEnabled" />
+            <span class="form-item-hint">{{ $t('settings.gitignoreHint') }}</span>
+          </el-form-item>
         </div>
       </el-form>
 
@@ -192,6 +197,12 @@ onMounted(() => {
 .settings-control {
   width: 260px;
   max-width: 100%;
+}
+
+.form-item-hint {
+  margin-left: var(--app-spacing-sm);
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .settings-path-input {

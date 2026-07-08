@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SvnStatus, SvnInfo } from '@/types'
+import type { GitignorePattern } from '@/utils/gitignore'
 
 const LAST_WORKSPACE_KEY = 'orcasvn-last-workspace'
 
@@ -10,6 +11,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const statusList = ref<SvnStatus[]>([])
   const isLoading = ref(false)
   const error = ref<string | null>(null)
+  const gitignorePatterns = ref<GitignorePattern[]>([])
+  const gitignoreMtime = ref<number | null>(null)
 
   const hasChanges = computed(() => {
     return statusList.value.some(s => s.status_code !== 'normal' && s.status_code !== '')
@@ -69,12 +72,22 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     error.value = value
   }
 
+  function setGitignorePatterns(patterns: GitignorePattern[]) {
+    gitignorePatterns.value = patterns
+  }
+
+  function setGitignoreMtime(mtime: number | null) {
+    gitignoreMtime.value = mtime
+  }
+
   function clearWorkspace() {
     localStorage.removeItem(LAST_WORKSPACE_KEY)
     currentPath.value = null
     svnInfo.value = null
     statusList.value = []
     error.value = null
+    gitignorePatterns.value = []
+    gitignoreMtime.value = null
   }
 
   return {
@@ -91,12 +104,16 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     unversionedCount,
     conflictedCount,
     missingCount,
+    gitignorePatterns,
+    gitignoreMtime,
     setCurrentPath,
     getLastWorkspacePath,
     setStatusList,
     setSvnInfo,
     setLoading,
     setError,
+    setGitignorePatterns,
+    setGitignoreMtime,
     clearWorkspace,
   }
 })

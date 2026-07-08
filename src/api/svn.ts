@@ -95,6 +95,15 @@ export async function svnSwitch(path: string, url: string): Promise<CommandResul
   return invoke<CommandResult>('svn_switch', { path, url })
 }
 
+export interface GitignoreData {
+  content: string
+  mtime: number
+}
+
+export async function readGitignore(path: string): Promise<GitignoreData | null> {
+  return invoke<GitignoreData | null>('read_gitignore', { path })
+}
+
 export async function svnMerge(
   path: string,
   source: string,

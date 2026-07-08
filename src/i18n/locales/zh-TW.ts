@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN 可執行檔',
     svnPathPlaceholder: 'svn 可執行檔路徑',
     encoding: '預設編碼',
+    gitignore: '忽略文件 (.gitignore)',
+    gitignoreHint: '啟用後將過濾 .gitignore 中匹配的文件',
     logLimit: '日誌預設載入筆數',
     theme: '主題',
     themeLight: '淺色',

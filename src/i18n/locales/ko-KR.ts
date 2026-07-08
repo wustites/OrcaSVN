@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN 실행 파일',
     svnPathPlaceholder: 'svn 실행 파일 경로',
     encoding: '기본 인코딩',
+    gitignore: '무시 파일 (.gitignore)',
+    gitignoreHint: '활성화하면 .gitignore와 일치하는 파일이 필터링됩니다',
     logLimit: '기본 로그 로드 개수',
     theme: '테마',
     themeLight: '라이트',
