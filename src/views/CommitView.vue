@@ -178,8 +178,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick, onMounted, onUnmounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnAdd, svnCommit } from '@/api/svn'
 import { useI18n } from 'vue-i18n'
@@ -296,8 +296,10 @@ onMounted(() => {
     sessionStorage.removeItem('orca_commit_form')
   }
 })
-onUnmounted(() => {
-  sessionStorage.removeItem('orca_commit_form')
+onBeforeRouteLeave((to) => {
+  if (to.name !== 'diff') {
+    sessionStorage.removeItem('orca_commit_form')
+  }
 })
 watch(changedFiles, applyRouteSelection, { immediate: true, flush: 'post' })
 watch(() => route.query.files, applyRouteSelection, { flush: 'post' })
