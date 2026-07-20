@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN Executable',
     svnPathPlaceholder: 'svn executable path',
     encoding: 'Default Encoding',
+    gitignore: 'Ignore File (.gitignore)',
+    gitignoreHint: 'When enabled, files matching .gitignore will be filtered out',
     logLimit: 'Default Log Batch Size',
     theme: 'Theme',
     themeLight: 'Light',
@@ -155,6 +157,8 @@ export default {
     enterCommitMessage: 'Please enter commit message',
     doCommit: 'Commit',
     filesCount: '{count} files',
+    searchFiles: 'Search files...',
+    committable: 'Modified',
   },
   update: {
     title: 'Check for Updates',
@@ -199,6 +203,10 @@ export default {
     selectFile: 'Select a file to view diff',
     fileOutsideWorkspace: 'Select a file inside the current workspace',
     noDiff: 'No diff',
+    previous: 'Previous',
+    next: 'Next',
+    backToCommit: 'Back to Commit',
+    fileList: 'File List',
   },
   blame: {
     title: 'Blame',

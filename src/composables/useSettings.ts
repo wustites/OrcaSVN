@@ -7,6 +7,7 @@ export interface AppSettings {
   logLimit: number
   theme: 'light' | 'dark' | 'auto'
   language: string
+  gitignoreEnabled: boolean
 }
 
 const STORAGE_KEY = 'orcasvn-settings'
@@ -17,6 +18,7 @@ const defaults: AppSettings = {
   logLimit: 50,
   theme: 'auto',
   language: detectSystemLocale(),
+  gitignoreEnabled: false,
 }
 
 function loadSettings(): AppSettings {

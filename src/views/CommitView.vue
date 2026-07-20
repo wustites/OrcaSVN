@@ -43,6 +43,49 @@
           </template>
         </el-alert>
 
+        <div class="commit-toolbar">
+          <el-input
+            v-model="searchQuery"
+            :placeholder="$t('commit.searchFiles')"
+            clearable
+            class="search-input"
+            size="small"
+          >
+            <template #prefix>
+              <el-icon><Search /></el-icon>
+            </template>
+          </el-input>
+          <div class="filter-tags">
+            <el-tag
+              :type="filterMode === 'all' ? 'primary' : 'info'"
+              effect="plain"
+              size="small"
+              style="cursor:pointer"
+              @click="filterMode = 'all'"
+            >
+              {{ $t('common.all') }}
+            </el-tag>
+            <el-tag
+              :type="filterMode === 'committable' ? 'primary' : 'info'"
+              effect="plain"
+              size="small"
+              style="cursor:pointer"
+              @click="filterMode = 'committable'"
+            >
+              {{ $t('commit.committable') }}
+            </el-tag>
+            <el-tag
+              :type="filterMode === 'unversioned' ? 'primary' : 'info'"
+              effect="plain"
+              size="small"
+              style="cursor:pointer"
+              @click="filterMode = 'unversioned'"
+            >
+              {{ $t('status.unversioned') }}
+            </el-tag>
+          </div>
+        </div>
+
         <el-form class="commit-form" label-position="top">
           <el-form-item :label="$t('commit.selectFiles')" class="file-selection">
             <el-table 
@@ -136,7 +179,7 @@
 
 <script setup lang="ts">
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
-import { useRouter, useRoute } from 'vue-router'
+import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { svnAdd, svnCommit } from '@/api/svn'
 import { useI18n } from 'vue-i18n'
@@ -158,10 +201,37 @@ const output = ref('')
 
 const committableStatuses = new Set(['added', 'modified', 'deleted', 'replaced', 'unversioned'])
 
-const changedFiles = computed(() => {
+const searchQuery = ref('')
+const filterMode = ref<'all' | 'committable' | 'unversioned'>('all')
+
+const allChangedFiles = computed(() => {
   return workspaceStore.statusList.filter(
     s => committableStatuses.has(s.status_code) || s.prop_status === 'modified'
   )
+})
+
+const changedFiles = computed(() => {
+  let files = [...allChangedFiles.value]
+
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    files = files.filter(f => f.path.toLowerCase().includes(q))
+  }
+
+  if (filterMode.value === 'committable') {
+    files = files.filter(f => f.status_code !== 'unversioned')
+  } else if (filterMode.value === 'unversioned') {
+    files = files.filter(f => f.status_code === 'unversioned')
+  }
+
+  files.sort((a, b) => {
+    const aUntracked = a.status_code === 'unversioned' ? 1 : 0
+    const bUntracked = b.status_code === 'unversioned' ? 1 : 0
+    if (aUntracked !== bUntracked) return aUntracked - bUntracked
+    return a.path.localeCompare(b.path)
+  })
+
+  return files
 })
 
 const handleSelectionChange = (rows: SvnStatus[]) => {
@@ -200,7 +270,36 @@ const applyRouteSelection = async () => {
   })
 }
 
-onMounted(applyRouteSelection)
+onMounted(() => {
+  applyRouteSelection()
+
+  const saved = sessionStorage.getItem('orca_commit_form')
+  if (saved) {
+    try {
+      const data = JSON.parse(saved)
+      if (data.selectedFiles?.length) {
+        selectedFiles.value = data.selectedFiles
+        nextTick(() => {
+          commitTable.value?.clearSelection()
+          allChangedFiles.value.forEach(file => {
+            if (data.selectedFiles.includes(file.path)) {
+              commitTable.value?.toggleRowSelection(file, true)
+            }
+          })
+        })
+      }
+      if (data.commitMessage) {
+        commitMessage.value = data.commitMessage
+      }
+    } catch { /* ignore */ }
+    sessionStorage.removeItem('orca_commit_form')
+  }
+})
+onBeforeRouteLeave((to) => {
+  if (to.name !== 'diff') {
+    sessionStorage.removeItem('orca_commit_form')
+  }
+})
 watch(changedFiles, applyRouteSelection, { immediate: true, flush: 'post' })
 watch(() => route.query.files, applyRouteSelection, { flush: 'post' })
 
@@ -246,6 +345,19 @@ const doCommit = async () => {
 }
 
 const viewDiff = (path: string) => {
+  const allFiles = allChangedFiles.value.map(f => f.path)
+  const index = allFiles.indexOf(path)
+
+  sessionStorage.setItem('orca_commit_form', JSON.stringify({
+    selectedFiles: selectedFiles.value,
+    commitMessage: commitMessage.value,
+  }))
+  sessionStorage.setItem('orca_diff_files', JSON.stringify({
+    files: allFiles,
+    current: path,
+    index: Math.max(0, index),
+  }))
+
   router.push({ name: 'diff', query: { path } })
 }
 
@@ -449,6 +561,22 @@ const resetForm = () => {
 .status-unversioned {
   color: #6366f1;
   background: #e0e7ff;
+}
+
+.commit-toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--app-spacing);
+  margin-bottom: var(--app-spacing-md);
+}
+
+.search-input {
+  width: 240px;
+}
+
+.filter-tags {
+  display: flex;
+  gap: 6px;
 }
 
 @media (max-width: 640px) {

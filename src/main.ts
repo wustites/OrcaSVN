@@ -38,6 +38,9 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 import 'material-symbols/rounded.css'
 import {
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Back,
   Brush,
   Calendar,
   ChatLineSquare,
@@ -66,6 +69,7 @@ import {
   RefreshLeft,
   RefreshRight,
   Setting,
+  Search,
   Sunny,
   Switch,
   Upload,
@@ -124,6 +128,9 @@ const components = [
 
 const icons = {
   ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  Back,
   Brush,
   Calendar,
   ChatLineSquare,
@@ -152,6 +159,7 @@ const icons = {
   RefreshLeft,
   RefreshRight,
   Setting,
+  Search,
   Sunny,
   Switch,
   Upload,

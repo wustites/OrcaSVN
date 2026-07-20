@@ -113,6 +113,29 @@ fn resolve_workspace_child(workspace: &Path, file: &str) -> Result<PathBuf, Stri
     Ok(target)
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GitignoreData {
+    pub content: String,
+    pub mtime: u64,
+}
+
+#[tauri::command]
+async fn read_gitignore(path: String) -> Result<Option<GitignoreData>, String> {
+    let gitignore_path = Path::new(&path).join(".gitignore");
+    if !gitignore_path.exists() {
+        return Ok(None);
+    }
+    let content = fs::read_to_string(&gitignore_path).map_err(|e| e.to_string())?;
+    let mtime = fs::metadata(&gitignore_path)
+        .map_err(|e| e.to_string())?
+        .modified()
+        .map_err(|e| e.to_string())?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
+    Ok(Some(GitignoreData { content, mtime }))
+}
+
 fn vscode_candidates() -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
@@ -457,6 +480,7 @@ fn main() {
             svn_merge,
             open_workspace_target,
             delete_unversioned,
+            read_gitignore,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

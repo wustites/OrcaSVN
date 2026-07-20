@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN 실행 파일',
     svnPathPlaceholder: 'svn 실행 파일 경로',
     encoding: '기본 인코딩',
+    gitignore: '무시 파일 (.gitignore)',
+    gitignoreHint: '활성화하면 .gitignore와 일치하는 파일이 필터링됩니다',
     logLimit: '기본 로그 로드 개수',
     theme: '테마',
     themeLight: '라이트',
@@ -155,6 +157,8 @@ export default {
     enterCommitMessage: '커밋 메시지를 입력하세요',
     doCommit: '커밋',
     filesCount: '{count}개',
+    searchFiles: '파일 검색...',
+    committable: '수정됨',
   },
   update: {
     title: '업데이트 확인',
@@ -199,6 +203,10 @@ export default {
     selectFile: '파일을 선택하여 비교 보기',
     fileOutsideWorkspace: '현재 작업 공간 안의 파일을 선택하세요',
     noDiff: '차이 없음',
+    previous: '이전',
+    next: '다음',
+    backToCommit: '커밋으로 돌아가기',
+    fileList: '파일 목록',
   },
   blame: {
     title: '코드 추적',

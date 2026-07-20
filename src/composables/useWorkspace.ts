@@ -1,6 +1,52 @@
 import { useWorkspaceStore } from '@/stores/workspace'
-import { svnStatus, svnInfo } from '@/api/svn'
+import { svnStatus, svnInfo, readGitignore } from '@/api/svn'
 import { open } from '@tauri-apps/plugin-dialog'
+import { useSettings } from '@/composables/useSettings'
+import { parseGitignore, isIgnored } from '@/utils/gitignore'
+import type { GitignorePattern } from '@/utils/gitignore'
+import type { SvnStatus } from '@/types'
+
+async function loadGitignoreIfNeeded(path: string, store: ReturnType<typeof useWorkspaceStore>): Promise<void> {
+  const { settings } = useSettings()
+  if (!settings.gitignoreEnabled) {
+    store.setGitignorePatterns([])
+    store.setGitignoreMtime(null)
+    store.setGitignoreWorkspacePath(null)
+    return
+  }
+
+  try {
+    const data = await readGitignore(path)
+    if (!data) {
+      store.setGitignorePatterns([])
+      store.setGitignoreMtime(null)
+      store.setGitignoreWorkspacePath(path)
+      return
+    }
+
+    if (
+      path === store.gitignoreWorkspacePath &&
+      data.mtime === store.gitignoreMtime
+    ) return
+
+    const patterns = parseGitignore(data.content)
+    store.setGitignorePatterns(patterns)
+    store.setGitignoreMtime(data.mtime)
+    store.setGitignoreWorkspacePath(path)
+  } catch {
+    store.setGitignorePatterns([])
+    store.setGitignoreMtime(null)
+    store.setGitignoreWorkspacePath(null)
+  }
+}
+
+function filterByGitignore(
+  list: SvnStatus[],
+  patterns: GitignorePattern[]
+): SvnStatus[] {
+  if (patterns.length === 0) return list
+  return list.filter(s => !isIgnored(s.path, patterns))
+}
 
 export function useWorkspace() {
   const workspaceStore = useWorkspaceStore()
@@ -18,7 +64,8 @@ export function useWorkspace() {
         svnInfo(path),
       ])
 
-      workspaceStore.setStatusList(status)
+      await loadGitignoreIfNeeded(path, workspaceStore)
+      workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       return true
     } catch (err) {
@@ -58,7 +105,9 @@ export function useWorkspace() {
         svnStatus(workspaceStore.currentPath),
         svnInfo(workspaceStore.currentPath),
       ])
-      workspaceStore.setStatusList(status)
+
+      await loadGitignoreIfNeeded(workspaceStore.currentPath, workspaceStore)
+      workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       return true
     } catch (err) {

@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN 実行ファイル',
     svnPathPlaceholder: 'svn 実行ファイルのパス',
     encoding: 'デフォルトのエンコーディング',
+    gitignore: '無視ファイル (.gitignore)',
+    gitignoreHint: '有効にすると .gitignore に一致するファイルが除外されます',
     logLimit: 'ログのデフォルト読み込み件数',
     theme: 'テーマ',
     themeLight: 'ライト',
@@ -155,6 +157,8 @@ export default {
     enterCommitMessage: 'コミットメッセージを入力してください',
     doCommit: 'コミット',
     filesCount: '{count} 個のファイル',
+    searchFiles: 'ファイルを検索...',
+    committable: '変更済み',
   },
   update: {
     title: '更新を確認',
@@ -199,6 +203,10 @@ export default {
     selectFile: 'ファイルを選択して差分を表示',
     fileOutsideWorkspace: '現在のワークスペース内のファイルを選択してください',
     noDiff: '差分はありません',
+    previous: '前へ',
+    next: '次へ',
+    backToCommit: 'コミットに戻る',
+    fileList: 'ファイル一覧',
   },
   blame: {
     title: 'コード追跡',

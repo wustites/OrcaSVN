@@ -52,6 +52,8 @@ export default {
     svnPath: 'SVN 可執行檔',
     svnPathPlaceholder: 'svn 可執行檔路徑',
     encoding: '預設編碼',
+    gitignore: '忽略文件 (.gitignore)',
+    gitignoreHint: '啟用後將過濾 .gitignore 中匹配的文件',
     logLimit: '日誌預設載入筆數',
     theme: '主題',
     themeLight: '淺色',
@@ -155,6 +157,8 @@ export default {
     enterCommitMessage: '請輸入提交資訊',
     doCommit: '提交',
     filesCount: '{count} 個',
+    searchFiles: '搜尋檔案...',
+    committable: '已修改',
   },
   update: {
     title: '檢查更新',
@@ -199,6 +203,10 @@ export default {
     selectFile: '選擇檔案檢視差異',
     fileOutsideWorkspace: '請選擇目前工作區內的檔案',
     noDiff: '沒有差異',
+    previous: '上一個',
+    next: '下一個',
+    backToCommit: '返回提交',
+    fileList: '檔案列表',
   },
   blame: {
     title: '程式碼追溯',

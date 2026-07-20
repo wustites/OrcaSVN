@@ -22,6 +22,7 @@
     "fs:allow-remove",
     "fs:allow-rename",
     "fs:allow-exists",
+    "fs:allow-stat",
     "fs:allow-app-read-recursive",
     "fs:allow-app-write-recursive"
   ],
