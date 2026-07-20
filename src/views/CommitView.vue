@@ -145,7 +145,7 @@
               type="primary"
               @click="doCommit"
               :loading="loading"
-              :disabled="!commitMessage || changedFiles.length === 0"
+              :disabled="!commitMessage || selectedFiles.length === 0"
             >
               <el-icon><Upload /></el-icon>
               {{ $t('common.commit') }}
@@ -248,7 +248,7 @@ const routeSelectedFiles = computed(() => {
 
 const routeCommittableFiles = computed(() => {
   const selected = new Set(routeSelectedFiles.value)
-  return changedFiles.value
+  return allChangedFiles.value
     .filter((file) => selected.has(file.path))
     .map((file) => file.path)
 })
@@ -263,7 +263,7 @@ const applyRouteSelection = async () => {
 
   commitTable.value?.clearSelection()
 
-  changedFiles.value.forEach((file) => {
+  allChangedFiles.value.forEach((file) => {
     if (files.includes(file.path)) {
       commitTable.value?.toggleRowSelection(file, true)
     }
@@ -277,7 +277,7 @@ onMounted(() => {
   if (saved) {
     try {
       const data = JSON.parse(saved)
-      if (data.selectedFiles?.length) {
+      if (Array.isArray(data.selectedFiles)) {
         selectedFiles.value = data.selectedFiles
         nextTick(() => {
           commitTable.value?.clearSelection()
@@ -300,7 +300,7 @@ onBeforeRouteLeave((to) => {
     sessionStorage.removeItem('orca_commit_form')
   }
 })
-watch(changedFiles, applyRouteSelection, { immediate: true, flush: 'post' })
+watch(allChangedFiles, applyRouteSelection, { immediate: true, flush: 'post' })
 watch(() => route.query.files, applyRouteSelection, { flush: 'post' })
 
 const openWorkspace = async () => {
@@ -311,7 +311,7 @@ const openWorkspace = async () => {
 }
 
 const doCommit = async () => {
-  if (!workspaceStore.currentPath || !commitMessage.value) {
+  if (!workspaceStore.currentPath || !commitMessage.value || selectedFiles.value.length === 0) {
     return
   }
 
@@ -319,10 +319,12 @@ const doCommit = async () => {
   output.value = ''
 
   try {
-    const selected = selectedFiles.value.length > 0 ? selectedFiles.value : routeCommittableFiles.value
-    const files = selected.length > 0 ? selected : changedFiles.value.map(file => file.path)
+    const availablePaths = new Set(allChangedFiles.value.map(file => file.path))
+    const files = selectedFiles.value.filter(path => availablePaths.has(path))
+    if (files.length === 0) return
+
     const targetFileSet = new Set(files)
-    const unversionedFiles = changedFiles.value
+    const unversionedFiles = allChangedFiles.value
       .filter(file => file.status_code === 'unversioned' && targetFileSet.has(file.path))
       .map(file => file.path)
 
@@ -353,6 +355,7 @@ const viewDiff = (path: string) => {
     commitMessage: commitMessage.value,
   }))
   sessionStorage.setItem('orca_diff_files', JSON.stringify({
+    source: 'commit',
     files: allFiles,
     current: path,
     index: Math.max(0, index),

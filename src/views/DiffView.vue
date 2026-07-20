@@ -167,7 +167,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, onMounted } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute, useRouter, onBeforeRouteLeave } from 'vue-router'
 import { open } from '@tauri-apps/plugin-dialog'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { svnDiff } from '@/api/svn'
@@ -203,6 +203,7 @@ let requestGeneration = 0
 const fileList = ref<string[]>([])
 const fileDisplayNames = ref<string[]>([])
 const currentFileIndex = ref(0)
+const diffSource = ref<'commit' | 'log' | null>(null)
 
 const fileStatusMap = computed(() => {
   const map = new Map<string, SvnStatus>()
@@ -338,6 +339,13 @@ const switchToFile = (index: number) => {
   if (index < 0 || index >= fileList.value.length) return
   currentFileIndex.value = index
   currentPath.value = fileList.value[index]
+  sessionStorage.setItem('orca_diff_files', JSON.stringify({
+    source: diffSource.value,
+    files: fileList.value,
+    displayNames: fileDisplayNames.value,
+    current: currentPath.value,
+    index,
+  }))
   const query: Record<string, string> = { path: fileList.value[index] }
   if (route.query.revision) query.revision = route.query.revision as string
   router.replace({ query })
@@ -357,11 +365,34 @@ onMounted(() => {
     try {
       const parsed = JSON.parse(data)
       if (parsed.files?.length) {
-        fileList.value = parsed.files
-        fileDisplayNames.value = parsed.displayNames ?? []
-        currentFileIndex.value = parsed.index ?? 0
+        const files = parsed.files.filter((file: unknown): file is string => typeof file === 'string')
+        const routePath = typeof route.query.path === 'string' ? route.query.path : ''
+        const routeIndex = files.indexOf(routePath)
+        if (routeIndex < 0) {
+          sessionStorage.removeItem('orca_diff_files')
+          return
+        }
+
+        fileList.value = files
+        fileDisplayNames.value = Array.isArray(parsed.displayNames)
+          ? parsed.displayNames.filter((name: unknown): name is string => typeof name === 'string')
+          : []
+        currentFileIndex.value = routeIndex
+        diffSource.value = parsed.source === 'commit' || parsed.source === 'log' ? parsed.source : null
       }
-    } catch { /* ignore */ }
+    } catch {
+      sessionStorage.removeItem('orca_diff_files')
+    }
+  }
+})
+
+onBeforeRouteLeave((to) => {
+  sessionStorage.removeItem('orca_diff_files')
+  if (diffSource.value === 'commit' && to.name !== 'commit') {
+    sessionStorage.removeItem('orca_commit_form')
+  }
+  if (diffSource.value === 'log' && to.name !== 'log') {
+    sessionStorage.removeItem('orca_log_selection')
   }
 })
 

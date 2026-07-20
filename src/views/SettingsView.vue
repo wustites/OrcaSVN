@@ -81,7 +81,7 @@
           </el-form-item>
 
           <el-form-item :label="$t('settings.gitignore')" class="form-item">
-            <el-switch v-model="settings.gitignoreEnabled" />
+            <el-switch v-model="settings.gitignoreEnabled" @change="handleGitignoreChange" />
             <span class="form-item-hint">{{ $t('settings.gitignoreHint') }}</span>
           </el-form-item>
         </div>
@@ -122,11 +122,13 @@ import { useI18n } from 'vue-i18n'
 import { useLocale } from '@/composables/useLocale'
 import { useSettings } from '@/composables/useSettings'
 import { applyTheme } from '@/composables/useTheme'
+import { useWorkspace } from '@/composables/useWorkspace'
 import packageInfo from '../../package.json'
 
 const { t } = useI18n()
 const { setLocale } = useLocale()
 const { settings } = useSettings()
+const { refreshStatus } = useWorkspace()
 const appVersion = packageInfo.version
 
 const languages = computed(() => [
@@ -141,6 +143,10 @@ const currentLanguage = computed({
   get: () => settings.language,
   set: (val: string) => setLocale(val),
 })
+
+const handleGitignoreChange = () => {
+  void refreshStatus()
+}
 
 onMounted(() => {
   setLocale(settings.language)
