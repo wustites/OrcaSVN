@@ -13,6 +13,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   const error = ref<string | null>(null)
   const gitignorePatterns = ref<GitignorePattern[]>([])
   const gitignoreMtime = ref<number | null>(null)
+  const gitignoreWorkspacePath = ref<string | null>(null)
 
   const hasChanges = computed(() => {
     return statusList.value.some(s => s.status_code !== 'normal' && s.status_code !== '')
@@ -80,6 +81,10 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     gitignoreMtime.value = mtime
   }
 
+  function setGitignoreWorkspacePath(path: string | null) {
+    gitignoreWorkspacePath.value = path
+  }
+
   function clearWorkspace() {
     localStorage.removeItem(LAST_WORKSPACE_KEY)
     currentPath.value = null
@@ -88,6 +93,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     error.value = null
     gitignorePatterns.value = []
     gitignoreMtime.value = null
+    gitignoreWorkspacePath.value = null
   }
 
   return {
@@ -106,6 +112,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     missingCount,
     gitignorePatterns,
     gitignoreMtime,
+    gitignoreWorkspacePath,
     setCurrentPath,
     getLastWorkspacePath,
     setStatusList,
@@ -114,6 +121,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     setError,
     setGitignorePatterns,
     setGitignoreMtime,
+    setGitignoreWorkspacePath,
     clearWorkspace,
   }
 })

@@ -11,6 +11,7 @@ async function loadGitignoreIfNeeded(path: string, store: ReturnType<typeof useW
   if (!settings.gitignoreEnabled) {
     store.setGitignorePatterns([])
     store.setGitignoreMtime(null)
+    store.setGitignoreWorkspacePath(null)
     return
   }
 
@@ -19,17 +20,23 @@ async function loadGitignoreIfNeeded(path: string, store: ReturnType<typeof useW
     if (!data) {
       store.setGitignorePatterns([])
       store.setGitignoreMtime(null)
+      store.setGitignoreWorkspacePath(path)
       return
     }
 
-    if (data.mtime === store.gitignoreMtime && store.gitignorePatterns.length > 0) return
+    if (
+      path === store.gitignoreWorkspacePath &&
+      data.mtime === store.gitignoreMtime
+    ) return
 
     const patterns = parseGitignore(data.content)
     store.setGitignorePatterns(patterns)
     store.setGitignoreMtime(data.mtime)
+    store.setGitignoreWorkspacePath(path)
   } catch {
     store.setGitignorePatterns([])
     store.setGitignoreMtime(null)
+    store.setGitignoreWorkspacePath(null)
   }
 }
 

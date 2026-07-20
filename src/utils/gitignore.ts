@@ -60,16 +60,18 @@ function gitignorePatternToRegex(pattern: string, anchored: boolean): RegExp {
   return new RegExp(`^${regexStr}$`)
 }
 
-function isDirPath(path: string): boolean {
-  return path.endsWith('/')
-}
-
 export function isIgnored(filePath: string, patterns: GitignorePattern[]): boolean {
   let ignored = false
-  const normalPath = filePath.replace(/\\/g, '/')
+  const normalPath = filePath.replace(/\\/g, '/').replace(/^\.\//, '').replace(/\/+$/, '')
+  const pathCandidates = [normalPath]
+  let separator = normalPath.lastIndexOf('/')
+  while (separator >= 0) {
+    pathCandidates.push(normalPath.slice(0, separator))
+    separator = normalPath.lastIndexOf('/', separator - 1)
+  }
+
   for (const p of patterns) {
-    if (p.dirOnly && !isDirPath(normalPath) && !isDirPath(filePath)) continue
-    if (p.regex.test(normalPath)) {
+    if (pathCandidates.some(candidate => p.regex.test(candidate))) {
       ignored = !p.negation
     }
   }

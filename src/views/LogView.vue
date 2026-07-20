@@ -521,9 +521,12 @@ const handleRowClick = (row: SvnLogEntry) => {
   dialogVisible.value = true
 }
 
+let preserveLogSelection = false
+
 const openChangedPathDiff = (row: SvnLogPath) => {
   if (!selectedLog.value || !workspaceStore.svnInfo) return
 
+  preserveLogSelection = true
   sessionStorage.setItem('orca_log_selection', String(selectedLog.value.revision))
 
   const repositoryRoot = workspaceStore.svnInfo.repository_root.replace(/\/+$/, '')
@@ -560,7 +563,9 @@ const openChangedPathDiff = (row: SvnLogPath) => {
 }
 
 const onDialogClose = () => {
-  sessionStorage.removeItem('orca_log_selection')
+  if (!preserveLogSelection) {
+    sessionStorage.removeItem('orca_log_selection')
+  }
 }
 
 const resetFilters = () => {
@@ -632,6 +637,7 @@ onActivated(() => {
     }
     sessionStorage.removeItem('orca_log_selection')
   }
+  preserveLogSelection = false
 })
 
 onUnmounted(() => {
