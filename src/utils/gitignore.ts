@@ -39,14 +39,37 @@ function gitignorePatternToRegex(pattern: string, anchored: boolean): RegExp {
     const ch = pattern[i]
     if (ch === '*') {
       if (i + 1 < pattern.length && pattern[i + 1] === '*') {
-        regexStr += '.*'
-        i++
-        if (i + 1 < pattern.length && pattern[i + 1] === '/') i++
+        while (i + 1 < pattern.length && pattern[i + 1] === '*') i++
+        if (i + 1 < pattern.length && pattern[i + 1] === '/') {
+          regexStr += '(?:.*/)?'
+          i++
+        } else {
+          regexStr += '.*'
+        }
       } else {
         regexStr += '[^/]*'
       }
     } else if (ch === '?') {
       regexStr += '[^/]'
+    } else if (ch === '[') {
+      const closingBracket = pattern.indexOf(']', i + 1)
+      if (closingBracket === -1) {
+        regexStr += '\\['
+        continue
+      }
+
+      let characterClass = pattern.slice(i + 1, closingBracket)
+      if (characterClass.startsWith('!')) {
+        characterClass = `^/${characterClass.slice(1)}`
+      } else if (characterClass.startsWith('^')) {
+        characterClass = `\\${characterClass}`
+      }
+      regexStr += `[${characterClass.replace(/\\/g, '\\\\')}]`
+      i = closingBracket
+    } else if (ch === '\\' && i + 1 < pattern.length) {
+      i++
+      const escaped = pattern[i]
+      regexStr += '.+^${}()|[]\\'.includes(escaped) ? `\\${escaped}` : escaped
     } else if ('.+^${}()|[]\\'.includes(ch)) {
       regexStr += '\\' + ch
     } else {

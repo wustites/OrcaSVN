@@ -546,6 +546,7 @@ const openChangedPathDiff = (row: SvnLogPath) => {
   const currentIndex = allFiles.findIndex(f => f.query === `${repositoryRoot}${currentRepoPath}@${currentPegRev}`)
 
   sessionStorage.setItem('orca_diff_files', JSON.stringify({
+    source: 'log',
     files: allFiles.map(f => f.query),
     displayNames: allFiles.map(f => f.display),
     current: `${repositoryRoot}${currentRepoPath}@${currentPegRev}`,

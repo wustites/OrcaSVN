@@ -355,6 +355,7 @@ const viewDiff = (path: string) => {
     commitMessage: commitMessage.value,
   }))
   sessionStorage.setItem('orca_diff_files', JSON.stringify({
+    source: 'commit',
     files: allFiles,
     current: path,
     index: Math.max(0, index),
