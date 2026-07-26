@@ -61,6 +61,7 @@
               :placeholder="$t('settings.svnPathPlaceholder')"
               class="settings-control settings-path-input"
               clearable
+              @change="handleSvnPathChange"
             >
               <template #prefix>
                 <el-icon><Folder /></el-icon>
@@ -119,6 +120,8 @@
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { ElMessage } from 'element-plus/es/components/message/index'
+import { configureSvnExecutable } from '@/api/svn'
 import { useLocale } from '@/composables/useLocale'
 import { useSettings } from '@/composables/useSettings'
 import { applyTheme } from '@/composables/useTheme'
@@ -146,6 +149,15 @@ const currentLanguage = computed({
 
 const handleGitignoreChange = () => {
   void refreshStatus()
+}
+
+const handleSvnPathChange = async (value: string) => {
+  try {
+    const version = await configureSvnExecutable(value)
+    ElMessage.success(t('settings.svnPathApplied', { version }))
+  } catch (err) {
+    ElMessage.error(t('settings.svnPathInvalid', { error: String(err) }))
+  }
 }
 
 onMounted(() => {

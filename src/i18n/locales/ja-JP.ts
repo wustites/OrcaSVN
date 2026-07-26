@@ -51,6 +51,8 @@ export default {
     svnSettings: 'SVN 設定',
     svnPath: 'SVN 実行ファイル',
     svnPathPlaceholder: 'svn 実行ファイルのパス',
+    svnPathApplied: 'SVN {version} を有効にしました',
+    svnPathInvalid: 'この SVN 実行ファイルを使用できません：{error}',
     encoding: 'デフォルトのエンコーディング',
     gitignore: '無視ファイル (.gitignore)',
     gitignoreHint: '有効にすると .gitignore に一致するファイルが除外されます',

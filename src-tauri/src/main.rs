@@ -24,6 +24,13 @@ enum OpenTarget {
 }
 
 #[tauri::command]
+async fn configure_svn_executable(executable: Option<String>) -> Result<String, String> {
+    svn::configure_svn_executable(executable.as_deref())
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn open_workspace_target(path: String, target: OpenTarget) -> Result<(), String> {
     match target {
         OpenTarget::Explorer => {
@@ -461,6 +468,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
+            configure_svn_executable,
             svn_checkout,
             svn_update,
             svn_commit,

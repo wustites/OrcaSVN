@@ -78,6 +78,8 @@ import {
 import router from './router'
 import i18n from './i18n'
 import App from './App.vue'
+import { configureSvnExecutable } from './api/svn'
+import { useSettings } from './composables/useSettings'
 import { initializeTheme } from './composables/useTheme'
 import './style.css'
 
@@ -178,4 +180,15 @@ app.use(pinia)
 app.use(router)
 app.use(i18n)
 app.use(ElLoading)
-app.mount('#app')
+
+async function bootstrap() {
+  const { settings } = useSettings()
+  try {
+    await configureSvnExecutable(settings.svnPath)
+  } catch (error) {
+    console.error('Failed to configure the SVN executable; using the default command.', error)
+  }
+  app.mount('#app')
+}
+
+void bootstrap()

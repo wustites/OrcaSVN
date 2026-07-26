@@ -460,6 +460,14 @@ watch(
   width: min(420px, 42vw);
 }
 
+.path-input :deep(.el-input-group__prepend) {
+  border-radius: var(--app-radius-md) 0 0 var(--app-radius-md);
+}
+
+.path-input :deep(.el-input-group__append) {
+  border-radius: 0 var(--app-radius-md) var(--app-radius-md) 0;
+}
+
 .diff-options {
   margin-bottom: var(--app-spacing-md);
   display: flex;

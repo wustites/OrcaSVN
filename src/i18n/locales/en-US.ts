@@ -51,6 +51,8 @@ export default {
     svnSettings: 'SVN Configuration',
     svnPath: 'SVN Executable',
     svnPathPlaceholder: 'svn executable path',
+    svnPathApplied: 'SVN {version} is now active',
+    svnPathInvalid: 'Unable to use this SVN executable: {error}',
     encoding: 'Default Encoding',
     gitignore: 'Ignore File (.gitignore)',
     gitignoreHint: 'When enabled, files matching .gitignore will be filtered out',

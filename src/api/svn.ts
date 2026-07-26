@@ -1,6 +1,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import type { CommandResult, SvnStatus, SvnLogEntry, SvnInfo, SvnAuthUser, DiffResult, BlameLine } from '@/types'
 
+export async function configureSvnExecutable(executable?: string): Promise<string> {
+  return invoke<string>('configure_svn_executable', {
+    executable: executable?.trim() || null,
+  })
+}
+
 export async function svnCheckout(
   url: string,
   path: string,

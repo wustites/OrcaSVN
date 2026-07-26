@@ -1,10 +1,13 @@
 use std::io::Read;
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
+use std::sync::{OnceLock, RwLock};
 use std::time::{Duration, Instant};
 use thiserror::Error;
 use tokio::task::spawn_blocking;
 
 pub const SVN_TIMEOUT: Duration = Duration::from_secs(120);
+static SVN_EXECUTABLE: OnceLock<RwLock<PathBuf>> = OnceLock::new();
 
 #[derive(Error, Debug)]
 pub enum SvnError {
@@ -21,7 +24,39 @@ pub enum SvnError {
 }
 
 pub async fn execute_svn(args: &[&str], path: Option<&str>) -> Result<String, SvnError> {
-    execute_svn_inner(args, path).await
+    let executable = current_svn_executable()?;
+    execute_svn_inner(executable, args, path).await
+}
+
+pub async fn configure_svn_executable(executable: Option<&str>) -> Result<String, SvnError> {
+    let executable = normalize_svn_executable(executable);
+
+    let version = execute_svn_inner(executable.clone(), &["--version", "--quiet"], None).await?;
+
+    let mut configured = svn_executable_lock()
+        .write()
+        .map_err(|_| SvnError::CommandFailed("SVN 可执行文件配置锁已损坏".to_string()))?;
+    *configured = executable;
+    Ok(version.trim().to_string())
+}
+
+fn normalize_svn_executable(executable: Option<&str>) -> PathBuf {
+    executable
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("svn"))
+}
+
+fn svn_executable_lock() -> &'static RwLock<PathBuf> {
+    SVN_EXECUTABLE.get_or_init(|| RwLock::new(PathBuf::from("svn")))
+}
+
+fn current_svn_executable() -> Result<PathBuf, SvnError> {
+    svn_executable_lock()
+        .read()
+        .map(|path| path.clone())
+        .map_err(|_| SvnError::CommandFailed("SVN 可执行文件配置锁已损坏".to_string()))
 }
 
 fn build_command_args(args: &[String]) -> Vec<String> {
@@ -30,12 +65,16 @@ fn build_command_args(args: &[String]) -> Vec<String> {
     command_args
 }
 
-async fn execute_svn_inner(args: &[&str], path: Option<&str>) -> Result<String, SvnError> {
+async fn execute_svn_inner(
+    executable: PathBuf,
+    args: &[&str],
+    path: Option<&str>,
+) -> Result<String, SvnError> {
     let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let path_str = path.map(|s| s.to_string());
 
     spawn_blocking(move || {
-        let mut cmd = Command::new("svn");
+        let mut cmd = Command::new(&executable);
         // Global options must precede a possible `--` target separator.
         cmd.args(build_command_args(&args_vec));
         cmd.stdout(Stdio::piped());
@@ -119,6 +158,7 @@ async fn execute_svn_inner(args: &[&str], path: Option<&str>) -> Result<String, 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::Path;
 
     #[test]
     fn captures_svn_stdout() {
@@ -134,6 +174,20 @@ mod tests {
             Err(SvnError::SvnNotFound) => {}
             Err(err) => panic!("unexpected svn executor error: {err}"),
         }
+    }
+
+    #[test]
+    fn empty_executable_uses_default_command() {
+        assert_eq!(normalize_svn_executable(Some("   ")), Path::new("svn"));
+        assert_eq!(normalize_svn_executable(None), Path::new("svn"));
+    }
+
+    #[test]
+    fn configured_executable_is_trimmed() {
+        assert_eq!(
+            normalize_svn_executable(Some("  C:\\Tools\\svn.exe  ")),
+            Path::new("C:\\Tools\\svn.exe")
+        );
     }
 
     #[test]

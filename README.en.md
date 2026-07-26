@@ -1,6 +1,6 @@
 # OrcaSVN
 
-English | [简体中文](README.md)
+[简体中文](README.md) | [繁體中文](README.zh-TW.md) | English | [日本語](README.ja.md) | [한국어](README.ko.md)
 
 OrcaSVN is a cross-platform SVN desktop client built with Tauri, Rust, and Vue 3. It brings the clarity of a Git-style working-copy experience to SVN while preserving its centralized version-control model.
 

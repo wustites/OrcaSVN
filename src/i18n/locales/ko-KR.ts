@@ -51,6 +51,8 @@ export default {
     svnSettings: 'SVN 설정',
     svnPath: 'SVN 실행 파일',
     svnPathPlaceholder: 'svn 실행 파일 경로',
+    svnPathApplied: 'SVN {version}이(가) 활성화되었습니다',
+    svnPathInvalid: '이 SVN 실행 파일을 사용할 수 없습니다: {error}',
     encoding: '기본 인코딩',
     gitignore: '무시 파일 (.gitignore)',
     gitignoreHint: '활성화하면 .gitignore와 일치하는 파일이 필터링됩니다',

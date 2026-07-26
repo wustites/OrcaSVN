@@ -51,6 +51,8 @@ export default {
     svnSettings: 'SVN 設定',
     svnPath: 'SVN 可執行檔',
     svnPathPlaceholder: 'svn 可執行檔路徑',
+    svnPathApplied: '已啟用 SVN {version}',
+    svnPathInvalid: '無法使用此 SVN 可執行檔：{error}',
     encoding: '預設編碼',
     gitignore: '忽略文件 (.gitignore)',
     gitignoreHint: '啟用後將過濾 .gitignore 中匹配的文件',
