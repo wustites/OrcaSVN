@@ -78,6 +78,8 @@ export default {
     closeWorkspace: '작업 공간 닫기',
     currentPath: '현재 경로',
     switchWorkspace: '경로 전환',
+    addWorkspace: '작업 공간 추가',
+    removeWorkspace: '목록에서 제거',
     selectWorkspaceTitle: 'SVN 작업 공간 디렉터리 선택',
     repositoryInfo: '저장소 정보',
     noRepositoryInfo: '저장소 정보 없음',

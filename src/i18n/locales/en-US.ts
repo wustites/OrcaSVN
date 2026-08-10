@@ -78,6 +78,8 @@ export default {
     closeWorkspace: 'Close Workspace',
     currentPath: 'Current Path',
     switchWorkspace: 'Switch Path',
+    addWorkspace: 'Add Workspace',
+    removeWorkspace: 'Remove from list',
     selectWorkspaceTitle: 'Select SVN Workspace Directory',
     repositoryInfo: 'Repository Info',
     noRepositoryInfo: 'No Repository Info',

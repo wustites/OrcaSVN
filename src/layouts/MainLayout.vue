@@ -46,8 +46,11 @@
             :aria-label="$t('menu.openIn')"
             :title="$t('menu.openIn')"
           >
-            <el-icon class="open-in-app-icon"><component :is="selectedOpenTargetIcon" /></el-icon>
-            <el-icon class="open-in-chevron"><ArrowDown /></el-icon>
+            <span class="open-in-icons">
+              <el-icon class="open-in-app-icon"><component :is="selectedOpenTargetIcon" /></el-icon>
+              <el-icon class="open-in-chevron"><ArrowDown /></el-icon>
+            </span>
+            <span class="open-in-label">{{ $t('menu.openIn') }}</span>
           </button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -68,11 +71,44 @@
         </el-dropdown>
       </div>
 
-      <button class="repository-title" @click="navigateTo('workspace')">
-        <strong>{{ repositoryName }}</strong>
-        <span v-if="workspaceStore.svnInfo">r{{ workspaceStore.svnInfo.revision }}</span>
-        <span v-else>OrcaSVN</span>
-      </button>
+      <el-dropdown trigger="click" popper-class="workspace-switcher-dropdown" @command="handleWorkspaceCommand">
+        <button class="repository-title" :title="$t('workspace.switchWorkspace')">
+          <strong>{{ repositoryName }}</strong>
+          <span>
+            <template v-if="workspaceStore.svnInfo">r{{ workspaceStore.svnInfo.revision }}</template>
+            <template v-else>OrcaSVN</template>
+            <el-icon class="repository-chevron"><ArrowDown /></el-icon>
+          </span>
+        </button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item
+              v-for="path in workspaceStore.recentWorkspaces"
+              :key="path"
+              :command="path"
+              :class="{ 'is-current-workspace': path === workspaceStore.currentPath }"
+            >
+              <span class="workspace-option">
+                <span class="workspace-option-copy">
+                  <strong>{{ workspaceNameFromPath(path) }}</strong>
+                  <small>{{ path }}</small>
+                </span>
+                <button
+                  type="button"
+                  class="workspace-remove"
+                  :title="$t('workspace.removeWorkspace')"
+                  :aria-label="$t('workspace.removeWorkspace')"
+                  @click.stop="removeWorkspace(path)"
+                ><el-icon><Close /></el-icon></button>
+              </span>
+            </el-dropdown-item>
+            <el-dropdown-item divided command="__open__">
+              <el-icon><FolderOpened /></el-icon>
+              {{ $t('workspace.addWorkspace') }}
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
 
       <div class="toolbar-group toolbar-group-right">
         <button class="tool-button" :class="{ active: routeName === 'commit' }" @click="navigateTo('commit')">
@@ -203,7 +239,7 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
-const { refreshStatus, restoreLastWorkspace } = useWorkspace()
+const { loadWorkspace, openWorkspace, refreshStatus, restoreLastWorkspace } = useWorkspace()
 const appVersion = packageInfo.version
 const cachedViews = ref(['WorkspaceView', 'LogView', 'UpdateView'])
 const statusRefreshIntervalMs = 60_000
@@ -222,6 +258,8 @@ const repositoryName = computed(() => {
   return path.split(/[\\/]/).filter(Boolean).pop() || path
 })
 
+const workspaceNameFromPath = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() || path
+
 const routeName = computed(() => String(route.name || 'workspace'))
 const currentRouteTitle = computed(() => {
   const titleKey = route.meta.title
@@ -229,6 +267,17 @@ const currentRouteTitle = computed(() => {
 })
 
 const navigateTo = (name: string) => router.push({ name })
+
+const handleWorkspaceCommand = async (command: string) => {
+  if (command === '__open__') {
+    await openWorkspace(t('workspace.selectWorkspaceTitle'))
+  } else if (command !== workspaceStore.currentPath) {
+    await loadWorkspace(command)
+  }
+  await router.push({ name: 'workspace' })
+}
+
+const removeWorkspace = (path: string) => workspaceStore.removeRecentWorkspace(path)
 
 const openCurrentWorkspaceIn = async (target: OpenWorkspaceTarget) => {
   if (!workspaceStore.currentPath) return
@@ -451,7 +500,8 @@ onUnmounted(() => {
   align-self: center;
   width: 58px;
   height: 52px;
-  gap: 2px;
+  flex-direction: column;
+  gap: 1px;
   padding: 0;
   border: 0;
   border-radius: var(--app-radius-md);
@@ -487,6 +537,20 @@ onUnmounted(() => {
 
 .open-in-app-icon {
   font-size: 20px;
+}
+
+.open-in-icons {
+  display: flex;
+  align-items: center;
+}
+
+.open-in-label {
+  max-width: 56px;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .open-in-chevron {
@@ -552,6 +616,66 @@ onUnmounted(() => {
 .repository-title strong {
   color: var(--md-sys-color-on-surface);
   font-size: 13px;
+}
+
+.repository-chevron {
+  margin-left: 4px;
+  font-size: 12px;
+  vertical-align: -2px;
+}
+
+:global(.workspace-switcher-dropdown .el-dropdown-menu) {
+  min-width: 330px;
+  max-width: min(520px, 90vw);
+}
+
+:global(.workspace-switcher-dropdown .el-dropdown-menu__item) {
+  padding: 7px 12px;
+}
+
+:global(.workspace-switcher-dropdown .el-dropdown-menu__item.is-current-workspace) {
+  color: var(--md-sys-color-on-primary-container);
+  background: var(--md-sys-color-primary-container);
+}
+
+.workspace-option {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  gap: 12px;
+}
+
+.workspace-option-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  line-height: 1.35;
+}
+
+.workspace-option-copy small {
+  overflow: hidden;
+  color: var(--md-sys-color-on-surface-variant);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-remove {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--app-radius-full);
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+}
+
+.workspace-remove:hover {
+  background: var(--md-sys-state-hover);
 }
 
 :global(.theme-dark) .repository-title {

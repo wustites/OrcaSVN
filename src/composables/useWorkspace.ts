@@ -52,11 +52,12 @@ export function useWorkspace() {
   const workspaceStore = useWorkspaceStore()
 
   async function loadWorkspace(path: string): Promise<boolean> {
+    const previousPath = workspaceStore.currentPath
     workspaceStore.setLoading(true)
     workspaceStore.setError(null)
 
     // 提前设置 currentPath，让 LogView 的 svn log 与 status+info 并行执行
-    workspaceStore.setCurrentPath(path)
+    workspaceStore.setCurrentPath(path, false)
 
     try {
       const [status, info] = await Promise.all([
@@ -67,8 +68,11 @@ export function useWorkspace() {
       await loadGitignoreIfNeeded(path, workspaceStore)
       workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
+      workspaceStore.rememberWorkspace(path)
       return true
     } catch (err) {
+      if (previousPath) workspaceStore.setCurrentPath(previousPath, false)
+      else workspaceStore.clearWorkspace()
       workspaceStore.setError(String(err))
       return false
     } finally {
@@ -118,5 +122,5 @@ export function useWorkspace() {
     }
   }
 
-  return { openWorkspace, restoreLastWorkspace, refreshStatus }
+  return { loadWorkspace, openWorkspace, restoreLastWorkspace, refreshStatus }
 }

@@ -78,6 +78,8 @@ export default {
     closeWorkspace: '關閉工作區',
     currentPath: '目前路徑',
     switchWorkspace: '切換路徑',
+    addWorkspace: '新增工作區',
+    removeWorkspace: '從清單中移除',
     selectWorkspaceTitle: '選擇 SVN 工作區目錄',
     repositoryInfo: '倉庫資訊',
     noRepositoryInfo: '暫無倉庫資訊',

@@ -78,6 +78,8 @@ export default {
     closeWorkspace: 'ワークスペースを閉じる',
     currentPath: '現在のパス',
     switchWorkspace: 'パスを切り替え',
+    addWorkspace: 'ワークスペースを追加',
+    removeWorkspace: 'リストから削除',
     selectWorkspaceTitle: 'SVN ワークスペースディレクトリを選択',
     repositoryInfo: 'リポジトリ情報',
     noRepositoryInfo: 'リポジトリ情報はありません',
