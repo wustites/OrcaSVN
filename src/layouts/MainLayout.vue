@@ -74,11 +74,11 @@
       <el-dropdown trigger="click" popper-class="workspace-switcher-dropdown" @command="handleWorkspaceCommand">
         <button class="repository-title" :title="$t('workspace.switchWorkspace')">
           <strong>{{ repositoryName }}</strong>
-          <span>
+          <span class="repository-revision">
             <template v-if="workspaceStore.svnInfo">r{{ workspaceStore.svnInfo.revision }}</template>
             <template v-else>OrcaSVN</template>
-            <el-icon class="repository-chevron"><ArrowDown /></el-icon>
           </span>
+          <el-icon class="repository-chevron"><ArrowDown /></el-icon>
         </button>
         <template #dropdown>
           <el-dropdown-menu>
@@ -618,10 +618,29 @@ onUnmounted(() => {
   font-size: 13px;
 }
 
+.repository-revision {
+  position: absolute;
+  bottom: 5px;
+  left: 50%;
+  transform: translateX(-50%);
+  line-height: 1.2;
+}
+
 .repository-chevron {
-  margin-left: 4px;
-  font-size: 12px;
-  vertical-align: -2px;
+  position: absolute;
+  top: 50%;
+  right: 14px;
+  width: 24px;
+  height: 24px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  color: var(--md-sys-color-on-surface-variant);
+  font-size: 17px;
+  transition: background-color var(--app-transition-fast);
+}
+
+.repository-title:hover .repository-chevron {
+  background: var(--md-sys-color-surface-container-highest);
 }
 
 :global(.workspace-switcher-dropdown .el-dropdown-menu) {
