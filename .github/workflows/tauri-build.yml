@@ -68,7 +68,61 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('OrcaSVN {0}', github.ref_name) || '' }}
-          releaseBody: "Desktop builds for Windows, Linux, and macOS."
+          # __VERSION__ is replaced by tauri-action with the app version (e.g. 0.5.5).
+          # Update the highlights below before tagging a new release.
+          releaseBody: |-
+            - Support multiple workspaces: open and switch between several SVN working copies at once
+            - 支持多个工作区：可同时打开并在多个 SVN 工作副本之间切换
+
+            <div align=center>
+
+            [![Release Downloads](https://img.shields.io/github/downloads/wustites/OrcaSVN/v__VERSION__/total?style=flat-square&logo=github)](https://github.com/wustites/OrcaSVN/releases)
+
+            </div>
+
+            **Download based on your OS:**
+
+            <div align=left>
+            <table>
+                <thead align=left>
+                    <tr>
+                        <th>OS</th>
+                        <th>Download</th>
+                    </tr>
+                </thead>
+                <tbody align=left>
+                    <tr>
+                        <td>Windows</td>
+                        <td>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN-__VERSION__-x64-setup.exe"><img src="https://img.shields.io/badge/Setup-x64-2d7d9a.svg?logo=windows"></a><br>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN___VERSION___x64_en-US.msi"><img src="https://img.shields.io/badge/MSI-x64-0078d4.svg?logo=windows"></a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>macOS</td>
+                        <td>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN___VERSION___aarch64.dmg"><img src="https://img.shields.io/badge/DMG-Apple%20Silicon-%23000000.svg?logo=apple"></a><br>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN_aarch64.app.tar.gz"><img src="https://img.shields.io/badge/TGZ-Apple%20Silicon-%23555555.svg?logo=apple"></a>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Linux</td>
+                        <td>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN___VERSION___amd64.AppImage"><img src="https://img.shields.io/badge/AppImage-x64-f84e29.svg?logo=linux"> </a><br>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN___VERSION___amd64.deb"><img src="https://img.shields.io/badge/DebPackage-x64-FF9966.svg?logo=debian"> </a><br>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN-__VERSION__-1.x86_64.rpm"><img src="https://img.shields.io/badge/RpmPackage-x64-F1B42F.svg?logo=redhat"> </a>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+
+            </div>
+
+            <div dir="ltr">
+
+            **List of all changes:** [GitHub Releases](https://github.com/wustites/OrcaSVN/releases)
+
+            </div>
           releaseDraft: false
           prerelease: false
 
