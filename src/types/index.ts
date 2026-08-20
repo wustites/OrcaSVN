@@ -53,3 +53,27 @@ export interface BlameLine {
   author: string
   line: string
 }
+
+export interface StashHunk {
+  id: string
+  header: string
+  lines: string[]
+  added: number
+  removed: number
+}
+
+export interface StashFile {
+  path: string
+  header: string[]
+  hunks: StashHunk[]
+}
+
+export interface StashEntry {
+  id: string
+  name: string
+  workspacePath: string
+  createdAt: string
+  patch: string
+  files: string[]
+  hunkCount: number
+}

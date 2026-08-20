@@ -45,6 +45,12 @@ const router = createRouter({
           meta: { title: 'menu.diff' },
         },
         {
+          path: 'stash',
+          name: 'stash',
+          component: () => import('@/views/StashView.vue'),
+          meta: { title: 'menu.stash' },
+        },
+        {
           path: 'blame',
           name: 'blame',
           component: () => import('@/views/BlameView.vue'),

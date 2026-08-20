@@ -361,6 +361,22 @@ async fn svn_diff(
 }
 
 #[tauri::command]
+async fn svn_apply_patch(
+    workspace_path: String,
+    patch: String,
+    reverse: bool,
+) -> Result<CommandResult, String> {
+    svn::apply_patch(&workspace_path, &patch, reverse)
+        .await
+        .map(|output| CommandResult {
+            success: true,
+            output,
+            error: None,
+        })
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn svn_blame(workspace_path: String, file: String) -> Result<Vec<svn::BlameLine>, String> {
     svn::blame(&workspace_path, &file)
         .await
@@ -478,6 +494,7 @@ fn main() {
             svn_info,
             svn_remote_info,
             svn_diff,
+            svn_apply_patch,
             svn_blame,
             svn_add,
             svn_delete,

@@ -247,6 +247,7 @@ export default {
     update: '업데이트',
     log: '로그',
     diff: '비교',
+    stash: '스태시',
     blame: '블레임',
     settings: '설정',
     refresh: '새로고침',

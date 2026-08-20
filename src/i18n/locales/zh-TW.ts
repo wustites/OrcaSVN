@@ -247,6 +247,7 @@ export default {
     update: '更新',
     log: '日誌',
     diff: '比對',
+    stash: '暫存',
     blame: '追溯',
     settings: '設定',
     refresh: '重新整理',

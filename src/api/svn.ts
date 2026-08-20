@@ -65,6 +65,14 @@ export async function svnDiff(
   return invoke<DiffResult>('svn_diff', { workspacePath, file, oldRev, newRev })
 }
 
+export async function svnApplyPatch(
+  workspacePath: string,
+  patch: string,
+  reverse = false
+): Promise<CommandResult> {
+  return invoke<CommandResult>('svn_apply_patch', { workspacePath, patch, reverse })
+}
+
 export async function svnBlame(workspacePath: string, file: string): Promise<BlameLine[]> {
   return invoke<BlameLine[]>('svn_blame', { workspacePath, file })
 }

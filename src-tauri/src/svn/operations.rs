@@ -481,6 +481,43 @@ pub async fn diff(
     })
 }
 
+pub async fn apply_patch(workspace: &str, patch: &str, reverse: bool) -> Result<String, SvnError> {
+    if patch.trim().is_empty() {
+        return Err(SvnError::InvalidArguments("补丁内容不能为空".to_string()));
+    }
+
+    let workspace_path = Path::new(workspace)
+        .canonicalize()
+        .map_err(|e| SvnError::CommandFailed(format!("无法访问工作副本目录：{}", e)))?;
+    if !workspace_path.is_dir() {
+        return Err(SvnError::InvalidArguments(
+            "工作副本路径必须是目录".to_string(),
+        ));
+    }
+
+    let patch_path = std::env::temp_dir().join(format!(
+        "orcasvn-stash-{}-{}.patch",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    fs::write(&patch_path, patch)
+        .map_err(|e| SvnError::CommandFailed(format!("无法创建临时补丁文件：{}", e)))?;
+
+    let mut args = vec!["patch".to_string()];
+    if reverse {
+        args.push("--reverse".to_string());
+    }
+    args.push(patch_path.to_string_lossy().into_owned());
+    let args_refs: Vec<&str> = args.iter().map(|arg| arg.as_str()).collect();
+    let workspace_cwd = workspace_path.to_string_lossy().into_owned();
+    let result = execute_svn(&args_refs, Some(&workspace_cwd)).await;
+    let _ = fs::remove_file(&patch_path);
+    result
+}
+
 pub async fn add(path: &str, files: &[String]) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["add".to_string()];
     append_targets(&mut args, files);

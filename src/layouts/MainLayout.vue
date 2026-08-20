@@ -123,6 +123,10 @@
           <el-icon><Connection /></el-icon>
           <span>{{ $t('menu.diff') }}</span>
         </button>
+        <button class="tool-button" :class="{ active: routeName === 'stash' }" @click="navigateTo('stash')">
+          <el-icon><Archive /></el-icon>
+          <span>{{ $t('menu.stash') }}</span>
+        </button>
         <button class="tool-button" :class="{ active: routeName === 'blame' }" @click="navigateTo('blame')">
           <el-icon><Edit /></el-icon>
           <span>{{ $t('menu.blame') }}</span>
@@ -171,6 +175,11 @@
           <button :class="{ active: routeName === 'diff' }" @click="navigateTo('diff')">
             <el-icon><Connection /></el-icon>
             <span>{{ $t('menu.diff') }}</span>
+          </button>
+          <button :class="{ active: routeName === 'stash' }" @click="navigateTo('stash')">
+            <el-icon><Archive /></el-icon>
+            <span>{{ $t('menu.stash') }}</span>
+            <b v-if="workspaceStore.currentPath">{{ stashCount }}</b>
           </button>
           <button :class="{ active: routeName === 'blame' }" @click="navigateTo('blame')">
             <el-icon><Edit /></el-icon>
@@ -226,9 +235,11 @@ import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { openWorkspaceTarget, type OpenWorkspaceTarget } from '@/api/svn'
 import { useWorkspaceStore } from '@/stores/workspace'
+import { useStashStore } from '@/stores/stash'
 import { useWorkspace } from '@/composables/useWorkspace'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import {
+  Archive,
   Code,
   FolderOpened as FolderOpenedIcon,
   Terminal,
@@ -239,6 +250,7 @@ const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
+const stashStore = useStashStore()
 const { loadWorkspace, openWorkspace, refreshStatus, restoreLastWorkspace } = useWorkspace()
 const appVersion = packageInfo.version
 const cachedViews = ref(['WorkspaceView', 'LogView', 'UpdateView'])
@@ -251,6 +263,7 @@ const openTargetIcons = {
   terminal: Terminal,
 } satisfies Record<OpenWorkspaceTarget, typeof FolderOpenedIcon>
 const selectedOpenTargetIcon = computed(() => openTargetIcons[selectedOpenTarget.value])
+const stashCount = computed(() => stashStore.currentEntries(workspaceStore.currentPath).length)
 
 const repositoryName = computed(() => {
   const path = workspaceStore.currentPath

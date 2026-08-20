@@ -247,6 +247,7 @@ export default {
     update: '更新',
     log: 'ログ',
     diff: '差分',
+    stash: 'スタッシュ',
     blame: 'ブレイム',
     settings: '設定',
     refresh: '更新',
