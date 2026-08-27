@@ -131,7 +131,6 @@ export default {
     clearFilters: 'フィルターをクリア',
     loadingMore: 'さらにログを読み込んでいます...',
     allLoaded: 'すべてのログを読み込みました',
-    scrollForMore: '下にスクロールしてさらに読み込む',
     load: '読み込み',
     openWorkspaceFirst: 'まずワークスペースを開いてください',
     revision: 'リビジョン',
