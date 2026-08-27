@@ -131,6 +131,7 @@ export default {
     clearFilters: 'Clear filters',
     loadingMore: 'Loading more logs...',
     allLoaded: 'All logs loaded',
+    scrollForMore: 'Scroll down to load more',
     load: 'Load',
     openWorkspaceFirst: 'Please open a workspace first',
     revision: 'Revision',

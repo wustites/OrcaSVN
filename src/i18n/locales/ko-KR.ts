@@ -131,6 +131,7 @@ export default {
     clearFilters: '필터 지우기',
     loadingMore: '로그를 더 불러오는 중...',
     allLoaded: '모든 로그를 불러왔습니다',
+    scrollForMore: '아래로 스크롤하여 더 불러오기',
     load: '불러오기',
     openWorkspaceFirst: '먼저 작업 공간을 열어 주세요',
     revision: '리비전',

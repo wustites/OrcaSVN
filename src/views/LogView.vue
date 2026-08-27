@@ -150,6 +150,7 @@
         <div class="load-more-state">
           <span v-if="loadingMore">{{ $t('log.loadingMore') }}</span>
           <span v-else-if="!hasMore && logs.length > 0">{{ $t('log.allLoaded') }}</span>
+          <span v-else-if="!loading && hasMore">{{ $t('log.scrollForMore') }}</span>
         </div>
       </div>
 

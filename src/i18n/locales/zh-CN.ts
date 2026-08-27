@@ -131,6 +131,7 @@ export default {
     clearFilters: '清空筛选',
     loadingMore: '正在加载更多日志...',
     allLoaded: '已加载全部日志',
+    scrollForMore: '向下滚动加载更多',
     load: '加载',
     openWorkspaceFirst: '请先打开工作区',
     revision: '版本',
