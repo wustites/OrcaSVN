@@ -65,6 +65,10 @@
             :editable="false"
             size="small"
           />
+          <el-button type="primary" size="small" :loading="loading" @click="queryLogs">
+            <el-icon><Search /></el-icon>
+            {{ $t('log.query') }}
+          </el-button>
           <el-button size="small" @click="resetFilters">
             <el-icon><RefreshLeft /></el-icon>
             {{ $t('common.reset') }}
@@ -516,6 +520,15 @@ const scheduleFilterReload = () => {
   }, FILTER_RELOAD_DELAY_MS)
 }
 
+const queryLogs = () => {
+  if (!workspaceStore.currentPath || loading.value) return
+  if (filterReloadTimer !== undefined) {
+    window.clearTimeout(filterReloadTimer)
+    filterReloadTimer = undefined
+  }
+  void reloadLogs(true, true)
+}
+
 const handleRowClick = (row: SvnLogEntry) => {
   selectedLog.value = row
   dialogVisible.value = true
@@ -712,7 +725,7 @@ onUnmounted(() => {
 
 .log-filters {
   display: grid;
-  grid-template-columns: minmax(120px, 1fr) minmax(180px, 2fr) 380px auto;
+  grid-template-columns: minmax(120px, 1fr) minmax(180px, 2fr) 380px auto auto;
   gap: var(--app-spacing-sm);
   margin-bottom: var(--app-spacing);
 }

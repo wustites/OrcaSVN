@@ -123,6 +123,7 @@ export default {
     quantity: '数量',
     loadedCount: '{count} 件読み込み済み',
     matchedCount: '{count} 件のログに一致',
+    query: '検索',
     querying: 'ログを検索しています...',
     filtered: 'フィルター中',
     noLogs: 'ログはありません',

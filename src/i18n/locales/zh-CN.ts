@@ -123,6 +123,7 @@ export default {
     quantity: '数量',
     loadedCount: '已加载 {count} 条',
     matchedCount: '匹配 {count} 条日志',
+    query: '查询',
     querying: '正在查询日志...',
     filtered: '已筛选',
     noLogs: '暂无提交记录',

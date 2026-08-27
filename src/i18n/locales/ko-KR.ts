@@ -123,6 +123,7 @@ export default {
     quantity: '개수',
     loadedCount: '{count}개 로드됨',
     matchedCount: '로그 {count}개 일치',
+    query: '조회',
     querying: '로그를 조회하는 중...',
     filtered: '필터 적용됨',
     noLogs: '로그가 없습니다',

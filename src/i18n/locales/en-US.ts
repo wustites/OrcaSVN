@@ -123,6 +123,7 @@ export default {
     quantity: 'Quantity',
     loadedCount: '{count} loaded',
     matchedCount: '{count} logs matched',
+    query: 'Query',
     querying: 'Querying logs...',
     filtered: 'Filtered',
     noLogs: 'No logs yet',

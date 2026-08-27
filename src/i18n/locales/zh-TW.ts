@@ -123,6 +123,7 @@ export default {
     quantity: '數量',
     loadedCount: '已載入 {count} 筆',
     matchedCount: '符合 {count} 筆日誌',
+    query: '查詢',
     querying: '正在查詢日誌...',
     filtered: '已篩選',
     noLogs: '暫無提交記錄',
