@@ -344,6 +344,11 @@ async fn svn_info(path: String) -> Result<SvnInfo, String> {
 }
 
 #[tauri::command]
+async fn svn_local_revision(path: String) -> Result<u64, String> {
+    svn::local_revision(&path).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn svn_remote_info(path: String) -> Result<SvnInfo, String> {
     svn::remote_info(&path).await.map_err(|e| e.to_string())
 }
@@ -492,6 +497,7 @@ fn main() {
             svn_log,
             svn_current_user,
             svn_info,
+            svn_local_revision,
             svn_remote_info,
             svn_diff,
             svn_apply_patch,

@@ -373,6 +373,15 @@ pub async fn info(path: &str) -> Result<SvnInfo, SvnError> {
     parse_info_xml(&output)
 }
 
+pub async fn local_revision(path: &str) -> Result<u64, SvnError> {
+    let args = vec!["info", "--show-item", "revision"];
+    let output = execute_svn(&args, Some(path)).await?;
+    output
+        .trim()
+        .parse()
+        .map_err(|_| SvnError::ParseError(format!("无法解析本地工作副本版本：{}", output.trim())))
+}
+
 fn parse_auth_user(output: &str, repository_root: &str) -> Option<SvnAuthUser> {
     let root_key = normalize_url_key(repository_root);
     let host_key = extract_url_host_key(repository_root);

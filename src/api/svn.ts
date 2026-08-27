@@ -52,6 +52,10 @@ export async function svnInfo(path: string): Promise<SvnInfo> {
   return invoke<SvnInfo>('svn_info', { path })
 }
 
+export async function svnLocalRevision(path: string): Promise<number> {
+  return invoke<number>('svn_local_revision', { path })
+}
+
 export async function svnRemoteInfo(path: string): Promise<SvnInfo> {
   return invoke<SvnInfo>('svn_remote_info', { path })
 }

@@ -1,10 +1,11 @@
 import { useWorkspaceStore } from '@/stores/workspace'
-import { svnStatus, svnInfo, readGitignore } from '@/api/svn'
+import { svnStatus, svnInfo, svnLocalRevision, readGitignore } from '@/api/svn'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useSettings } from '@/composables/useSettings'
 import { parseGitignore, isIgnored } from '@/utils/gitignore'
+import { cacheSvnInfoMetadata, getCachedSvnInfoMetadata, type SvnInfoMetadata } from '@/utils/svnInfoCache'
 import type { GitignorePattern } from '@/utils/gitignore'
-import type { SvnStatus } from '@/types'
+import type { SvnInfo, SvnStatus } from '@/types'
 
 let workspaceRequestGeneration = 0
 
@@ -58,6 +59,28 @@ function filterByGitignore(
   return list.filter(s => !isIgnored(s.path, patterns))
 }
 
+function toSvnInfoMetadata(info: SvnInfo): SvnInfoMetadata {
+  const { revision: _revision, ...metadata } = info
+  return metadata
+}
+
+async function loadWorkspaceInfo(path: string, isCurrent: () => boolean): Promise<SvnInfo | null> {
+  const cachedMetadata = getCachedSvnInfoMetadata(path)
+  const freshMetadataRequest = cachedMetadata ? null : svnInfo(path)
+  const [revision, freshInfo] = await Promise.all([
+    svnLocalRevision(path),
+    freshMetadataRequest || Promise.resolve(null),
+  ])
+
+  if (!isCurrent()) return null
+
+  const metadata = cachedMetadata || (freshInfo ? toSvnInfoMetadata(freshInfo) : null)
+  if (!metadata) throw new Error('无法获取 SVN 工作区元信息')
+  if (!cachedMetadata && freshInfo) cacheSvnInfoMetadata(path, metadata)
+
+  return { ...metadata, revision }
+}
+
 export function useWorkspace() {
   const workspaceStore = useWorkspaceStore()
 
@@ -80,7 +103,7 @@ export function useWorkspace() {
     workspaceStore.setSvnInfo(null)
 
     const statusRequest = svnStatus(path)
-    const infoRequest = svnInfo(path)
+    const infoRequest = loadWorkspaceInfo(path, isCurrent)
     const gitignoreRequest = loadGitignoreIfNeeded(path, workspaceStore, isCurrent)
 
     try {
@@ -90,7 +113,7 @@ export function useWorkspace() {
       workspaceStore.setStatusList(status)
 
       const [info] = await Promise.all([infoRequest, gitignoreRequest])
-      if (!isCurrent()) return false
+      if (!isCurrent() || !info) return false
       workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       workspaceStore.rememberWorkspace(path)
@@ -141,13 +164,13 @@ export function useWorkspace() {
     workspaceStore.setError(null)
     try {
       const statusRequest = svnStatus(path)
-      const infoRequest = svnInfo(path)
+      const infoRequest = loadWorkspaceInfo(path, isCurrent)
       const gitignoreRequest = loadGitignoreIfNeeded(path, workspaceStore, isCurrent)
       const status = await statusRequest
       if (!isCurrent()) return false
       workspaceStore.setStatusList(status)
       const [info] = await Promise.all([infoRequest, gitignoreRequest])
-      if (!isCurrent()) return false
+      if (!isCurrent() || !info) return false
       workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       return true
