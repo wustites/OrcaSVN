@@ -112,7 +112,11 @@
 
         <!-- 文件列表 -->
         <div class="file-list">
+          <div v-if="workspaceStore.isLoading && workspaceStore.statusList.length === 0" class="loading-files">
+            <el-skeleton :rows="6" animated />
+          </div>
           <div
+            v-else-if="workspaceStore.statusList.length > 0"
             v-for="file in filteredFiles"
             :key="file.path"
             class="file-item"
@@ -141,7 +145,7 @@
               </el-tooltip>
             </div>
           </div>
-          <div v-if="filteredFiles.length === 0" class="empty-files">
+          <div v-if="!workspaceStore.isLoading && filteredFiles.length === 0" class="empty-files">
             <el-icon><CircleCheck /></el-icon>
             <span>{{ $t('workspace.noChanges') }}</span>
           </div>
@@ -675,6 +679,10 @@ const revertFile = async (file: SvnStatus) => {
 .file-list {
   flex: 1;
   overflow: auto;
+}
+
+.loading-files {
+  padding: 16px 12px;
 }
 
 .file-item {

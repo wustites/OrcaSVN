@@ -6,9 +6,16 @@ import { parseGitignore, isIgnored } from '@/utils/gitignore'
 import type { GitignorePattern } from '@/utils/gitignore'
 import type { SvnStatus } from '@/types'
 
-async function loadGitignoreIfNeeded(path: string, store: ReturnType<typeof useWorkspaceStore>): Promise<void> {
+let workspaceRequestGeneration = 0
+
+async function loadGitignoreIfNeeded(
+  path: string,
+  store: ReturnType<typeof useWorkspaceStore>,
+  isCurrent: () => boolean,
+): Promise<void> {
   const { settings } = useSettings()
   if (!settings.gitignoreEnabled) {
+    if (!isCurrent()) return
     store.setGitignorePatterns([])
     store.setGitignoreMtime(null)
     store.setGitignoreWorkspacePath(null)
@@ -17,6 +24,7 @@ async function loadGitignoreIfNeeded(path: string, store: ReturnType<typeof useW
 
   try {
     const data = await readGitignore(path)
+    if (!isCurrent()) return
     if (!data) {
       store.setGitignorePatterns([])
       store.setGitignoreMtime(null)
@@ -30,10 +38,12 @@ async function loadGitignoreIfNeeded(path: string, store: ReturnType<typeof useW
     ) return
 
     const patterns = parseGitignore(data.content)
+    if (!isCurrent()) return
     store.setGitignorePatterns(patterns)
     store.setGitignoreMtime(data.mtime)
     store.setGitignoreWorkspacePath(path)
   } catch {
+    if (!isCurrent()) return
     store.setGitignorePatterns([])
     store.setGitignoreMtime(null)
     store.setGitignoreWorkspacePath(null)
@@ -52,31 +62,50 @@ export function useWorkspace() {
   const workspaceStore = useWorkspaceStore()
 
   async function loadWorkspace(path: string): Promise<boolean> {
+    const generation = ++workspaceRequestGeneration
     const previousPath = workspaceStore.currentPath
+    const previousStatusList = workspaceStore.statusList
+    const previousSvnInfo = workspaceStore.svnInfo
+    const isCurrentGeneration = () => generation === workspaceRequestGeneration
+    const isCurrent = () => (
+      isCurrentGeneration() && workspaceStore.currentPath === path
+    )
+
     workspaceStore.setLoading(true)
     workspaceStore.setError(null)
 
-    // 提前设置 currentPath，让 LogView 的 svn log 与 status+info 并行执行
+    // 提前设置 currentPath，让依赖工作区路径的视图尽早切换。
     workspaceStore.setCurrentPath(path, false)
+    workspaceStore.setStatusList([])
+    workspaceStore.setSvnInfo(null)
+
+    const statusRequest = svnStatus(path)
+    const infoRequest = svnInfo(path)
+    const gitignoreRequest = loadGitignoreIfNeeded(path, workspaceStore, isCurrent)
 
     try {
-      const [status, info] = await Promise.all([
-        svnStatus(path),
-        svnInfo(path),
-      ])
+      // 变更列表不依赖仓库元数据，status 返回后立即展示。
+      const status = await statusRequest
+      if (!isCurrent()) return false
+      workspaceStore.setStatusList(status)
 
-      await loadGitignoreIfNeeded(path, workspaceStore)
+      const [info] = await Promise.all([infoRequest, gitignoreRequest])
+      if (!isCurrent()) return false
       workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       workspaceStore.rememberWorkspace(path)
       return true
     } catch (err) {
+      if (!isCurrent()) return false
+
       if (previousPath) workspaceStore.setCurrentPath(previousPath, false)
       else workspaceStore.clearWorkspace()
+      workspaceStore.setStatusList(previousStatusList)
+      workspaceStore.setSvnInfo(previousSvnInfo)
       workspaceStore.setError(String(err))
       return false
     } finally {
-      workspaceStore.setLoading(false)
+      if (isCurrentGeneration()) workspaceStore.setLoading(false)
     }
   }
 
@@ -102,15 +131,23 @@ export function useWorkspace() {
   async function refreshStatus(): Promise<boolean> {
     if (!workspaceStore.currentPath) return false
 
+    const generation = ++workspaceRequestGeneration
+    const path = workspaceStore.currentPath
+    const isCurrent = () => (
+      generation === workspaceRequestGeneration && workspaceStore.currentPath === path
+    )
+
     workspaceStore.setLoading(true)
     workspaceStore.setError(null)
     try {
-      const [status, info] = await Promise.all([
-        svnStatus(workspaceStore.currentPath),
-        svnInfo(workspaceStore.currentPath),
-      ])
-
-      await loadGitignoreIfNeeded(workspaceStore.currentPath, workspaceStore)
+      const statusRequest = svnStatus(path)
+      const infoRequest = svnInfo(path)
+      const gitignoreRequest = loadGitignoreIfNeeded(path, workspaceStore, isCurrent)
+      const status = await statusRequest
+      if (!isCurrent()) return false
+      workspaceStore.setStatusList(status)
+      const [info] = await Promise.all([infoRequest, gitignoreRequest])
+      if (!isCurrent()) return false
       workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       return true
@@ -118,7 +155,7 @@ export function useWorkspace() {
       workspaceStore.setError(String(err))
       return false
     } finally {
-      workspaceStore.setLoading(false)
+      if (isCurrent()) workspaceStore.setLoading(false)
     }
   }
 
