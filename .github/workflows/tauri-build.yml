@@ -68,11 +68,54 @@ jobs:
           args: ${{ matrix.args }}
           tagName: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
           releaseName: ${{ startsWith(github.ref, 'refs/tags/v') && format('OrcaSVN {0}', github.ref_name) || '' }}
-          # __VERSION__ is replaced by tauri-action with the app version (e.g. 0.5.5).
+          # __VERSION__ is replaced by tauri-action with the app version (e.g. 0.6.0).
           # Update the highlights below before tagging a new release.
           releaseBody: |-
-            - Support multiple workspaces: open and switch between several SVN working copies at once
-            - 支持多个工作区：可同时打开并在多个 SVN 工作副本之间切换
+            ## What's new since v0.5.5
+
+            ### Commit workflow
+            - Select an entire directory or individual descendants from the commit tree, with accurate checked and partially checked states
+            - Commit only the selected targets while preserving changes in unselected files and sibling directories
+            - Keep the commit scope, search-hidden selection count, message, and issue number when reviewing a diff and returning
+            - Add safety checks for partial directory deletion/replacement and copied or moved directories
+            - Simplify the workspace file list and improve loading feedback
+
+            ### Stash workflow
+            - Add a dedicated stash page for saving, applying, popping, exporting, and deleting working-copy stashes
+            - Select changes by file and hunk, with clearer selected states and complete diff previews
+            - Include untracked text or binary files and empty directories, then restore them as untracked content
+            - Preview untracked text content and identify binary files and directories
+            - Preflight patch and file conflicts before applying; keep the stash when an operation cannot complete
+            - Improve stash persistence, name input, selection count, scrolling, and multilingual terminology
+
+            ### Other improvements
+            - Add an explicit log query action and show the scroll hint after a query
+            - Cache workspace metadata and refresh the local revision more efficiently
+            - Load workspace changes as soon as status data is available
+            - Restrict custom context menus to supported file-list targets
+
+            ## 自 v0.5.5 以来的更新
+
+            ### 提交流程
+            - 提交页支持勾选整个目录或单独选择子项，并准确显示全选和半选状态
+            - 只提交明确选中的目标，保留未选文件及同级目录中的本地修改
+            - 查看差异后返回时保留提交范围、搜索隐藏项计数、提交说明和问题编号
+            - 增加目录删除、替换以及复制或移动目录的部分提交安全检查
+            - 精简工作区文件列表并优化加载状态
+
+            ### 贮藏流程
+            - 新增贮藏页面，可保存、应用、弹出、导出和删除工作副本贮藏
+            - 支持按文件和修改分块选择，强化选中状态并完整显示差异内容
+            - 支持未追踪文本文件、二进制文件和空目录，恢复后仍保持未追踪状态
+            - 显示未追踪文本内容，并明确标识二进制文件和目录
+            - 应用前检查补丁和文件冲突，操作失败时保留贮藏记录
+            - 优化贮藏持久化、名称输入框、已选计数、内容滚动和多语言术语
+
+            ### 其他改进
+            - 日志页增加明确的查询操作，并在查询后显示滚动提示
+            - 缓存工作区元数据并提高本地版本刷新效率
+            - 状态数据可用后立即加载工作区修改
+            - 将自定义右键菜单限制在支持的文件列表目标内
 
             <div align=center>
 
@@ -94,7 +137,7 @@ jobs:
                     <tr>
                         <td>Windows</td>
                         <td>
-                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN-__VERSION__-x64-setup.exe"><img src="https://img.shields.io/badge/Setup-x64-2d7d9a.svg?logo=windows"></a><br>
+                            <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN___VERSION___x64-setup.exe"><img src="https://img.shields.io/badge/Setup-x64-2d7d9a.svg?logo=windows"></a><br>
                             <a href="https://github.com/wustites/OrcaSVN/releases/download/v__VERSION__/OrcaSVN___VERSION___x64_en-US.msi"><img src="https://img.shields.io/badge/MSI-x64-0078d4.svg?logo=windows"></a>
                         </td>
                     </tr>

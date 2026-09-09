@@ -43,7 +43,7 @@ pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
                             b"switched" => {
                                 switched = attr.value.as_ref() == b"true";
                             }
-                            b"history" => {
+                            b"history" | b"copied" => {
                                 history = attr.value.as_ref() == b"true";
                             }
                             _ => {}

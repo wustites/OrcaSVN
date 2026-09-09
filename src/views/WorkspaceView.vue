@@ -415,12 +415,14 @@ const handleDocumentKeydown = (event: KeyboardEvent) => {
 
 onMounted(() => {
   document.addEventListener('click', hideFileContextMenu)
+  document.addEventListener('contextmenu', hideFileContextMenu)
   document.addEventListener('scroll', hideFileContextMenu, true)
   document.addEventListener('keydown', handleDocumentKeydown)
 })
 
 onBeforeUnmount(() => {
   document.removeEventListener('click', hideFileContextMenu)
+  document.removeEventListener('contextmenu', hideFileContextMenu)
   document.removeEventListener('scroll', hideFileContextMenu, true)
   document.removeEventListener('keydown', handleDocumentKeydown)
 })

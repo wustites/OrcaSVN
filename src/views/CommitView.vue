@@ -43,86 +43,86 @@
           </template>
         </el-alert>
 
-        <div class="commit-toolbar">
-          <el-input
-            v-model="searchQuery"
-            :placeholder="$t('commit.searchFiles')"
-            clearable
-            class="search-input"
-            size="small"
-          >
-            <template #prefix>
-              <el-icon><Search /></el-icon>
-            </template>
-          </el-input>
-          <div class="filter-tags">
-            <el-tag
-              :type="filterMode === 'all' ? 'primary' : 'info'"
-              effect="plain"
+        <el-form class="commit-form" label-position="top" :disabled="loading">
+          <div class="commit-toolbar">
+            <el-input
+              v-model="searchQuery"
+              :placeholder="$t('commit.searchFiles')"
+              clearable
+              class="search-input"
               size="small"
-              style="cursor:pointer"
-              @click="filterMode = 'all'"
             >
-              {{ $t('common.all') }}
-            </el-tag>
-            <el-tag
-              :type="filterMode === 'committable' ? 'primary' : 'info'"
-              effect="plain"
-              size="small"
-              style="cursor:pointer"
-              @click="filterMode = 'committable'"
-            >
-              {{ $t('commit.committable') }}
-            </el-tag>
-            <el-tag
-              :type="filterMode === 'unversioned' ? 'primary' : 'info'"
-              effect="plain"
-              size="small"
-              style="cursor:pointer"
-              @click="filterMode = 'unversioned'"
-            >
-              {{ $t('status.unversioned') }}
-            </el-tag>
+              <template #prefix>
+                <el-icon><Search /></el-icon>
+              </template>
+            </el-input>
+            <div class="filter-tags">
+              <el-tag
+                :type="filterMode === 'all' ? 'primary' : 'info'"
+                effect="plain"
+                size="small"
+                style="cursor:pointer"
+                @click="filterMode = 'all'"
+              >
+                {{ $t('common.all') }}
+              </el-tag>
+              <el-tag
+                :type="filterMode === 'committable' ? 'primary' : 'info'"
+                effect="plain"
+                size="small"
+                style="cursor:pointer"
+                @click="filterMode = 'committable'"
+              >
+                {{ $t('commit.committable') }}
+              </el-tag>
+              <el-tag
+                :type="filterMode === 'unversioned' ? 'primary' : 'info'"
+                effect="plain"
+                size="small"
+                style="cursor:pointer"
+                @click="filterMode = 'unversioned'"
+              >
+                {{ $t('status.unversioned') }}
+              </el-tag>
+            </div>
           </div>
-        </div>
 
-        <el-form class="commit-form" label-position="top">
-          <el-form-item :label="$t('commit.selectFiles')" class="file-selection">
-            <el-table 
-              ref="commitTable"
-              :data="changedFiles" 
-              style="width: 100%" 
-              @selection-change="handleSelectionChange"
-              stripe
-              highlight-current-row
-              max-height="300"
-              class="file-table"
-              row-key="path"
+          <el-form-item class="file-selection">
+            <div class="commit-scope">
+              <span>{{ $t('commit.scope') }}: {{ scope || workspaceStore.currentPath }}</span>
+              <el-button v-if="scope" text @click="setScope('')">{{ $t('commit.allDirectories') }}</el-button>
+              <strong aria-live="polite">{{ $t(hiddenSelectedCount > 0 ? 'commit.selectedCountWithHidden' : 'commit.selectedCount', { count: selectedFiles.length, hidden: hiddenSelectedCount }) }}</strong>
+            </div>
+            <el-tree
+              class="commit-tree"
+              :data="treeData"
+              node-key="path"
+              default-expand-all
+              :expand-on-click-node="false"
+              :filter-node-method="filterTreeNode"
+              ref="commitTree"
             >
-              <el-table-column type="selection" width="50" align="center" :reserve-selection="true" />
-              <el-table-column prop="status_code" :label="$t('commit.status')" width="120" align="center">
-                <template #default="{ row }">
-                  <span class="status-badge" :class="getStatusClass(row.status_code)">
-                    {{ $t(getStatusLabelKey(row.status_code)) }}
+              <template #default="{ data }">
+                <div class="commit-tree-row">
+                  <el-checkbox
+                    :model-value="isChecked(data)"
+                    :indeterminate="isPartial(data)"
+                    :disabled="loading"
+                    :aria-label="data.path"
+                    @click.stop
+                    @change="toggleNode(data, Boolean($event))"
+                  />
+                  <span class="tree-name" :title="data.path">{{ data.label }}</span>
+                  <span v-if="data.entry" class="status-badge" :class="getStatusClass(data.entry.status_code)">
+                    {{ $t(getStatusLabelKey(data.entry.status_code)) }}
                   </span>
-                </template>
-              </el-table-column>
-              <el-table-column prop="path" :label="$t('commit.file')" show-overflow-tooltip>
-                <template #default="{ row }">
-                  <button class="file-path-link" type="button" @click="viewDiff(row.path)">
-                    {{ row.path }}
-                  </button>
-                </template>
-              </el-table-column>
-              <el-table-column :label="$t('common.action')" width="90" align="center">
-                <template #default="{ row }">
-                  <el-button text size="small" @click="viewDiff(row.path)">
-                    <el-icon><Connection /></el-icon>
+                  <span v-if="data.children.length" class="tree-count">{{ data.targets.length }}</span>
+                  <el-button v-if="data.entry" text size="small" :disabled="loading" @click.stop="viewDiff(data.entry.path)">
                     {{ $t('common.diff') }}
                   </el-button>
-                </template>
-              </el-table-column>
-            </el-table>
+                </div>
+              </template>
+            </el-tree>
           </el-form-item>
 
           <el-form-item :label="$t('commit.commitMessage')" required class="message-input">
@@ -148,7 +148,7 @@
               :disabled="!commitMessage || selectedFiles.length === 0"
             >
               <el-icon><Upload /></el-icon>
-              {{ $t('common.commit') }}
+              {{ $t(hasUnversionedSelection ? 'commit.addAndReview' : 'common.commit') }}
             </el-button>
             <el-button @click="resetForm">
               <el-icon><RefreshLeft /></el-icon>
@@ -178,6 +178,8 @@
 </template>
 
 <script setup lang="ts">
+import { ElTree } from 'element-plus/es/components/tree/index'
+import { ElCheckbox } from 'element-plus/es/components/checkbox/index'
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
@@ -185,7 +187,7 @@ import { svnAdd, svnCommit } from '@/api/svn'
 import { useI18n } from 'vue-i18n'
 import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
 import { useWorkspace } from '@/composables/useWorkspace'
-import type { SvnStatus } from '@/types'
+import { buildChangeTree, isWithinDirectory, type ChangeNode } from '@/utils/changeTree'
 
 const { t } = useI18n()
 const router = useRouter()
@@ -193,7 +195,7 @@ const route = useRoute()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog, refreshStatus } = useWorkspace()
 
-const commitTable = ref()
+const commitTree = ref()
 const selectedFiles = ref<string[]>([])
 const commitMessage = ref('')
 const loading = ref(false)
@@ -204,9 +206,10 @@ const committableStatuses = new Set(['added', 'modified', 'deleted', 'replaced',
 const searchQuery = ref('')
 const filterMode = ref<'all' | 'committable' | 'unversioned'>('all')
 
+const scope = computed(() => typeof route.query.directory === 'string' ? route.query.directory : '')
 const allChangedFiles = computed(() => {
   return workspaceStore.statusList.filter(
-    s => committableStatuses.has(s.status_code) || s.prop_status === 'modified'
+    s => isWithinDirectory(s.path, scope.value) && s.status_code !== 'conflicted' && s.prop_status !== 'conflicted' && (committableStatuses.has(s.status_code) || s.prop_status === 'modified')
   )
 })
 
@@ -234,9 +237,27 @@ const changedFiles = computed(() => {
   return files
 })
 
-const handleSelectionChange = (rows: SvnStatus[]) => {
-  selectedFiles.value = rows.map(f => f.path)
+const treeData = computed(() => buildChangeTree(allChangedFiles.value, scope.value))
+const selectedSet = computed(() => new Set(selectedFiles.value))
+const isChecked = (node: ChangeNode) => node.targets.every(path => selectedSet.value.has(path))
+const isPartial = (node: ChangeNode) => !isChecked(node) && node.targets.some(path => selectedSet.value.has(path))
+const toggleNode = (node: ChangeNode, checked: boolean) => {
+  const selection = new Set(selectedFiles.value)
+  node.targets.forEach(path => checked ? selection.add(path) : selection.delete(path))
+  selectedFiles.value = [...selection]
 }
+const visiblePaths = computed(() => new Set(changedFiles.value.map(file => file.path)))
+const hiddenSelectedCount = computed(() => selectedFiles.value.filter(path => !visiblePaths.value.has(path)).length)
+const filterTreeNode = (_value: unknown, node: unknown) => (node as ChangeNode).targets.some(path => visiblePaths.value.has(path))
+watch([changedFiles, treeData], async () => {
+  await nextTick()
+  commitTree.value?.filter(searchQuery.value)
+}, { flush: 'post' })
+const setScope = (directory: string) => {
+  router.replace({ name: 'commit', query: directory ? { directory } : {} })
+}
+const hasUnversionedSelection = computed(() => allChangedFiles.value.some(file =>
+  file.status_code === 'unversioned' && selectedSet.value.has(file.path)))
 
 const routeSelectedFiles = computed(() => {
   const files = route.query.files
@@ -246,62 +267,42 @@ const routeSelectedFiles = computed(() => {
   return typeof files === 'string' ? [files] : []
 })
 
-const routeCommittableFiles = computed(() => {
-  const selected = new Set(routeSelectedFiles.value)
-  return allChangedFiles.value
-    .filter((file) => selected.has(file.path))
-    .map((file) => file.path)
-})
-
-const applyRouteSelection = async () => {
-  const files = routeSelectedFiles.value
-  if (files.length === 0) return
-
-  selectedFiles.value = routeCommittableFiles.value
-  await nextTick()
-  if (!commitTable.value) return
-
-  commitTable.value?.clearSelection()
-
-  allChangedFiles.value.forEach((file) => {
-    if (files.includes(file.path)) {
-      commitTable.value?.toggleRowSelection(file, true)
-    }
-  })
+const applyRouteSelection = () => {
+  const requested = new Set(routeSelectedFiles.value)
+  selectedFiles.value = allChangedFiles.value
+    .filter(file => scope.value ? file.status_code !== 'unversioned' : requested.has(file.path))
+    .map(file => file.path)
 }
-
+watch([scope, () => route.query.files], applyRouteSelection, { immediate: true })
+watch(allChangedFiles, () => {
+  const available = new Set(allChangedFiles.value.map(file => file.path))
+  selectedFiles.value = selectedFiles.value.filter(path => available.has(path))
+})
+watch(() => workspaceStore.currentPath, () => {
+  selectedFiles.value = []
+  commitMessage.value = ''
+  sessionStorage.removeItem('orca_commit_form')
+  setScope('')
+})
 onMounted(() => {
-  applyRouteSelection()
-
   const saved = sessionStorage.getItem('orca_commit_form')
   if (saved) {
     try {
       const data = JSON.parse(saved)
-      if (Array.isArray(data.selectedFiles)) {
-        selectedFiles.value = data.selectedFiles
-        nextTick(() => {
-          commitTable.value?.clearSelection()
-          allChangedFiles.value.forEach(file => {
-            if (data.selectedFiles.includes(file.path)) {
-              commitTable.value?.toggleRowSelection(file, true)
-            }
-          })
-        })
+      if (data.workspace === workspaceStore.currentPath && data.scope === scope.value) {
+        const available = new Set(allChangedFiles.value.map(file => file.path))
+        selectedFiles.value = Array.isArray(data.selectedFiles)
+          ? data.selectedFiles.filter((path: string) => available.has(path)) : []
+        commitMessage.value = typeof data.commitMessage === 'string' ? data.commitMessage : ''
       }
-      if (data.commitMessage) {
-        commitMessage.value = data.commitMessage
-      }
-    } catch { /* ignore */ }
+    } catch { /* ignore invalid saved state */ }
     sessionStorage.removeItem('orca_commit_form')
   }
 })
 onBeforeRouteLeave((to) => {
-  if (to.name !== 'diff') {
-    sessionStorage.removeItem('orca_commit_form')
-  }
+  if (loading.value) return false
+  if (to.name !== 'diff') sessionStorage.removeItem('orca_commit_form')
 })
-watch(allChangedFiles, applyRouteSelection, { immediate: true, flush: 'post' })
-watch(() => route.query.files, applyRouteSelection, { flush: 'post' })
 
 const openWorkspace = async () => {
   const success = await openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
@@ -330,6 +331,12 @@ const doCommit = async () => {
 
     if (unversionedFiles.length > 0) {
       await svnAdd(workspaceStore.currentPath, unversionedFiles)
+      await refreshStatus()
+      selectedFiles.value = allChangedFiles.value
+        .filter(file => targetFileSet.has(file.path) || unversionedFiles.some(parent => isWithinDirectory(file.path, parent)))
+        .map(file => file.path)
+      output.value = t('commit.reviewAdded')
+      return
     }
 
     const result = await svnCommit(workspaceStore.currentPath, commitMessage.value, files)
@@ -351,6 +358,8 @@ const viewDiff = (path: string) => {
   const index = allFiles.indexOf(path)
 
   sessionStorage.setItem('orca_commit_form', JSON.stringify({
+    workspace: workspaceStore.currentPath,
+    scope: scope.value,
     selectedFiles: selectedFiles.value,
     commitMessage: commitMessage.value,
   }))
@@ -368,11 +377,18 @@ const resetForm = () => {
   selectedFiles.value = []
   commitMessage.value = ''
   output.value = ''
-  commitTable.value?.clearSelection()
+
 }
 </script>
 
 <style scoped>
+.commit-scope { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; overflow-wrap: anywhere; margin-bottom: 12px; }
+.commit-tree { width: 100%; max-height: 420px; overflow: auto; }
+.commit-tree-row { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding-right: 8px; }
+.tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.tree-count { color: var(--el-text-color-secondary); }
+.commit-tree :deep(.el-tree-node__content) { height: 38px; }
+
 .commit-view {
   max-width: 900px;
   margin: 0 auto;
@@ -570,7 +586,6 @@ const resetForm = () => {
   display: flex;
   align-items: center;
   gap: var(--app-spacing);
-  margin-bottom: var(--app-spacing-md);
 }
 
 .search-input {

@@ -1,6 +1,6 @@
 [package]
 name = "OrcaSVN"
-version = "0.5.5"
+version = "0.6.0"
 description = "OrcaSVN 客户端"
 authors = [""]
 license = "MIT"
@@ -21,3 +21,4 @@ thiserror = "2"
 quick-xml = "0.37"
 tracing = "0.1"
 tracing-subscriber = "0.3"
+base64 = "0.22"

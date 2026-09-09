@@ -27,7 +27,9 @@ function readEntries(): StashEntry[] {
 export const useStashStore = defineStore('stash', () => {
   const entries = ref<StashEntry[]>(readEntries())
 
-  const persist = () => localStorage.setItem(STASHES_KEY, JSON.stringify(entries.value))
+  const persist = (nextEntries: StashEntry[]) => {
+    localStorage.setItem(STASHES_KEY, JSON.stringify(nextEntries))
+  }
 
   const currentEntries = computed(() => (workspacePath: string | null) => {
     if (!workspacePath) return []
@@ -35,13 +37,17 @@ export const useStashStore = defineStore('stash', () => {
   })
 
   const addEntry = (entry: StashEntry) => {
-    entries.value = [entry, ...entries.value]
-    persist()
+    const nextEntries = [entry, ...entries.value]
+    // Persist before publishing the new state. A quota or storage failure must
+    // not make the UI claim that the only copy of a patch was saved.
+    persist(nextEntries)
+    entries.value = nextEntries
   }
 
   const removeEntry = (id: string) => {
-    entries.value = entries.value.filter(entry => entry.id !== id)
-    persist()
+    const nextEntries = entries.value.filter(entry => entry.id !== id)
+    persist(nextEntries)
+    entries.value = nextEntries
   }
 
   return { entries, currentEntries, addEntry, removeEntry }

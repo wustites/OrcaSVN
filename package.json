@@ -1,14 +1,15 @@
 {
   "name": "OrcaSVN",
-  "version": "0.5.5",
+  "version": "0.6.0",
   "description": "OrcaSVN 客户端 - 基于 Tauri",
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",
-    "check": "npm run build && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo test --manifest-path src-tauri/Cargo.toml",
+    "check": "npm run build && npm run test:unit && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo test --manifest-path src-tauri/Cargo.toml",
     "icons": "node src-tauri/icons/generate-icons.js",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:unit": "node --test tests/*.test.cjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core'
-import type { CommandResult, SvnStatus, SvnLogEntry, SvnInfo, SvnAuthUser, DiffResult, BlameLine } from '@/types'
+import type { CommandResult, SvnStatus, SvnLogEntry, SvnInfo, SvnAuthUser, DiffResult, BlameLine, StashUnversionedEntry } from '@/types'
 
 export async function configureSvnExecutable(executable?: string): Promise<string> {
   return invoke<string>('configure_svn_executable', {
@@ -95,6 +95,18 @@ export async function svnRevert(path: string, files: string[]): Promise<CommandR
 
 export async function deleteUnversioned(path: string, files: string[]): Promise<CommandResult> {
   return invoke<CommandResult>('delete_unversioned', { path, files })
+}
+
+export async function readUnversionedFiles(path: string, files: string[]): Promise<StashUnversionedEntry[]> {
+  return invoke<StashUnversionedEntry[]>('read_unversioned_files', { path, files })
+}
+
+export async function restoreUnversionedFiles(
+  path: string,
+  files: StashUnversionedEntry[],
+  dryRun = false
+): Promise<void> {
+  return invoke<void>('restore_unversioned_files', { path, files, dryRun })
 }
 
 export async function svnResolve(

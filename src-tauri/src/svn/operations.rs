@@ -182,6 +182,42 @@ pub async fn commit(
                 "显式文件列表不能为空；省略文件列表可提交整个工作副本".to_string(),
             ));
         }
+        // SVN directory deletion/replacement is atomic even with --depth empty.
+        // Validate against fresh status so deselected descendants cannot slip in.
+        let statuses = status(path).await?;
+        let selected: HashSet<String> = file_list
+            .iter()
+            .map(|file| {
+                normalize_svn_path(file)
+                    .trim_start_matches("./")
+                    .trim_end_matches('/')
+                    .to_string()
+            })
+            .collect();
+        for entry in &statuses {
+            let target = normalize_svn_path(&entry.path);
+            if !selected.contains(&target) {
+                continue;
+            }
+            if entry.history && Path::new(path).join(&entry.path).is_dir() {
+                return Err(SvnError::InvalidArguments(format!(
+                    "复制或移动的目录 {} 包含隐式子项，暂不支持通过部分提交处理；请使用 SVN 客户端提交完整的复制或移动操作", entry.path
+                )));
+            }
+            if matches!(entry.status_code.as_str(), "deleted" | "replaced") {
+                let prefix = format!("{}/", target);
+                if statuses.iter().any(|child| {
+                    let child_path = normalize_svn_path(&child.path);
+                    child_path.starts_with(&prefix) && !selected.contains(&child_path)
+                }) {
+                    return Err(SvnError::InvalidArguments(format!(
+                        "目录 {} 的删除或替换必须包含全部子项，请完整勾选该目录或取消该目录的选择",
+                        entry.path
+                    )));
+                }
+            }
+        }
+        args.extend(["--depth".to_string(), "empty".to_string()]);
         append_targets(&mut args, file_list);
     }
 
@@ -190,9 +226,24 @@ pub async fn commit(
 }
 
 pub async fn status(path: &str) -> Result<Vec<SvnStatus>, SvnError> {
-    let args = vec!["status", "--xml"];
-    let output = execute_svn(&args, Some(path)).await?;
-    parse_status_xml(&output)
+    let output = execute_svn(&["status", "--xml"], Some(path)).await?;
+    let mut entries = parse_status_xml(&output)?;
+    // Default status collapses deleted directories. Expand only when needed,
+    // avoiding a verbose scan for the common modified-file case.
+    if entries
+        .iter()
+        .any(|entry| matches!(entry.status_code.as_str(), "deleted" | "replaced"))
+    {
+        let output = execute_svn(&["status", "--xml", "--verbose"], Some(path)).await?;
+        entries = parse_status_xml(&output)?;
+    }
+    Ok(entries
+        .into_iter()
+        .filter(|entry| {
+            !matches!(entry.status_code.as_str(), "normal" | "none")
+                || matches!(entry.prop_status.as_str(), "modified" | "conflicted")
+        })
+        .collect())
 }
 
 fn build_log_args(
@@ -490,6 +541,15 @@ pub async fn diff(
     })
 }
 
+fn patch_output_has_conflicts(output: &str) -> bool {
+    output.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("C ")
+            || trimmed.contains(".svnpatch.rej")
+            || trimmed.to_ascii_lowercase().contains("rejected hunk")
+    })
+}
+
 pub async fn apply_patch(workspace: &str, patch: &str, reverse: bool) -> Result<String, SvnError> {
     if patch.trim().is_empty() {
         return Err(SvnError::InvalidArguments("补丁内容不能为空".to_string()));
@@ -517,12 +577,40 @@ pub async fn apply_patch(workspace: &str, patch: &str, reverse: bool) -> Result<
 
     let mut args = vec!["patch".to_string()];
     if reverse {
-        args.push("--reverse".to_string());
+        args.push("--reverse-diff".to_string());
     }
     args.push(patch_path.to_string_lossy().into_owned());
-    let args_refs: Vec<&str> = args.iter().map(|arg| arg.as_str()).collect();
     let workspace_cwd = workspace_path.to_string_lossy().into_owned();
-    let result = execute_svn(&args_refs, Some(&workspace_cwd)).await;
+
+    let mut dry_run_args = args.clone();
+    dry_run_args.insert(1, "--dry-run".to_string());
+    let dry_run_refs: Vec<&str> = dry_run_args.iter().map(|arg| arg.as_str()).collect();
+    let dry_run = execute_svn(&dry_run_refs, Some(&workspace_cwd)).await;
+    if let Ok(output) = &dry_run {
+        if patch_output_has_conflicts(output) {
+            let _ = fs::remove_file(&patch_path);
+            return Err(SvnError::CommandFailed(
+                "补丁与当前工作副本冲突，未应用任何更改".to_string(),
+            ));
+        }
+    }
+    if let Err(error) = dry_run {
+        let _ = fs::remove_file(&patch_path);
+        return Err(error);
+    }
+
+    let args_refs: Vec<&str> = args.iter().map(|arg| arg.as_str()).collect();
+    let result = execute_svn(&args_refs, Some(&workspace_cwd))
+        .await
+        .and_then(|output| {
+            if patch_output_has_conflicts(&output) {
+                Err(SvnError::CommandFailed(
+                    "补丁应用时发生冲突，贮藏记录已保留".to_string(),
+                ))
+            } else {
+                Ok(output)
+            }
+        });
     let _ = fs::remove_file(&patch_path);
     result
 }
@@ -590,6 +678,7 @@ mod tests {
     use super::{
         append_targets, append_unique_log_matches, build_diff_args, build_unversioned_file_diff,
         commit, log_entry_matches, normalize_diff_target, normalize_svn_path,
+        patch_output_has_conflicts,
     };
     use crate::svn::executor::SvnError;
     use crate::{SvnLogEntry, SvnLogPath};
@@ -613,12 +702,150 @@ mod tests {
     }
 
     #[test]
+    fn patch_conflicts_are_detected_before_pop_removes_the_entry() {
+        assert!(patch_output_has_conflicts(
+            "C         src/main.rs\n>         rejected hunk @@ -1 +1 @@"
+        ));
+        assert!(patch_output_has_conflicts("path/to/file.svnpatch.rej"));
+        assert!(patch_output_has_conflicts("> rejected hunk @@ -2 +2 @@"));
+        assert!(!patch_output_has_conflicts(
+            "U         src/main.rs\n> applied hunk with offset 2"
+        ));
+    }
+
+    #[test]
     fn commit_rejects_an_explicit_empty_file_list() {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .expect("failed to build tokio runtime");
         let result = runtime.block_on(commit(".", "message", Some(&[])));
         assert!(matches!(result, Err(SvnError::InvalidArguments(_))));
+    }
+
+    // Uses an isolated local repository; never touches a user's working copy.
+    #[test]
+    fn selected_commit_preserves_unselected_children_and_other_directories() {
+        use std::process::Command;
+        if Command::new("svnadmin").arg("--version").output().is_err() {
+            eprintln!("Skipping local repository test: svnadmin is unavailable");
+            return;
+        }
+        let directory = std::env::temp_dir().join(format!(
+            "orcasvn-commit-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let repository = directory.join("repository");
+        let wc = directory.join("wc");
+        let created = Command::new("svnadmin")
+            .arg("create")
+            .arg(&repository)
+            .output()
+            .unwrap();
+        assert!(created.status.success());
+        let url = format!(
+            "file:///{}",
+            repository
+                .to_string_lossy()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+        );
+        let run = |args: &[&str]| {
+            let output = Command::new("svn")
+                .args(args)
+                .current_dir(if wc.exists() { &wc } else { &directory })
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        run(&["checkout", &url, wc.to_str().unwrap()]);
+        std::fs::create_dir_all(wc.join("A")).unwrap();
+        std::fs::create_dir_all(wc.join("B")).unwrap();
+        for name in ["A/selected.txt", "A/keep.txt", "B/keep.txt"] {
+            std::fs::write(wc.join(name), "before").unwrap();
+        }
+        run(&["add", "A", "B"]);
+        run(&["commit", "-m", "initial"]);
+        for name in ["A/selected.txt", "A/keep.txt", "B/keep.txt"] {
+            std::fs::write(wc.join(name), "after").unwrap();
+        }
+        run(&["propset", "test:property", "changed", "A"]);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .unwrap();
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "selected",
+                Some(&["A".into(), "A/selected.txt".into()]),
+            ))
+            .unwrap();
+        let remaining = run(&["status"]);
+        assert!(remaining.contains("A/keep.txt") || remaining.contains("A\\keep.txt"));
+        assert!(remaining.contains("B/keep.txt") || remaining.contains("B\\keep.txt"));
+        assert!(!remaining.contains("selected.txt"));
+        assert_eq!(run(&["cat", "-r", "HEAD", "A/keep.txt"]), "before");
+        assert_eq!(run(&["cat", "-r", "HEAD", "A/selected.txt"]), "after");
+        std::fs::create_dir(wc.join("A/new")).unwrap();
+        std::fs::write(wc.join("A/new/chosen.txt"), "chosen").unwrap();
+        std::fs::write(wc.join("A/new/excluded.txt"), "excluded").unwrap();
+        run(&["add", "A/new"]);
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "new directory",
+                Some(&["A/new".into(), "A/new/chosen.txt".into()]),
+            ))
+            .unwrap();
+        assert!(run(&["status"]).contains("excluded.txt"));
+        assert!(!run(&["list", "-r", "HEAD", "A/new"]).contains("excluded.txt"));
+        run(&["update"]);
+        run(&["delete", "--force", "A"]);
+        let partial_delete = runtime.block_on(commit(
+            wc.to_str().unwrap(),
+            "partial deletion",
+            Some(&["A".into(), "A/selected.txt".into()]),
+        ));
+        assert!(matches!(partial_delete, Err(SvnError::InvalidArguments(_))));
+        assert!(run(&["list", "-r", "HEAD", &url]).contains("A/"));
+        let deletions = runtime
+            .block_on(super::status(wc.to_str().unwrap()))
+            .unwrap()
+            .into_iter()
+            .filter(|entry| {
+                entry.path == "A" || entry.path.starts_with("A/") || entry.path.starts_with("A\\")
+            })
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>();
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "complete deletion",
+                Some(&deletions),
+            ))
+            .unwrap();
+        assert!(!run(&["list", "-r", "HEAD", &url]).contains("A/"));
+        run(&["copy", "B", "C"]);
+        let copied_directory = runtime.block_on(commit(
+            wc.to_str().unwrap(),
+            "copied directory",
+            Some(&["C".into()]),
+        ));
+        assert!(matches!(
+            copied_directory,
+            Err(SvnError::InvalidArguments(_))
+        ));
+        assert!(!run(&["list", "-r", "HEAD", &url]).contains("C/"));
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     #[test]

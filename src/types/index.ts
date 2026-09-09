@@ -76,4 +76,11 @@ export interface StashEntry {
   patch: string
   files: string[]
   hunkCount: number
+  unversionedFiles?: StashUnversionedEntry[]
+}
+
+export interface StashUnversionedEntry {
+  path: string
+  kind: 'file' | 'directory'
+  contentBase64?: string
 }
