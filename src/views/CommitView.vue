@@ -138,7 +138,7 @@
               <span :class="{ 'warning': commitMessage.length > 500 }">{{ commitMessage.length }}</span>
               <span>/ 500</span>
             </div>
-            <div v-if="recentMessages.length > 0 || recentMessagesLoading" class="recent-messages">
+            <div v-if="recentMessages.length > 0" class="recent-messages">
               <div class="recent-messages-header">
                 <span class="recent-messages-title">
                   <el-icon><Calendar /></el-icon>
@@ -147,26 +147,22 @@
                 <el-button
                   text
                   size="small"
-                  :loading="recentMessagesLoading"
                   :aria-label="$t('commit.refreshRecentMessages')"
                   @click="loadRecentMessages"
                 >
                   <el-icon><Refresh /></el-icon>
                 </el-button>
               </div>
-              <div v-if="recentMessagesLoading && recentMessages.length === 0" class="recent-messages-loading">
-                {{ $t('common.loading') }}
-              </div>
-              <div v-else class="recent-message-list">
+              <div class="recent-message-list">
                 <button
                   v-for="entry in recentMessages"
-                  :key="entry.revision"
+                  :key="entry.id"
                   type="button"
                   class="recent-message-item"
                   :title="entry.message"
                   @click="useRecentMessage(entry.message)"
                 >
-                  <span class="recent-message-revision">r{{ entry.revision }}</span>
+                  <span class="recent-message-revision">●</span>
                   <span class="recent-message-text">{{ entry.message }}</span>
                 </button>
               </div>
@@ -216,8 +212,7 @@ import { ElCheckbox } from 'element-plus/es/components/checkbox/index'
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { svnAdd, svnCommit, svnLog } from '@/api/svn'
-import type { SvnLogEntry } from '@/types'
+import { svnAdd, svnCommit } from '@/api/svn'
 import { useI18n } from 'vue-i18n'
 import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
 import { useWorkspace } from '@/composables/useWorkspace'
@@ -229,13 +224,19 @@ const route = useRoute()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog, refreshStatus } = useWorkspace()
 
+const RECENT_COMMIT_MESSAGES_KEY = 'orcasvn-recent-commit-messages'
+const MAX_RECENT_COMMIT_MESSAGES = 8
+interface RecentCommitMessage {
+  id: string
+  message: string
+}
+
 const commitTree = ref()
 const selectedFiles = ref<string[]>([])
 const commitMessage = ref('')
 const loading = ref(false)
 const output = ref('')
-const recentMessages = ref<SvnLogEntry[]>([])
-const recentMessagesLoading = ref(false)
+const recentMessages = ref<RecentCommitMessage[]>([])
 
 const committableStatuses = new Set(['added', 'modified', 'deleted', 'replaced', 'unversioned'])
 
@@ -379,6 +380,7 @@ const doCommit = async () => {
     }
 
     const result = await svnCommit(workspaceStore.currentPath, commitMessage.value, files)
+    if (result.success) recordRecentMessage(workspaceStore.currentPath, commitMessage.value)
     output.value = result.output
     await refreshStatus()
 
@@ -419,26 +421,38 @@ const resetForm = () => {
 
 }
 
-const loadRecentMessages = async () => {
+const loadRecentMessages = () => {
   const workspacePath = workspaceStore.currentPath
   if (!workspacePath) return
 
-  recentMessagesLoading.value = true
   try {
-    const logs = await svnLog(workspacePath, 12)
-    if (workspaceStore.currentPath !== workspacePath) return
-
-    const seen = new Set<string>()
-    recentMessages.value = logs.filter(entry => {
-      const message = entry.message.trim()
-      if (!message || seen.has(message)) return false
-      seen.add(message)
-      return true
-    }).slice(0, 8)
+    const stored = JSON.parse(localStorage.getItem(RECENT_COMMIT_MESSAGES_KEY) || '{}') as Record<string, unknown>
+    const messages = stored[workspacePath]
+    recentMessages.value = Array.isArray(messages)
+      ? messages.filter((entry): entry is RecentCommitMessage => Boolean(entry && typeof entry === 'object' && typeof (entry as RecentCommitMessage).id === 'string' && typeof (entry as RecentCommitMessage).message === 'string'))
+      : []
   } catch {
     recentMessages.value = []
-  } finally {
-    if (workspaceStore.currentPath === workspacePath) recentMessagesLoading.value = false
+  }
+}
+
+const recordRecentMessage = (workspacePath: string, message: string) => {
+  const normalized = message.trim()
+  if (!normalized) return
+
+  try {
+    const stored = JSON.parse(localStorage.getItem(RECENT_COMMIT_MESSAGES_KEY) || '{}') as Record<string, unknown>
+    const previous = Array.isArray(stored[workspacePath])
+      ? stored[workspacePath] as RecentCommitMessage[]
+      : []
+    stored[workspacePath] = [
+      { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message: normalized },
+      ...previous.filter(entry => entry.message !== normalized),
+    ].slice(0, MAX_RECENT_COMMIT_MESSAGES)
+    localStorage.setItem(RECENT_COMMIT_MESSAGES_KEY, JSON.stringify(stored))
+    recentMessages.value = stored[workspacePath] as RecentCommitMessage[]
+  } catch {
+    // Ignore unavailable or malformed local storage.
   }
 }
 
