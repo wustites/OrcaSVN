@@ -225,7 +225,6 @@ const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog, refreshStatus } = useWorkspace()
 
 const RECENT_COMMIT_MESSAGES_KEY = 'orcasvn-recent-commit-messages'
-const MAX_RECENT_COMMIT_MESSAGES = 8
 interface RecentCommitMessage {
   id: string
   message: string
@@ -448,7 +447,7 @@ const recordRecentMessage = (workspacePath: string, message: string) => {
     stored[workspacePath] = [
       { id: `${Date.now()}-${Math.random().toString(36).slice(2)}`, message: normalized },
       ...previous.filter(entry => entry.message !== normalized),
-    ].slice(0, MAX_RECENT_COMMIT_MESSAGES)
+    ]
     localStorage.setItem(RECENT_COMMIT_MESSAGES_KEY, JSON.stringify(stored))
     recentMessages.value = stored[workspacePath] as RecentCommitMessage[]
   } catch {
