@@ -167,6 +167,8 @@ export default {
     file: '檔案',
     commitMessage: '提交資訊',
     enterCommitMessage: '請輸入提交資訊',
+    recentMessages: '最近提交資訊',
+    refreshRecentMessages: '重新整理最近提交資訊',
     doCommit: '提交',
     filesCount: '{count} 個',
     searchFiles: '搜尋檔案...',

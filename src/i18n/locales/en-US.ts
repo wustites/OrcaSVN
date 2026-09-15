@@ -167,6 +167,8 @@ export default {
     file: 'File',
     commitMessage: 'Commit Message',
     enterCommitMessage: 'Please enter commit message',
+    recentMessages: 'Recent commit messages',
+    refreshRecentMessages: 'Refresh recent messages',
     doCommit: 'Commit',
     filesCount: '{count} files',
     searchFiles: 'Search files...',

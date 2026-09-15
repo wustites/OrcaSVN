@@ -167,6 +167,8 @@ export default {
     file: 'ファイル',
     commitMessage: 'コミットメッセージ',
     enterCommitMessage: 'コミットメッセージを入力してください',
+    recentMessages: '最近のコミットメッセージ',
+    refreshRecentMessages: '最近のメッセージを更新',
     doCommit: 'コミット',
     filesCount: '{count} 個のファイル',
     searchFiles: 'ファイルを検索...',

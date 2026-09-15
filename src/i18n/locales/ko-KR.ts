@@ -167,6 +167,8 @@ export default {
     file: '파일',
     commitMessage: '커밋 메시지',
     enterCommitMessage: '커밋 메시지를 입력하세요',
+    recentMessages: '최근 커밋 메시지',
+    refreshRecentMessages: '최근 메시지 새로 고침',
     doCommit: '커밋',
     filesCount: '{count}개',
     searchFiles: '파일 검색...',

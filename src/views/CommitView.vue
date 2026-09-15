@@ -138,6 +138,39 @@
               <span :class="{ 'warning': commitMessage.length > 500 }">{{ commitMessage.length }}</span>
               <span>/ 500</span>
             </div>
+            <div v-if="recentMessages.length > 0 || recentMessagesLoading" class="recent-messages">
+              <div class="recent-messages-header">
+                <span class="recent-messages-title">
+                  <el-icon><Calendar /></el-icon>
+                  {{ $t('commit.recentMessages') }}
+                </span>
+                <el-button
+                  text
+                  size="small"
+                  :loading="recentMessagesLoading"
+                  :aria-label="$t('commit.refreshRecentMessages')"
+                  @click="loadRecentMessages"
+                >
+                  <el-icon><Refresh /></el-icon>
+                </el-button>
+              </div>
+              <div v-if="recentMessagesLoading && recentMessages.length === 0" class="recent-messages-loading">
+                {{ $t('common.loading') }}
+              </div>
+              <div v-else class="recent-message-list">
+                <button
+                  v-for="entry in recentMessages"
+                  :key="entry.revision"
+                  type="button"
+                  class="recent-message-item"
+                  :title="entry.message"
+                  @click="useRecentMessage(entry.message)"
+                >
+                  <span class="recent-message-revision">r{{ entry.revision }}</span>
+                  <span class="recent-message-text">{{ entry.message }}</span>
+                </button>
+              </div>
+            </div>
           </el-form-item>
 
           <el-form-item class="form-actions">
@@ -183,7 +216,8 @@ import { ElCheckbox } from 'element-plus/es/components/checkbox/index'
 import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import { useRouter, useRoute, onBeforeRouteLeave } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { svnAdd, svnCommit } from '@/api/svn'
+import { svnAdd, svnCommit, svnLog } from '@/api/svn'
+import type { SvnLogEntry } from '@/types'
 import { useI18n } from 'vue-i18n'
 import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
 import { useWorkspace } from '@/composables/useWorkspace'
@@ -200,6 +234,8 @@ const selectedFiles = ref<string[]>([])
 const commitMessage = ref('')
 const loading = ref(false)
 const output = ref('')
+const recentMessages = ref<SvnLogEntry[]>([])
+const recentMessagesLoading = ref(false)
 
 const committableStatuses = new Set(['added', 'modified', 'deleted', 'replaced', 'unversioned'])
 
@@ -281,8 +317,10 @@ watch(allChangedFiles, () => {
 watch(() => workspaceStore.currentPath, () => {
   selectedFiles.value = []
   commitMessage.value = ''
+  recentMessages.value = []
   sessionStorage.removeItem('orca_commit_form')
   setScope('')
+  void loadRecentMessages()
 })
 onMounted(() => {
   const saved = sessionStorage.getItem('orca_commit_form')
@@ -298,6 +336,7 @@ onMounted(() => {
     } catch { /* ignore invalid saved state */ }
     sessionStorage.removeItem('orca_commit_form')
   }
+  void loadRecentMessages()
 })
 onBeforeRouteLeave((to) => {
   if (loading.value) return false
@@ -379,10 +418,46 @@ const resetForm = () => {
   output.value = ''
 
 }
+
+const loadRecentMessages = async () => {
+  const workspacePath = workspaceStore.currentPath
+  if (!workspacePath) return
+
+  recentMessagesLoading.value = true
+  try {
+    const logs = await svnLog(workspacePath, 12)
+    if (workspaceStore.currentPath !== workspacePath) return
+
+    const seen = new Set<string>()
+    recentMessages.value = logs.filter(entry => {
+      const message = entry.message.trim()
+      if (!message || seen.has(message)) return false
+      seen.add(message)
+      return true
+    }).slice(0, 8)
+  } catch {
+    recentMessages.value = []
+  } finally {
+    if (workspaceStore.currentPath === workspacePath) recentMessagesLoading.value = false
+  }
+}
+
+const useRecentMessage = (message: string) => {
+  commitMessage.value = message
+}
 </script>
 
 <style scoped>
 .commit-scope { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; width: 100%; overflow-wrap: anywhere; margin-bottom: 12px; }
+.recent-messages { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--el-border-color-lighter); border-radius: var(--app-radius-md); background: var(--el-fill-color-lighter); }
+.recent-messages-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
+.recent-messages-title { display: inline-flex; align-items: center; gap: 6px; color: var(--el-text-color-regular); font-size: 12px; font-weight: 600; }
+.recent-message-list { display: flex; flex-direction: column; gap: 4px; }
+.recent-message-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--el-text-color-primary); text-align: left; cursor: pointer; }
+.recent-message-item:hover { background: var(--el-fill-color); }
+.recent-message-revision { flex: 0 0 auto; color: var(--el-color-primary); font: 12px/1 "Cascadia Mono", Consolas, Monaco, monospace; }
+.recent-message-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.recent-messages-loading { color: var(--el-text-color-secondary); font-size: 12px; }
 .commit-tree { width: 100%; max-height: 420px; overflow: auto; }
 .commit-tree-row { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding-right: 8px; }
 .tree-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }

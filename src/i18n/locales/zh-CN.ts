@@ -167,6 +167,8 @@ export default {
     file: '文件',
     commitMessage: '提交信息',
     enterCommitMessage: '请输入提交信息',
+    recentMessages: '最近提交信息',
+    refreshRecentMessages: '刷新最近提交信息',
     doCommit: '提交',
     filesCount: '{count} 个',
     searchFiles: '搜索文件...',
