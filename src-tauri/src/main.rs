@@ -34,11 +34,7 @@ async fn configure_svn_executable(executable: Option<String>) -> Result<String, 
 #[tauri::command]
 async fn open_workspace_target(path: String, target: OpenTarget) -> Result<(), String> {
     match target {
-        OpenTarget::Explorer => {
-            let mut command = Command::new("explorer");
-            command.arg(&path);
-            spawn_command(command)
-        }
+        OpenTarget::Explorer => open_file_manager(&path),
         OpenTarget::Vscode => {
             let mut code_command = Command::new("code");
             code_command.arg(&path);
@@ -54,10 +50,31 @@ async fn open_workspace_target(path: String, target: OpenTarget) -> Result<(), S
                 }
             }
 
+            #[cfg(target_os = "macos")]
+            {
+                let mut command = Command::new("open");
+                command.args(["-a", "Visual Studio Code", &path]);
+                if spawn_command(command).is_ok() {
+                    return Ok(());
+                }
+            }
+
             Err("failed to open workspace: VS Code executable was not found".to_string())
         }
         OpenTarget::Terminal => open_terminal(&path),
     }
+}
+
+fn open_file_manager(path: &str) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    let mut command = Command::new("explorer");
+    #[cfg(target_os = "macos")]
+    let mut command = Command::new("open");
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let mut command = Command::new("xdg-open");
+
+    command.arg(path);
+    spawn_command(command)
 }
 
 #[tauri::command]
@@ -376,6 +393,7 @@ fn vscode_candidates() -> Vec<PathBuf> {
     candidates
 }
 
+#[cfg(target_os = "windows")]
 fn open_terminal(path: &str) -> Result<(), String> {
     let workspace = PathBuf::from(path);
     let mut errors = Vec::new();
@@ -410,6 +428,33 @@ fn open_terminal(path: &str) -> Result<(), String> {
             Err(format!("failed to open terminal: {}", errors.join("; ")))
         }
     }
+}
+
+#[cfg(target_os = "macos")]
+fn open_terminal(path: &str) -> Result<(), String> {
+    let mut command = Command::new("open");
+    command.args(["-a", "Terminal", path]);
+    spawn_command(command)
+}
+
+#[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+fn open_terminal(path: &str) -> Result<(), String> {
+    let candidates: [(&str, &[&str]); 4] = [
+        ("x-terminal-emulator", &["--working-directory", path]),
+        ("gnome-terminal", &["--working-directory", path]),
+        ("konsole", &["--workdir", path]),
+        ("xfce4-terminal", &["--working-directory", path]),
+    ];
+    let mut errors = Vec::new();
+    for (executable, args) in candidates {
+        let mut command = Command::new(executable);
+        command.args(args);
+        match spawn_command(command) {
+            Ok(()) => return Ok(()),
+            Err(error) => errors.push(format!("{executable}: {error}")),
+        }
+    }
+    Err(format!("failed to open terminal: {}", errors.join("; ")))
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

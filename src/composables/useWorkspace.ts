@@ -81,6 +81,17 @@ async function loadWorkspaceInfo(path: string, isCurrent: () => boolean): Promis
   return { ...metadata, revision }
 }
 
+type InfoRequestResult =
+  | { ok: true; info: SvnInfo | null }
+  | { ok: false; error: unknown }
+
+function requestWorkspaceInfo(path: string, isCurrent: () => boolean): Promise<InfoRequestResult> {
+  return loadWorkspaceInfo(path, isCurrent).then(
+    info => ({ ok: true, info }),
+    error => ({ ok: false, error }),
+  )
+}
+
 export function useWorkspace() {
   const workspaceStore = useWorkspaceStore()
 
@@ -103,7 +114,9 @@ export function useWorkspace() {
     workspaceStore.setSvnInfo(null)
 
     const statusRequest = svnStatus(path)
-    const infoRequest = loadWorkspaceInfo(path, isCurrent)
+    // Convert the eager metadata request into a fulfilled result so a status
+    // failure cannot leave a second rejected promise unobserved.
+    const infoRequest = requestWorkspaceInfo(path, isCurrent)
     const gitignoreRequest = loadGitignoreIfNeeded(path, workspaceStore, isCurrent)
 
     try {
@@ -112,7 +125,9 @@ export function useWorkspace() {
       if (!isCurrent()) return false
       workspaceStore.setStatusList(status)
 
-      const [info] = await Promise.all([infoRequest, gitignoreRequest])
+      const [infoResult] = await Promise.all([infoRequest, gitignoreRequest])
+      if (!infoResult.ok) throw infoResult.error
+      const info = infoResult.info
       if (!isCurrent() || !info) return false
       workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
@@ -164,17 +179,20 @@ export function useWorkspace() {
     workspaceStore.setError(null)
     try {
       const statusRequest = svnStatus(path)
-      const infoRequest = loadWorkspaceInfo(path, isCurrent)
+      const infoRequest = requestWorkspaceInfo(path, isCurrent)
       const gitignoreRequest = loadGitignoreIfNeeded(path, workspaceStore, isCurrent)
       const status = await statusRequest
       if (!isCurrent()) return false
       workspaceStore.setStatusList(status)
-      const [info] = await Promise.all([infoRequest, gitignoreRequest])
+      const [infoResult] = await Promise.all([infoRequest, gitignoreRequest])
+      if (!infoResult.ok) throw infoResult.error
+      const info = infoResult.info
       if (!isCurrent() || !info) return false
       workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       return true
     } catch (err) {
+      if (!isCurrent()) return false
       workspaceStore.setError(String(err))
       return false
     } finally {

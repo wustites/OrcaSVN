@@ -220,7 +220,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onBeforeUnmount, onMounted, reactive } from 'vue'
+import { ref, computed, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { deleteUnversioned, revealWorkspaceFile, svnCleanup, svnRevert, svnDiff } from '@/api/svn'
@@ -239,6 +239,7 @@ const filter = ref<'all' | 'modified' | 'added' | 'conflicted' | 'missing'>('all
 const selectedFile = ref<string | null>(null)
 const isLoadingDiff = ref(false)
 const diffResult = ref<DiffResult | null>(null)
+let diffRequestGeneration = 0
 const fileContextMenu = reactive({
   visible: false,
   x: 0,
@@ -308,15 +309,21 @@ const selectFile = async (file: SvnStatus) => {
 }
 
 const loadDiff = async (path: string) => {
-  if (!workspaceStore.currentPath) return
+  const workspacePath = workspaceStore.currentPath
+  if (!workspacePath) return
+  const generation = ++diffRequestGeneration
+  const isCurrent = () => generation === diffRequestGeneration
+    && workspaceStore.currentPath === workspacePath
+    && selectedFile.value === path
   isLoadingDiff.value = true
   diffResult.value = null
   try {
-    diffResult.value = await svnDiff(workspaceStore.currentPath, path)
+    const result = await svnDiff(workspacePath, path)
+    if (isCurrent()) diffResult.value = result
   } catch {
-    diffResult.value = null
+    if (isCurrent()) diffResult.value = null
   } finally {
-    isLoadingDiff.value = false
+    if (isCurrent()) isLoadingDiff.value = false
   }
 }
 
@@ -327,9 +334,11 @@ const getStatusLabel = (code: string) => {
 const openWorkspace = () => openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
 
 const closeWorkspace = () => {
+  diffRequestGeneration += 1
   workspaceStore.clearWorkspace()
   selectedFile.value = null
   diffResult.value = null
+  isLoadingDiff.value = false
 }
 
 const doCheckout = () => router.push({ name: 'checkout' })
@@ -429,6 +438,14 @@ const revealSelectedFile = async () => {
 const handleDocumentKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') hideFileContextMenu()
 }
+
+watch(() => workspaceStore.currentPath, () => {
+  diffRequestGeneration += 1
+  selectedFile.value = null
+  diffResult.value = null
+  isLoadingDiff.value = false
+  hideFileContextMenu()
+})
 
 onMounted(() => {
   document.addEventListener('click', hideFileContextMenu)

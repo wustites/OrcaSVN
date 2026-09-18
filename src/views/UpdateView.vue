@@ -136,6 +136,7 @@ const updating = ref(false)
 const incomingLogs = ref<SvnLogEntry[]>([])
 const remoteRevision = ref(0)
 let updateStateTimer: number | undefined
+let updateRequestGeneration = 0
 const updateStateIntervalMs = 30_000
 
 const localRevision = computed(() => workspaceStore.svnInfo?.revision || 0)
@@ -156,16 +157,23 @@ const applyCachedState = (path: string) => {
 }
 
 const loadUpdateState = async (force = false) => {
-  if (!workspaceStore.currentPath || loading.value || (!force && updating.value)) return
+  if (!workspaceStore.currentPath || (!force && (loading.value || updating.value))) return
   const requestedPath = workspaceStore.currentPath
+  const generation = ++updateRequestGeneration
+  const isCurrent = () => generation === updateRequestGeneration
+    && workspaceStore.currentPath === requestedPath
   loading.value = true
   try {
-    await refreshStatus()
+    const refreshed = await refreshStatus()
+    if (!isCurrent() || !refreshed) return
     const info = await svnRemoteInfo(requestedPath)
+    if (!isCurrent()) return
     remoteRevision.value = info.revision
     const local = workspaceStore.svnInfo?.revision || 0
     if (info.revision > local) {
-      incomingLogs.value = await svnLog(requestedPath, settings.logLimit || 50, info.revision, local + 1)
+      const logs = await svnLog(requestedPath, settings.logLimit || 50, info.revision, local + 1)
+      if (!isCurrent()) return
+      incomingLogs.value = logs
     } else {
       incomingLogs.value = []
     }
@@ -177,21 +185,26 @@ const loadUpdateState = async (force = false) => {
       })),
     })
   } catch (err) {
+    if (!isCurrent()) return
     workspaceStore.setError(String(err))
     ElMessage.error(`${t('common.error')}：${err}`)
   } finally {
-    loading.value = false
+    if (generation === updateRequestGeneration) loading.value = false
   }
 }
 
 const doUpdate = async () => {
   if (!workspaceStore.currentPath) return
+  const requestedPath = workspaceStore.currentPath
   updating.value = true
   try {
-    await svnUpdate(workspaceStore.currentPath)
+    await svnUpdate(requestedPath)
+    if (workspaceStore.currentPath !== requestedPath) return
     await loadUpdateState(true)
+    if (workspaceStore.currentPath !== requestedPath) return
     ElMessage.success(`${t('common.update')} ${t('common.success')}`)
   } catch (err) {
+    if (workspaceStore.currentPath !== requestedPath) return
     workspaceStore.setError(String(err))
     ElMessage.error(`${t('common.error')}：${err}`)
   } finally {
@@ -219,6 +232,8 @@ onUnmounted(() => {
 watch(
   () => workspaceStore.currentPath,
   (path) => {
+    updateRequestGeneration += 1
+    loading.value = false
     incomingLogs.value = []
     remoteRevision.value = 0
     if (path && !applyCachedState(path)) {
