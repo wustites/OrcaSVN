@@ -157,6 +157,10 @@
           @click.stop
           @contextmenu.prevent.stop
         >
+          <button type="button" class="context-menu-item" @click="revealSelectedFile">
+            <el-icon><FolderOpened /></el-icon>
+            <span>{{ $t('workspace.openInExplorer') }}</span>
+          </button>
           <button type="button" class="context-menu-item" @click="copySelectedFilePath('relative')">
             <el-icon><CopyDocument /></el-icon>
             <span>{{ $t('workspace.copyPath') }}</span>
@@ -219,7 +223,7 @@
 import { ref, computed, onBeforeUnmount, onMounted, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
-import { deleteUnversioned, svnCleanup, svnRevert, svnDiff } from '@/api/svn'
+import { deleteUnversioned, revealWorkspaceFile, svnCleanup, svnRevert, svnDiff } from '@/api/svn'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus/es/components/message/index'
 import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
@@ -356,7 +360,7 @@ const openFileContextMenu = (event: MouseEvent, file: SvnStatus) => {
   selectedFile.value = file.path
   fileContextMenu.file = file
   fileContextMenu.x = Math.max(8, Math.min(event.clientX, window.innerWidth - 184))
-  fileContextMenu.y = Math.max(8, Math.min(event.clientY, window.innerHeight - 76))
+  fileContextMenu.y = Math.max(8, Math.min(event.clientY, window.innerHeight - 110))
   fileContextMenu.visible = true
   void loadDiff(file.path)
 }
@@ -404,6 +408,19 @@ const copySelectedFilePath = async (mode: 'relative' | 'absolute') => {
     ElMessage.success(t('workspace.pathCopied'))
   } catch {
     ElMessage.error(t('workspace.copyFailed'))
+  } finally {
+    hideFileContextMenu()
+  }
+}
+
+const revealSelectedFile = async () => {
+  const file = fileContextMenu.file
+  if (!file || !workspaceStore.currentPath) return
+
+  try {
+    await revealWorkspaceFile(workspaceStore.currentPath, file.path)
+  } catch (err) {
+    ElMessage.error(`${t('common.error')}：${err}`)
   } finally {
     hideFileContextMenu()
   }

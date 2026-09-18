@@ -110,6 +110,7 @@ export default {
     viewDiff: '檢視檔案差異',
     revertFile: '還原此檔案',
     deleteUnversioned: '刪除未版本控制檔案',
+    openInExplorer: '在檔案總管中開啟',
     copyPath: '複製路徑',
     copyAbsolutePath: '複製絕對路徑',
     pathCopied: '路徑已複製',

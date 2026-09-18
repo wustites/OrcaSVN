@@ -110,6 +110,7 @@ export default {
     viewDiff: '查看文件差异',
     revertFile: '还原此文件',
     deleteUnversioned: '删除未跟踪文件',
+    openInExplorer: '在资源管理器中打开',
     copyPath: '复制路径',
     copyAbsolutePath: '复制绝对路径',
     pathCopied: '路径已复制',

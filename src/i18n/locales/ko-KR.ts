@@ -110,6 +110,7 @@ export default {
     viewDiff: '파일 비교 보기',
     revertFile: '이 파일 되돌리기',
     deleteUnversioned: '버전 관리 안 된 파일 삭제',
+    openInExplorer: '파일 탐색기에서 열기',
     copyPath: '경로 복사',
     copyAbsolutePath: '절대 경로 복사',
     pathCopied: '경로가 복사되었습니다',

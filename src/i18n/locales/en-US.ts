@@ -110,6 +110,7 @@ export default {
     viewDiff: 'View file diff',
     revertFile: 'Revert this file',
     deleteUnversioned: 'Delete unversioned file',
+    openInExplorer: 'Open in File Explorer',
     copyPath: 'Copy Path',
     copyAbsolutePath: 'Copy Absolute Path',
     pathCopied: 'Path copied',

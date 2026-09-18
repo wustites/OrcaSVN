@@ -60,6 +60,51 @@ async fn open_workspace_target(path: String, target: OpenTarget) -> Result<(), S
     }
 }
 
+#[tauri::command]
+async fn reveal_workspace_file(path: String, file: String) -> Result<(), String> {
+    let workspace = fs::canonicalize(&path).map_err(|e| format!("invalid workspace path: {e}"))?;
+    let target = resolve_workspace_child(&workspace, &file)?;
+
+    #[cfg(target_os = "windows")]
+    {
+        let reveal_target = if target.exists() {
+            target
+        } else {
+            target.parent().unwrap_or(&workspace).to_path_buf()
+        };
+        let mut command = Command::new("explorer");
+        if reveal_target.is_file() {
+            command.arg(format!("/select,{}", reveal_target.display()));
+        } else {
+            command.arg(reveal_target);
+        }
+        return spawn_command(command);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let mut command = Command::new("open");
+        if target.exists() {
+            command.arg("-R").arg(target);
+        } else {
+            command.arg(target.parent().unwrap_or(&workspace));
+        }
+        return spawn_command(command);
+    }
+
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    {
+        let directory = if target.is_dir() {
+            target.as_path()
+        } else {
+            target.parent().unwrap_or(&workspace)
+        };
+        let mut command = Command::new("xdg-open");
+        command.arg(directory);
+        spawn_command(command)
+    }
+}
+
 fn spawn_command(mut command: Command) -> Result<(), String> {
     command
         .spawn()
@@ -736,6 +781,7 @@ fn main() {
             svn_switch,
             svn_merge,
             open_workspace_target,
+            reveal_workspace_file,
             delete_unversioned,
             read_unversioned_files,
             restore_unversioned_files,

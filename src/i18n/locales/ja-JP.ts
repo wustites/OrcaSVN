@@ -110,6 +110,7 @@ export default {
     viewDiff: 'ファイル差分を表示',
     revertFile: 'このファイルを元に戻す',
     deleteUnversioned: 'バージョン管理外ファイルを削除',
+    openInExplorer: 'ファイルマネージャーで開く',
     copyPath: 'パスをコピー',
     copyAbsolutePath: '絶対パスをコピー',
     pathCopied: 'パスをコピーしました',
