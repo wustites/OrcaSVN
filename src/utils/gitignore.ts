@@ -1,3 +1,5 @@
+import type { SvnStatus } from '@/types'
+
 export interface GitignorePattern {
   negation: boolean
   regex: RegExp
@@ -99,4 +101,14 @@ export function isIgnored(filePath: string, patterns: GitignorePattern[]): boole
     }
   }
   return ignored
+}
+
+export function filterUnversionedByGitignore(
+  statuses: SvnStatus[],
+  patterns: GitignorePattern[],
+): SvnStatus[] {
+  if (patterns.length === 0) return statuses
+  return statuses.filter(status =>
+    status.status_code !== 'unversioned' || !isIgnored(status.path, patterns),
+  )
 }

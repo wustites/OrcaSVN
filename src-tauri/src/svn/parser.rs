@@ -24,7 +24,10 @@ pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
                     in_entry = true;
                     for attr in e.attributes().flatten() {
                         if attr.key.as_ref() == b"path" {
-                            current_path = String::from_utf8_lossy(&attr.value).to_string();
+                            current_path = attr
+                                .unescape_value()
+                                .map_err(|e| SvnError::ParseError(e.to_string()))?
+                                .into_owned();
                         }
                     }
                 }
@@ -200,7 +203,10 @@ pub fn parse_info_xml(xml: &str) -> Result<SvnInfo, SvnError> {
                         for attr in e.attributes().flatten() {
                             match String::from_utf8_lossy(attr.key.as_ref()).as_ref() {
                                 "path" => {
-                                    path_val = String::from_utf8_lossy(&attr.value).to_string()
+                                    path_val = attr
+                                        .unescape_value()
+                                        .map_err(|e| SvnError::ParseError(e.to_string()))?
+                                        .into_owned()
                                 }
                                 "kind" => {
                                     node_kind = String::from_utf8_lossy(&attr.value).to_string()
@@ -271,26 +277,29 @@ pub fn parse_blame_text(output: &str) -> Result<Vec<crate::svn::BlameLine>, SvnE
     let mut lines = Vec::new();
 
     for line in output.lines() {
-        let trimmed = line.trim();
-        if trimmed.len() < 10 {
+        // SVN prints a padded revision, one space, a ten-character author
+        // column, one space, then the source line exactly as it appears.
+        let trimmed = line.trim_start_matches(' ');
+        let Some((revision_text, rest)) = trimmed.split_once(' ') else {
+            continue;
+        };
+        let revision = match revision_text {
+            "-" => 0,
+            value => match value.parse::<u64>() {
+                Ok(revision) => revision,
+                Err(_) => continue,
+            },
+        };
+        let mut author_column = rest.chars();
+        let author: String = author_column.by_ref().take(10).collect();
+        if author.chars().count() != 10 || author_column.next() != Some(' ') {
             continue;
         }
-
-        let parts: Vec<&str> = trimmed.splitn(3, char::is_whitespace).collect();
-        if parts.len() >= 3 {
-            if let Ok(revision) = parts[0].parse::<u64>() {
-                let rest = trimmed[parts[0].len()..].trim_start();
-                let author_end = rest.find(char::is_whitespace).unwrap_or(rest.len());
-                let author = rest[..author_end].to_string();
-                let content = rest[author_end..].trim_start().to_string();
-
-                lines.push(crate::svn::BlameLine {
-                    revision,
-                    author,
-                    line: content,
-                });
-            }
-        }
+        lines.push(crate::svn::BlameLine {
+            revision,
+            author: author.trim().to_string(),
+            line: author_column.collect(),
+        });
     }
 
     Ok(lines)
@@ -342,6 +351,13 @@ mod tests {
 <status><target path="."></target></status>"#;
         let result = parse_status_xml(xml).unwrap();
         assert_eq!(result.len(), 0);
+    }
+
+    #[test]
+    fn status_paths_decode_xml_entities() {
+        let xml = r#"<status><target path="."><entry path="a&amp;b&lt;c&gt;.txt"><wc-status item="modified" props="none"/></entry></target></status>"#;
+        let result = parse_status_xml(xml).unwrap();
+        assert_eq!(result[0].path, "a&b<c>.txt");
     }
 
     #[test]
@@ -403,12 +419,24 @@ mod tests {
     #[test]
     fn test_parse_blame_text() {
         let output =
-            "     1  john    First line\n     2  jane    Second line\n    10  john    Modified";
+            "     1       john First line\n     2       jane Second line\n    10       john Modified";
         let result = parse_blame_text(output).unwrap();
         assert_eq!(result.len(), 3);
         assert_eq!(result[0].revision, 1);
         assert_eq!(result[0].author, "john");
         assert_eq!(result[0].line, "First line");
+    }
+
+    #[test]
+    fn blame_preserves_indentation_blank_lines_and_uncommitted_lines() {
+        let output =
+            "     1       john     indented  \n     2       jane \n     -          - local change";
+        let result = parse_blame_text(output).unwrap();
+        assert_eq!(result.len(), 3);
+        assert_eq!(result[0].line, "    indented  ");
+        assert_eq!(result[1].line, "");
+        assert_eq!(result[2].revision, 0);
+        assert_eq!(result[2].line, "local change");
     }
 
     #[test]

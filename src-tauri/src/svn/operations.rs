@@ -1,4 +1,5 @@
 use crate::{DiffResult, SvnAuthUser, SvnInfo, SvnLogEntry, SvnStatus};
+use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -264,17 +265,22 @@ fn build_log_args(
         args.push(lim.to_string());
     }
 
-    // 日期范围优先于修订号范围（服务器端过滤）。
-    if let Some(from) = date_from {
-        let end = date_to.unwrap_or("HEAD");
-        let range = if let Some(rev) = start_rev {
-            // load-more：用修订号作为上界，但保持下界为开始日期。
-            format!("{{{}}}:{}", from, rev)
+    // Scan newest first so filtered batches and their revision cursor agree.
+    if date_from.is_some() || date_to.is_some() {
+        let newest = if let Some(rev) = start_rev {
+            rev.to_string()
+        } else if let Some(to) = date_to {
+            // The date picker supplies a day, while SVN date revisions use an
+            // instant. Include commits throughout the selected end day.
+            format!("{{{}T23:59:59.999999}}", to)
         } else {
-            format!("{{{}}}:{{{}}}", from, end)
+            "HEAD".to_string()
         };
+        let oldest = date_from
+            .map(|from| format!("{{{}}}", from))
+            .unwrap_or_else(|| "1".to_string());
         args.push("-r".to_string());
-        args.push(range);
+        args.push(format!("{}:{}", newest, oldest));
     } else if let Some(start) = start_rev {
         if let Some(end) = end_rev {
             args.push("-r".to_string());
@@ -302,7 +308,30 @@ async fn fetch_log_batch(
     let args = build_log_args(limit, start_rev, end_rev, date_from, date_to);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     let output = execute_svn(&args_refs, Some(path)).await?;
-    parse_log_xml(&output)
+    let entries = parse_log_xml(&output)?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| log_entry_matches_dates(entry, date_from, date_to))
+        .collect())
+}
+
+fn log_entry_matches_dates(
+    entry: &SvnLogEntry,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> bool {
+    if date_from.is_none() && date_to.is_none() {
+        return true;
+    }
+    let Ok(timestamp) = DateTime::parse_from_rfc3339(&entry.date) else {
+        return false;
+    };
+    let local_day = timestamp
+        .with_timezone(&Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    date_from.is_none_or(|from| local_day.as_str() >= from)
+        && date_to.is_none_or(|to| local_day.as_str() <= to)
 }
 
 fn log_entry_matches(entry: &SvnLogEntry, keyword: Option<&str>, author: Option<&str>) -> bool {
@@ -676,9 +705,9 @@ pub async fn merge(
 #[cfg(test)]
 mod tests {
     use super::{
-        append_targets, append_unique_log_matches, build_diff_args, build_unversioned_file_diff,
-        commit, log_entry_matches, normalize_diff_target, normalize_svn_path,
-        patch_output_has_conflicts,
+        append_targets, append_unique_log_matches, build_diff_args, build_log_args,
+        build_unversioned_file_diff, commit, log_entry_matches, log_entry_matches_dates,
+        normalize_diff_target, normalize_svn_path, patch_output_has_conflicts,
     };
     use crate::svn::executor::SvnError;
     use crate::{SvnLogEntry, SvnLogPath};
@@ -946,6 +975,35 @@ mod tests {
         assert!(!log_entry_matches(&entry, Some("add"), None));
         assert!(!log_entry_matches(&entry, Some("新增"), None));
         assert!(!log_entry_matches(&entry, Some("mark"), None));
+    }
+
+    #[test]
+    fn log_date_range_scans_newest_first_and_includes_end_day() {
+        let args = build_log_args(None, None, None, Some("2026-06-01"), Some("2026-06-26"));
+        assert_eq!(args[4], "{2026-06-26T23:59:59.999999}:{2026-06-01}");
+        let next = build_log_args(
+            Some(50),
+            Some(99),
+            None,
+            Some("2026-06-01"),
+            Some("2026-06-26"),
+        );
+        assert_eq!(next[6], "99:{2026-06-01}");
+        let end_only = build_log_args(None, None, None, None, Some("2026-06-26"));
+        assert_eq!(end_only[4], "{2026-06-26T23:59:59.999999}:1");
+    }
+
+    #[test]
+    fn log_date_filter_excludes_revision_before_start_day() {
+        let entry = SvnLogEntry {
+            revision: 8,
+            author: "author".to_string(),
+            date: "2026-06-25T12:00:00Z".to_string(),
+            message: "earlier".to_string(),
+            changed_paths: Vec::new(),
+        };
+        assert!(!log_entry_matches_dates(&entry, Some("2026-06-26"), None));
+        assert!(log_entry_matches_dates(&entry, None, Some("2026-06-26")));
     }
 
     #[test]
