@@ -2,7 +2,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { svnStatus, svnInfo, svnLocalRevision, readGitignore } from '@/api/svn'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useSettings } from '@/composables/useSettings'
-import { parseGitignore, filterUnversionedByGitignore } from '@/utils/gitignore'
+import { parseGitignore, filterByGitignore } from '@/utils/gitignore'
 import { cacheSvnInfoMetadata, getCachedSvnInfoMetadata, type SvnInfoMetadata } from '@/utils/svnInfoCache'
 import type { SvnInfo } from '@/types'
 
@@ -120,7 +120,7 @@ export function useWorkspace() {
       if (!infoResult.ok) throw infoResult.error
       const info = infoResult.info
       if (!isCurrent() || !info) return false
-      workspaceStore.setStatusList(filterUnversionedByGitignore(status, workspaceStore.gitignorePatterns))
+      workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       workspaceStore.rememberWorkspace(path)
       return true
@@ -179,7 +179,7 @@ export function useWorkspace() {
       if (!infoResult.ok) throw infoResult.error
       const info = infoResult.info
       if (!isCurrent() || !info) return false
-      workspaceStore.setStatusList(filterUnversionedByGitignore(status, workspaceStore.gitignorePatterns))
+      workspaceStore.setStatusList(filterByGitignore(status, workspaceStore.gitignorePatterns))
       workspaceStore.setSvnInfo(info)
       return true
     } catch (err) {

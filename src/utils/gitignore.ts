@@ -103,12 +103,10 @@ export function isIgnored(filePath: string, patterns: GitignorePattern[]): boole
   return ignored
 }
 
-export function filterUnversionedByGitignore(
+export function filterByGitignore(
   statuses: SvnStatus[],
   patterns: GitignorePattern[],
 ): SvnStatus[] {
   if (patterns.length === 0) return statuses
-  return statuses.filter(status =>
-    status.status_code !== 'unversioned' || !isIgnored(status.path, patterns),
-  )
+  return statuses.filter(status => !isIgnored(status.path, patterns))
 }

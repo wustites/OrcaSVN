@@ -9,15 +9,17 @@ const compiled = ts.transpileModule(fs.readFileSync('src/utils/gitignore.ts', 'u
 }).outputText
 const context = { exports: {} }
 vm.runInNewContext(compiled, context)
-const { filterUnversionedByGitignore, parseGitignore } = context.exports
+const { filterByGitignore, parseGitignore } = context.exports
 
-test('gitignore hides unversioned paths but keeps tracked changes', () => {
-  const patterns = parseGitignore('*.log')
+test('gitignore hides matching tracked and unversioned paths', () => {
+  const patterns = parseGitignore('*.log\n!keep.log')
   const statuses = [
     { path: 'existing.log', status_code: 'modified' },
     { path: 'new.log', status_code: 'unversioned' },
+    { path: 'keep.log', status_code: 'modified' },
     { path: 'source.ts', status_code: 'modified' },
   ]
-  const visible = filterUnversionedByGitignore(statuses, patterns)
-  assert.deepEqual(Array.from(visible, status => status.path), ['existing.log', 'source.ts'])
+  const visible = filterByGitignore(statuses, patterns)
+  assert.deepEqual(Array.from(visible, status => status.path), ['keep.log', 'source.ts'])
+  assert.equal(filterByGitignore(statuses, []).length, statuses.length)
 })
