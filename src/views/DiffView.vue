@@ -127,7 +127,7 @@
               <div class="diff-tags">
                 <el-tag class="path-tag" type="primary">
                   <el-icon><Document /></el-icon>
-                  {{ $t('diff.file') }}：{{ diffResult?.path }}
+                  <span class="path-label" :title="diffResult?.path">{{ $t('diff.file') }}：{{ diffResult?.path }}</span>
                 </el-tag>
                 <el-tag v-if="diffResult?.old_revision && diffResult?.new_revision" type="info">
                   {{ $t('common.version') }}：{{ diffResult?.old_revision }} → {{ diffResult?.new_revision }}
@@ -530,10 +530,30 @@ watch(
   display: flex;
   flex-wrap: wrap;
   gap: var(--app-spacing-sm);
+  min-width: 0;
+  max-width: 100%;
 }
 
 .path-tag {
   max-width: min(720px, 100%);
+  min-width: 0;
+}
+
+.path-tag :deep(.el-tag__content) {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.path-tag .el-icon {
+  flex-shrink: 0;
+}
+
+.path-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diff-stats {
@@ -684,7 +704,8 @@ watch(
 
 .file-sidebar {
   width: 240px;
-  flex-shrink: 0;
+  flex: 0 0 240px;
+  min-width: 0;
   border-right: 1px solid var(--md-sys-color-outline-variant);
   display: flex;
   flex-direction: column;
@@ -709,12 +730,15 @@ watch(
 
 .sidebar-files {
   flex: 1;
-  overflow: auto;
+  min-width: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .sidebar-file {
   display: flex;
   align-items: center;
+  min-width: 0;
   gap: 8px;
   padding: 6px 12px;
   cursor: pointer;
@@ -747,6 +771,8 @@ watch(
 .dot-replaced { background: #a16207; }
 
 .file-name {
+  flex: 1;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
