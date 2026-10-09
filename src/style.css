@@ -387,7 +387,7 @@ a:hover {
 .output-textarea .el-textarea__inner,
 .diff-lines,
 .code-line {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 13px;
   line-height: 1.5;
 }
@@ -1004,4 +1004,19 @@ body,
   border-color: var(--md-sys-color-primary-hover);
 }
 
-.el-dialog:not(.is-fullscreen) { max-width: calc(100vw - 32px); }
+.el-dialog:not(.is-fullscreen) {
+  display: flex;
+  flex-direction: column;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - var(--el-dialog-margin-top, 15vh) - 16px);
+}
+
+.el-dialog__header,
+.el-dialog__footer {
+  flex-shrink: 0;
+}
+
+.el-dialog:not(.is-fullscreen) .el-dialog__body {
+  min-height: 0;
+  overflow: auto;
+}

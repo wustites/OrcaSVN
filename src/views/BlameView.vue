@@ -44,9 +44,9 @@
       <div v-else class="blame-content">
         <div class="blame-header">
           <div class="blame-tags">
-            <el-tag class="path-tag" type="primary">
+            <el-tag class="path-tag" type="primary" :title="currentPath">
               <el-icon><Document /></el-icon>
-              {{ currentPath }}
+              <span class="path-label">{{ currentPath }}</span>
             </el-tag>
             <el-tag type="info" effect="plain">
               <el-icon><List /></el-icon>
@@ -221,11 +221,11 @@ watch(() => route.query.path, (path) => {
 }
 
 .path-input :deep(.el-input-group__prepend) {
-  border-radius: var(--app-radius-md) 0 0 var(--app-radius-md);
+  border-radius: var(--app-radius-sm) 0 0 var(--app-radius-sm);
 }
 
 .path-input :deep(.el-input-group__append) {
-  border-radius: 0 var(--app-radius-md) var(--app-radius-md) 0;
+  border-radius: 0 var(--app-radius-sm) var(--app-radius-sm) 0;
 }
 
 .empty-blame,
@@ -262,11 +262,30 @@ watch(() => route.query.path, (path) => {
 .blame-tags {
   display: flex;
   flex-wrap: wrap;
+  min-width: 0;
+  max-width: 100%;
   gap: var(--app-spacing-sm);
 }
 
 .path-tag {
   max-width: min(720px, 100%);
+  min-width: 0;
+}
+
+.path-tag :deep(.el-tag__content) {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.path-tag .el-icon {
+  flex-shrink: 0;
+}
+
+.path-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .blame-table {
@@ -284,7 +303,7 @@ watch(() => route.query.path, (path) => {
 }
 
 .line-number {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 12px;
   color: var(--el-text-color-secondary);
 }
@@ -303,7 +322,7 @@ watch(() => route.query.path, (path) => {
 .code-line {
   display: block;
   min-width: max-content;
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   white-space: pre;
   font-size: 13px;
   line-height: 1.5;

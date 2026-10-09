@@ -68,7 +68,7 @@
               <el-button size="small" :loading="applyingEntryId === entry.id && applyingMode === 'apply'" :disabled="applyingEntryId !== null" @click="applyStash(entry)">{{ $t('stash.apply') }}</el-button>
               <el-button size="small" type="primary" :loading="applyingEntryId === entry.id && applyingMode === 'pop'" :disabled="applyingEntryId !== null" @click="popStash(entry)">{{ $t('stash.pop') }}</el-button>
               <el-dropdown trigger="click" @command="handleEntryDropdown(entry)">
-                <el-button size="small" text>
+                <el-button size="small" text :aria-label="$t('common.action')">
                   <el-icon><MoreFilled /></el-icon>
                 </el-button>
                 <template #dropdown>
@@ -678,7 +678,7 @@ watch(() => workspaceStore.currentPath, () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
 }
 
 .unversioned-preview {
@@ -691,7 +691,7 @@ watch(() => workspaceStore.currentPath, () => {
 .unversioned-preview-note {
   padding: 7px 14px;
   color: var(--el-text-color-secondary);
-  font: 12px/1.5 "Cascadia Mono", Consolas, Monaco, monospace;
+  font: 12px/1.5 var(--app-font-family-mono);
 }
 
 .unversioned-preview-path {
@@ -716,6 +716,7 @@ watch(() => workspaceStore.currentPath, () => {
 }
 
 .diff-file-header {
+  gap: var(--app-spacing-sm);
   padding: 10px 12px;
   background: var(--el-fill-color-light);
   cursor: pointer;
@@ -727,8 +728,25 @@ watch(() => workspaceStore.currentPath, () => {
 }
 
 .diff-file-path {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.diff-file-header :deep(.el-checkbox) {
+  flex: 1;
+  min-width: 0;
+  height: auto;
+}
+
+.diff-file-header :deep(.el-checkbox__label) {
+  min-width: 0;
+  white-space: normal;
+}
+
+.hunk-count {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .hunk-card {
@@ -770,7 +788,7 @@ watch(() => workspaceStore.currentPath, () => {
   padding: 0 12px 10px 42px;
   overflow: auto;
   color: var(--el-text-color-regular);
-  font: 12px/1.65 "Cascadia Mono", Consolas, Monaco, monospace;
+  font: 12px/1.65 var(--app-font-family-mono);
   white-space: pre;
 }
 
@@ -795,10 +813,19 @@ watch(() => workspaceStore.currentPath, () => {
 }
 
 .stash-name-field :deep(.el-input__wrapper) {
-  border-radius: var(--app-radius-md);
+  border-radius: var(--app-radius-sm);
 }
 
 @media (max-width: 760px) {
+  .create-toolbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .select-actions {
+    flex-wrap: wrap;
+  }
+
   .stash-entry {
     grid-template-columns: 30px minmax(0, 1fr);
   }

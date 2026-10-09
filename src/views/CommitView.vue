@@ -468,9 +468,9 @@ const useRecentMessage = (message: string) => {
 .recent-messages-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 6px; }
 .recent-messages-title { display: inline-flex; align-items: center; gap: 6px; color: var(--el-text-color-regular); font-size: 12px; font-weight: 600; }
 .recent-message-list { display: flex; flex-direction: column; gap: 4px; }
-.recent-message-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--el-text-color-primary); text-align: left; cursor: pointer; }
+.recent-message-item { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 8px; border: 0; border-radius: var(--app-radius-sm); background: transparent; color: var(--el-text-color-primary); text-align: left; cursor: pointer; }
 .recent-message-item:hover { background: var(--el-fill-color); }
-.recent-message-revision { flex: 0 0 auto; color: var(--el-color-primary); font: 12px/1 "Cascadia Mono", Consolas, Monaco, monospace; }
+.recent-message-revision { flex: 0 0 auto; color: var(--el-color-primary); font: 12px/1 var(--app-font-family-mono); }
 .recent-message-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .recent-messages-loading { color: var(--el-text-color-secondary); font-size: 12px; }
 .commit-tree { width: 100%; max-height: 420px; overflow: auto; }
@@ -540,7 +540,7 @@ const useRecentMessage = (message: string) => {
 }
 
 .path-text {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 13px;
   word-break: break-all;
 }
@@ -561,7 +561,7 @@ const useRecentMessage = (message: string) => {
 }
 
 .file-path {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 13px;
 }
 
@@ -571,7 +571,7 @@ const useRecentMessage = (message: string) => {
   border: 0;
   background: transparent;
   color: var(--md-sys-color-primary);
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 13px;
   text-align: left;
   cursor: pointer;
@@ -630,7 +630,7 @@ const useRecentMessage = (message: string) => {
 }
 
 .output-textarea {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
 }
 
 :deep(.output-textarea .el-textarea__inner) {

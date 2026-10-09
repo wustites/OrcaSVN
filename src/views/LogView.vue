@@ -167,7 +167,7 @@
         @close="onDialogClose"
       >
         <div v-if="selectedLog" class="log-detail">
-          <el-descriptions :column="2" border class="detail-descriptions">
+          <el-descriptions :column="1" border class="detail-descriptions">
             <el-descriptions-item :label="$t('log.revision')">
               <el-tag type="primary" size="small">r{{ selectedLog.revision }}</el-tag>
             </el-descriptions-item>
@@ -760,7 +760,7 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #075a82;
+  color: var(--md-sys-color-primary);
   font-weight: 600;
 }
 
@@ -868,6 +868,17 @@ onUnmounted(() => {
   gap: 6px;
 }
 
+.author-info span,
+.date-info span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.author-info .el-icon,
+.date-info .el-icon {
+  flex-shrink: 0;
+}
+
 .author-info .el-icon,
 .date-info .el-icon {
   font-size: 14px;
@@ -925,7 +936,7 @@ onUnmounted(() => {
 }
 
 .file-path {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 13px;
 }
 
@@ -946,10 +957,6 @@ onUnmounted(() => {
 }
 
 @media (max-width: 640px) {
-  .log-dialog {
-    width: 90% !important;
-  }
-
   .log-filters {
     grid-template-columns: 1fr;
   }

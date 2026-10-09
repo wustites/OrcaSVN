@@ -188,7 +188,7 @@ onBeforeUnmount(() => {
 .diff-tools button:disabled { opacity: .4; cursor: default; }
 .search-status { font-size: 11px; color: var(--md-sys-color-on-surface-variant); }
 .indexing-diff { padding: 16px; color: var(--md-sys-color-on-surface-variant); }
-.diff-lines { font-family: 'Cascadia Mono', Consolas, Monaco, monospace; font-size: 13px; line-height: 20px; }
+.diff-lines { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-label); line-height: 20px; }
 .compact .diff-lines { font-size: 12px; }
 .diff-row { display: grid; grid-template-columns: 64px 34px minmax(0, 1fr); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
 .compact .diff-row { grid-template-columns: 46px 24px minmax(0, 1fr); }
@@ -197,8 +197,10 @@ onBeforeUnmount(() => {
 .diff-code { padding: 3px 12px; white-space: pre; tab-size: 8; color: var(--md-sys-color-on-surface); font: inherit; }
 .compact .diff-line-number, .compact .diff-marker, .compact .diff-code { padding-top: 1px; padding-bottom: 1px; }
 .diff-added { background: var(--app-color-status-added-bg); }
+.diff-added .diff-code { color: var(--app-color-status-added-text); }
 .diff-added .diff-line-number, .diff-added .diff-marker { background: var(--app-color-status-added-bg); color: var(--app-color-status-added-text); }
 .diff-removed { background: var(--app-color-status-error-bg); }
+.diff-removed .diff-code { color: var(--app-color-status-error-text); }
 .diff-removed .diff-line-number, .diff-removed .diff-marker { background: var(--app-color-status-error-bg); color: var(--app-color-status-error-text); }
 .diff-meta { background: var(--app-color-status-unversioned-bg); }
 .diff-meta .diff-code, .diff-meta .diff-marker { color: var(--app-color-status-unversioned-text); font-weight: 700; }

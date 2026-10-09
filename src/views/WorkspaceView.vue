@@ -39,7 +39,7 @@
       <aside class="left-panel">
         <div class="repository-name">
           <strong>{{ workspaceName }}</strong>
-          <button @click="closeWorkspace"><el-icon><Close /></el-icon></button>
+          <button :aria-label="$t('workspace.closeWorkspace')" :title="$t('workspace.closeWorkspace')" @click="closeWorkspace"><el-icon><Close /></el-icon></button>
         </div>
         <div class="sidebar-section">
           <div class="sidebar-heading">{{ $t('workspace.workingCopy') }}</div>
@@ -219,7 +219,7 @@
           </div>
           <div v-else-if="diffResult" class="diff-content">
             <div class="diff-header">
-              <el-tag type="primary" size="small">{{ selectedFile }}</el-tag>
+              <el-tag class="diff-path-tag" type="primary" size="small" :title="selectedFile">{{ selectedFile }}</el-tag>
               <div class="diff-stats">
                 <el-tag type="success" size="small">+{{ diffStats.added }}</el-tag>
                 <el-tag type="danger" size="small">-{{ diffStats.removed }}</el-tag>
@@ -656,7 +656,7 @@ const handleFileAction = async (file: SvnStatus) => {
 }
 
 .path-text {
-  font-family: "Cascadia Mono", Consolas, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 12px;
 }
 
@@ -957,6 +957,18 @@ const handleFileAction = async (file: SvnStatus) => {
 .diff-stats {
   display: flex;
   gap: 6px;
+  flex-shrink: 0;
+}
+
+.diff-path-tag {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.diff-path-tag :deep(.el-tag__content) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 响应式 */
@@ -1078,7 +1090,7 @@ const handleFileAction = async (file: SvnStatus) => {
   width: 20px;
   height: 20px;
   border: 0;
-  border-radius: 3px;
+  border-radius: var(--app-radius-sm);
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
 }
@@ -1108,10 +1120,10 @@ const handleFileAction = async (file: SvnStatus) => {
   gap: 6px;
   padding: 0 8px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--app-radius-sm);
   background: transparent;
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 11px;
+  font-size: var(--app-font-size-label);
   text-align: left;
 }
 
@@ -1174,10 +1186,10 @@ const handleFileAction = async (file: SvnStatus) => {
   gap: 6px;
   padding: 0 8px;
   border: 1px solid var(--md-sys-color-outline);
-  border-radius: 4px;
+  border-radius: var(--app-radius-sm);
   background: var(--md-sys-color-surface-container-low);
   color: var(--md-sys-color-on-surface-variant);
-  font-size: 10px;
+  font-size: var(--app-font-size-label);
 }
 
 .center-panel,

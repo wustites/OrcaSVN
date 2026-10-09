@@ -419,7 +419,7 @@ watch(
   border: 0;
   background: transparent;
   color: var(--md-sys-color-primary);
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   font-size: 12px;
   text-align: left;
   cursor: pointer;

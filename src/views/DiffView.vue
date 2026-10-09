@@ -566,7 +566,7 @@ watch(
   padding: 6px 12px;
   cursor: pointer;
   font-size: 12px;
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
   border-bottom: 1px solid var(--md-sys-color-outline-variant);
   transition: background var(--app-transition-fast);
 }

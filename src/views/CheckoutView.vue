@@ -255,7 +255,7 @@ const resetForm = () => {
 }
 
 .output-textarea {
-  font-family: "Cascadia Mono", Consolas, Monaco, monospace;
+  font-family: var(--app-font-family-mono);
 }
 
 :deep(.output-textarea .el-textarea__inner) {
