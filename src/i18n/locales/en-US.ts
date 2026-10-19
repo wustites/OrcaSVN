@@ -56,6 +56,8 @@ export default {
     encoding: 'Default Encoding',
     gitignore: 'Ignore File (.gitignore)',
     gitignoreHint: 'When enabled, files matching .gitignore will be filtered out',
+    autoDeleteMissingOnCommit: 'Auto-delete missing files',
+    autoDeleteMissingOnCommitHint: 'Off by default. When enabled, selected missing files are scheduled with svn delete --force before commit.',
     logLimit: 'Default Log Batch Size',
     theme: 'Theme',
     themeLight: 'Light',

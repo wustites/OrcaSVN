@@ -218,6 +218,7 @@ import { svnAdd, svnCommit } from '@/api/svn'
 import { useI18n } from 'vue-i18n'
 import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
 import { useWorkspace } from '@/composables/useWorkspace'
+import { useSettings } from '@/composables/useSettings'
 import { buildChangeTree, isWithinDirectory, type ChangeNode } from '@/utils/changeTree'
 
 const { t } = useI18n()
@@ -225,6 +226,7 @@ const router = useRouter()
 const route = useRoute()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog, refreshStatusAfterMutation } = useWorkspace()
+const { settings } = useSettings()
 
 const RECENT_COMMIT_MESSAGES_KEY = 'orcasvn-recent-commit-messages'
 interface RecentCommitMessage {
@@ -239,7 +241,11 @@ const loading = ref(false)
 const output = ref('')
 const recentMessages = ref<RecentCommitMessage[]>([])
 
-const committableStatuses = new Set(['added', 'modified', 'deleted', 'replaced', 'unversioned'])
+const committableStatuses = computed(() => {
+  const statuses = new Set(['added', 'modified', 'deleted', 'replaced', 'unversioned'])
+  if (settings.autoDeleteMissingOnCommit) statuses.add('missing')
+  return statuses
+})
 
 const searchQuery = ref('')
 const filterMode = ref<'all' | 'committable' | 'unversioned'>('all')
@@ -247,7 +253,7 @@ const filterMode = ref<'all' | 'committable' | 'unversioned'>('all')
 const scope = computed(() => typeof route.query.directory === 'string' ? route.query.directory : '')
 const allChangedFiles = computed(() => {
   return workspaceStore.statusList.filter(
-    s => isWithinDirectory(s.path, scope.value) && s.status_code !== 'conflicted' && s.prop_status !== 'conflicted' && (committableStatuses.has(s.status_code) || s.prop_status === 'modified')
+    s => isWithinDirectory(s.path, scope.value) && s.status_code !== 'conflicted' && s.prop_status !== 'conflicted' && (committableStatuses.value.has(s.status_code) || s.prop_status === 'modified')
   )
 })
 
@@ -380,7 +386,12 @@ const doCommit = async () => {
       return
     }
 
-    const result = await svnCommit(workspaceStore.currentPath, commitMessage.value, files)
+    const result = await svnCommit(
+      workspaceStore.currentPath,
+      commitMessage.value,
+      files,
+      settings.autoDeleteMissingOnCommit,
+    )
     if (result.success) recordRecentMessage(workspaceStore.currentPath, commitMessage.value)
     output.value = result.output
     await refreshStatusAfterMutation()
