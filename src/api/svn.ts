@@ -22,9 +22,10 @@ export async function svnUpdate(path: string, revision?: number): Promise<Comman
 export async function svnCommit(
   path: string,
   message: string,
-  files?: string[]
+  files?: string[],
+  autoDeleteMissing = false,
 ): Promise<CommandResult> {
-  return invoke<CommandResult>('svn_commit', { path, message, files })
+  return invoke<CommandResult>('svn_commit', { path, message, files, autoDeleteMissing })
 }
 
 export async function svnStatus(path: string, force = false): Promise<SvnStatus[]> {
