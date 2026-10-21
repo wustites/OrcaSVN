@@ -48,3 +48,32 @@ jobs:
 
       - name: Run checks
         run: npm run check
+
+  egui:
+    name: egui client
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./orcasvn-egui -> target
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libgtk-3-dev libxkbcommon-dev subversion
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path orcasvn-egui/Cargo.toml -- --check
+
+      - name: Test
+        run: cargo test --manifest-path orcasvn-egui/Cargo.toml

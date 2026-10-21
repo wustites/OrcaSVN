@@ -1,0 +1,1102 @@
+use crate::{DiffResult, SvnAuthUser, SvnInfo, SvnLogEntry, SvnStatus};
+use chrono::{DateTime, Local};
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+use super::executor::{execute_svn, SvnError};
+use super::parser::{parse_blame_text, parse_info_xml, parse_log_xml, parse_status_xml};
+
+fn append_targets(args: &mut Vec<String>, targets: &[String]) {
+    if targets.is_empty() {
+        return;
+    }
+    args.push("--".to_string());
+    args.extend(targets.iter().cloned());
+}
+
+fn normalize_diff_target(file: &str) -> String {
+    if file.contains("://") || !file.contains('@') || file.ends_with('@') {
+        file.to_string()
+    } else {
+        format!("{}@", file)
+    }
+}
+
+fn normalize_svn_path(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
+fn normalize_workspace_diff_file(workspace: &str, file: &str) -> Result<String, SvnError> {
+    if file.contains("://") {
+        return Ok(file.to_string());
+    }
+
+    let file_path = Path::new(file);
+    if !file_path.is_absolute() {
+        return Ok(normalize_svn_path(file));
+    }
+
+    let workspace_path = Path::new(workspace)
+        .canonicalize()
+        .map_err(|e| SvnError::CommandFailed(format!("无法访问工作副本目录：{}", e)))?;
+    let canonical_file = file_path
+        .canonicalize()
+        .map_err(|e| SvnError::CommandFailed(format!("无法访问文件：{}", e)))?;
+
+    if !canonical_file.starts_with(&workspace_path) {
+        return Err(SvnError::InvalidArguments(
+            "文件必须位于当前工作副本内".to_string(),
+        ));
+    }
+
+    let relative = canonical_file
+        .strip_prefix(&workspace_path)
+        .map_err(|e| SvnError::CommandFailed(format!("无法解析工作副本相对路径：{}", e)))?;
+
+    Ok(normalize_svn_path(&relative.to_string_lossy()))
+}
+
+fn build_diff_args(
+    file: &str,
+    old_rev: Option<u64>,
+    new_rev: Option<u64>,
+) -> Result<Vec<String>, SvnError> {
+    let mut args = vec!["diff".to_string()];
+
+    match (old_rev, new_rev) {
+        (Some(old), Some(new)) => {
+            args.push("-r".to_string());
+            args.push(format!("{}:{}", old, new));
+        }
+        (Some(change), None) => {
+            args.push("-c".to_string());
+            args.push(change.to_string());
+        }
+        (None, Some(_)) => {
+            return Err(SvnError::InvalidArguments(
+                "新版本不能在没有旧版本的情况下单独指定".to_string(),
+            ));
+        }
+        (None, None) => {}
+    }
+
+    append_targets(&mut args, &[normalize_diff_target(file)]);
+    Ok(args)
+}
+
+pub async fn checkout(url: &str, path: &str, revision: Option<u64>) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec!["checkout".to_string(), url.to_string(), path.to_string()];
+
+    if let Some(rev) = revision {
+        args.insert(1, "-r".to_string());
+        args.insert(2, rev.to_string());
+    }
+
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, None).await
+}
+
+pub async fn update(path: &str, revision: Option<u64>) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec!["update".to_string()];
+
+    if let Some(rev) = revision {
+        args.push("-r".to_string());
+        args.push(rev.to_string());
+    }
+
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+fn resolve_workspace_file_path(workspace: &str, file: &str) -> Result<PathBuf, SvnError> {
+    let workspace_path = Path::new(workspace)
+        .canonicalize()
+        .map_err(|e| SvnError::CommandFailed(format!("无法访问工作副本目录：{}", e)))?;
+    let file_path = workspace_path.join(file);
+    let canonical_file = file_path
+        .canonicalize()
+        .map_err(|e| SvnError::CommandFailed(format!("无法访问文件：{}", e)))?;
+
+    if !canonical_file.starts_with(&workspace_path) {
+        return Err(SvnError::InvalidArguments(
+            "文件必须位于当前工作副本内".to_string(),
+        ));
+    }
+
+    Ok(canonical_file)
+}
+
+fn build_unversioned_file_diff(file: &str, content: &str) -> String {
+    let normalized = content.replace("\r\n", "\n").replace('\r', "\n");
+    let has_trailing_newline = normalized.ends_with('\n');
+    let mut lines: Vec<&str> = normalized.split('\n').collect();
+    if has_trailing_newline {
+        lines.pop();
+    }
+
+    let mut diff = String::new();
+    diff.push_str(&format!("Index: {}\n", file));
+    diff.push_str("===================================================================\n");
+    diff.push_str(&format!("--- {}\t(nonexistent)\n", file));
+    diff.push_str(&format!("+++ {}\t(working copy)\n", file));
+    diff.push_str(&format!("@@ -0,0 +1,{} @@\n", lines.len()));
+    for line in &lines {
+        diff.push('+');
+        diff.push_str(line);
+        diff.push('\n');
+    }
+    if !has_trailing_newline && !lines.is_empty() {
+        diff.push_str("\\ No newline at end of file\n");
+    }
+    diff
+}
+
+async fn is_unversioned_file(workspace: &str, file: &str) -> Result<bool, SvnError> {
+    let target = normalize_diff_target(file);
+    let args = vec!["status", "--xml", "--", target.as_str()];
+    let output = execute_svn(&args, Some(workspace)).await?;
+    let statuses = parse_status_xml(&output)?;
+    let normalized_file = normalize_svn_path(file);
+    Ok(statuses.iter().any(|status| {
+        status.status_code == "unversioned" && normalize_svn_path(&status.path) == normalized_file
+    }) || (statuses.len() == 1 && statuses[0].status_code == "unversioned"))
+}
+
+pub async fn remote_info(path: &str) -> Result<SvnInfo, SvnError> {
+    let args = vec!["info", "-r", "HEAD", "--xml"];
+    let output = execute_svn(&args, Some(path)).await?;
+    parse_info_xml(&output)
+}
+
+pub async fn commit(
+    path: &str,
+    message: &str,
+    files: Option<&[String]>,
+) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec!["commit".to_string(), "-m".to_string(), message.to_string()];
+
+    if let Some(file_list) = files {
+        if file_list.is_empty() {
+            return Err(SvnError::InvalidArguments(
+                "显式文件列表不能为空；省略文件列表可提交整个工作副本".to_string(),
+            ));
+        }
+        // SVN directory deletion/replacement is atomic even with --depth empty.
+        // Validate against fresh status so deselected descendants cannot slip in.
+        let statuses = status(path).await?;
+        let selected: HashSet<String> = file_list
+            .iter()
+            .map(|file| {
+                normalize_svn_path(file)
+                    .trim_start_matches("./")
+                    .trim_end_matches('/')
+                    .to_string()
+            })
+            .collect();
+        for entry in &statuses {
+            let target = normalize_svn_path(&entry.path);
+            if !selected.contains(&target) {
+                continue;
+            }
+            if entry.history && Path::new(path).join(&entry.path).is_dir() {
+                return Err(SvnError::InvalidArguments(format!(
+                    "复制或移动的目录 {} 包含隐式子项，暂不支持通过部分提交处理；请使用 SVN 客户端提交完整的复制或移动操作", entry.path
+                )));
+            }
+            if matches!(entry.status_code.as_str(), "deleted" | "replaced") {
+                let prefix = format!("{}/", target);
+                if statuses.iter().any(|child| {
+                    let child_path = normalize_svn_path(&child.path);
+                    child_path.starts_with(&prefix) && !selected.contains(&child_path)
+                }) {
+                    return Err(SvnError::InvalidArguments(format!(
+                        "目录 {} 的删除或替换必须包含全部子项，请完整勾选该目录或取消该目录的选择",
+                        entry.path
+                    )));
+                }
+            }
+        }
+        args.extend(["--depth".to_string(), "empty".to_string()]);
+        append_targets(&mut args, file_list);
+    }
+
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+pub async fn status(path: &str) -> Result<Vec<SvnStatus>, SvnError> {
+    let output = execute_svn(&["status", "--xml"], Some(path)).await?;
+    let mut entries = parse_status_xml(&output)?;
+    // Default status collapses deleted directories. Expand only affected
+    // targets, avoiding a second verbose traversal of the whole workspace.
+    let targets: Vec<_> = entries
+        .iter()
+        .filter(|entry| matches!(entry.status_code.as_str(), "deleted" | "replaced"))
+        .map(|entry| normalize_diff_target(&entry.path))
+        .collect();
+    for group in targets.chunks(16) {
+        let mut args: Vec<String> = ["status", "--xml", "--verbose", "--"]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect();
+        args.extend(group.iter().cloned());
+        let refs: Vec<_> = args.iter().map(String::as_str).collect();
+        let output = execute_svn(&refs, Some(path)).await?;
+        entries.extend(parse_status_xml(&output)?);
+    }
+    let mut changed = std::collections::BTreeMap::new();
+    for entry in entries {
+        if !matches!(entry.status_code.as_str(), "normal" | "none")
+            || matches!(entry.prop_status.as_str(), "modified" | "conflicted")
+        {
+            changed.insert(entry.path.clone(), entry);
+        }
+    }
+    Ok(changed.into_values().collect())
+}
+
+/// Query only exact paths. The filesystem event queue chooses these
+/// targets; a complete status scan remains the fallback for unknown scope.
+pub(super) async fn status_for_paths(
+    path: &str,
+    paths: &[String],
+) -> Result<Vec<SvnStatus>, SvnError> {
+    let mut entries = Vec::new();
+    // Batch the identified paths; oversized platform argv limits fall back
+    // to a complete scan in the caller.
+    for group in paths.chunks(64) {
+        let mut args: Vec<String> = ["status", "--xml", "--depth", "empty", "--"]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect();
+        args.extend(group.iter().map(|target| normalize_diff_target(target)));
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        let output = execute_svn(&refs, Some(path)).await?;
+        entries.extend(parse_status_xml(&output)?);
+    }
+    Ok(entries
+        .into_iter()
+        .filter(|entry| {
+            !matches!(entry.status_code.as_str(), "normal" | "none" | "ignored")
+                || matches!(entry.prop_status.as_str(), "modified" | "conflicted")
+        })
+        .collect())
+}
+
+fn build_log_args(
+    limit: Option<u32>,
+    start_rev: Option<u64>,
+    end_rev: Option<u64>,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "log".to_string(),
+        "--xml".to_string(),
+        "--verbose".to_string(),
+    ];
+
+    if let Some(lim) = limit {
+        args.push("-l".to_string());
+        args.push(lim.to_string());
+    }
+
+    // Scan newest first so filtered batches and their revision cursor agree.
+    if date_from.is_some() || date_to.is_some() {
+        let newest = if let Some(rev) = start_rev {
+            rev.to_string()
+        } else if let Some(to) = date_to {
+            // The date picker supplies a day, while SVN date revisions use an
+            // instant. Include commits throughout the selected end day.
+            format!("{{{}T23:59:59.999999}}", to)
+        } else {
+            "HEAD".to_string()
+        };
+        let oldest = date_from
+            .map(|from| format!("{{{}}}", from))
+            .unwrap_or_else(|| "1".to_string());
+        args.push("-r".to_string());
+        args.push(format!("{}:{}", newest, oldest));
+    } else if let Some(start) = start_rev {
+        if let Some(end) = end_rev {
+            args.push("-r".to_string());
+            args.push(format!("{}:{}", start, end));
+        } else {
+            args.push("-r".to_string());
+            args.push(format!("{}:HEAD", start));
+        }
+    } else {
+        args.push("-r".to_string());
+        args.push("HEAD:1".to_string());
+    }
+
+    args
+}
+
+async fn fetch_log_batch(
+    path: &str,
+    limit: Option<u32>,
+    start_rev: Option<u64>,
+    end_rev: Option<u64>,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> Result<Vec<SvnLogEntry>, SvnError> {
+    let args = build_log_args(limit, start_rev, end_rev, date_from, date_to);
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let output = execute_svn(&args_refs, Some(path)).await?;
+    let entries = parse_log_xml(&output)?;
+    Ok(entries
+        .into_iter()
+        .filter(|entry| log_entry_matches_dates(entry, date_from, date_to))
+        .collect())
+}
+
+fn log_entry_matches_dates(
+    entry: &SvnLogEntry,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> bool {
+    if date_from.is_none() && date_to.is_none() {
+        return true;
+    }
+    let Ok(timestamp) = DateTime::parse_from_rfc3339(&entry.date) else {
+        return false;
+    };
+    let local_day = timestamp
+        .with_timezone(&Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    date_from.is_none_or(|from| local_day.as_str() >= from)
+        && date_to.is_none_or(|to| local_day.as_str() <= to)
+}
+
+fn log_entry_matches(entry: &SvnLogEntry, keyword: Option<&str>, author: Option<&str>) -> bool {
+    if let Some(author_filter) = author.map(str::trim).filter(|value| !value.is_empty()) {
+        if !entry.author.eq_ignore_ascii_case(author_filter) {
+            return false;
+        }
+    }
+
+    let Some(keyword) = keyword.map(str::trim).filter(|value| !value.is_empty()) else {
+        return true;
+    };
+    let keyword = keyword.to_lowercase();
+
+    entry.message.to_lowercase().contains(&keyword)
+}
+
+fn append_unique_log_matches(
+    matches: &mut Vec<SvnLogEntry>,
+    seen_revisions: &mut HashSet<u64>,
+    batch: &[SvnLogEntry],
+    keyword: Option<&str>,
+    author: Option<&str>,
+    limit: Option<u32>,
+) -> bool {
+    for entry in batch {
+        if log_entry_matches(entry, keyword, author) && seen_revisions.insert(entry.revision) {
+            matches.push(entry.clone());
+            if limit.is_some_and(|limit| matches.len() >= limit as usize) {
+                return true;
+            }
+        }
+    }
+
+    false
+}
+
+async fn filtered_log(
+    path: &str,
+    limit: Option<u32>,
+    start_rev: Option<u64>,
+    end_rev: Option<u64>,
+    keyword: Option<&str>,
+    author: Option<&str>,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> Result<Vec<SvnLogEntry>, SvnError> {
+    let scan_limit = limit.unwrap_or(200).saturating_mul(4).max(200);
+    let mut cursor = start_rev;
+    let mut matches = Vec::new();
+    let mut seen_revisions = HashSet::new();
+
+    loop {
+        let batch =
+            fetch_log_batch(path, Some(scan_limit), cursor, end_rev, date_from, date_to).await?;
+        if batch.is_empty() {
+            break;
+        }
+
+        if append_unique_log_matches(
+            &mut matches,
+            &mut seen_revisions,
+            &batch,
+            keyword,
+            author,
+            limit,
+        ) {
+            return Ok(matches);
+        }
+
+        let oldest_revision = batch.last().map(|entry| entry.revision).unwrap_or(1);
+        if oldest_revision <= 1 || batch.len() < scan_limit as usize {
+            break;
+        }
+        cursor = Some(oldest_revision - 1);
+    }
+
+    Ok(matches)
+}
+
+pub async fn log(
+    path: &str,
+    limit: Option<u32>,
+    start_rev: Option<u64>,
+    end_rev: Option<u64>,
+    keyword: Option<&str>,
+    author: Option<&str>,
+    date_from: Option<&str>,
+    date_to: Option<&str>,
+) -> Result<Vec<SvnLogEntry>, SvnError> {
+    let has_keyword = keyword.is_some_and(|value| !value.trim().is_empty());
+    let has_author = author.is_some_and(|value| !value.trim().is_empty());
+    if has_keyword || has_author {
+        return filtered_log(
+            path,
+            limit.map(|limit| limit.max(1)),
+            start_rev,
+            end_rev,
+            keyword,
+            author,
+            date_from,
+            date_to,
+        )
+        .await;
+    }
+
+    fetch_log_batch(path, limit, start_rev, end_rev, date_from, date_to).await
+}
+
+pub async fn current_user(path: &str) -> Result<Option<SvnAuthUser>, SvnError> {
+    let info = info(path).await?;
+    let output = execute_svn(&["auth"], Some(path)).await?;
+    Ok(parse_auth_user(&output, &info.repository_root))
+}
+
+pub async fn info(path: &str) -> Result<SvnInfo, SvnError> {
+    let args = vec!["info", "--xml"];
+    let output = execute_svn(&args, Some(path)).await?;
+    parse_info_xml(&output)
+}
+
+pub async fn local_revision(path: &str) -> Result<u64, SvnError> {
+    let args = vec!["info", "--show-item", "revision"];
+    let output = execute_svn(&args, Some(path)).await?;
+    output
+        .trim()
+        .parse()
+        .map_err(|_| SvnError::ParseError(format!("无法解析本地工作副本版本：{}", output.trim())))
+}
+
+fn parse_auth_user(output: &str, repository_root: &str) -> Option<SvnAuthUser> {
+    let root_key = normalize_url_key(repository_root);
+    let host_key = extract_url_host_key(repository_root);
+
+    output
+        .split("------------------------------------------------------------------------")
+        .filter_map(|block| {
+            let mut realm = "";
+            let mut username = "";
+            for line in block.lines() {
+                if let Some(value) = line.strip_prefix("Authentication realm:") {
+                    realm = value.trim();
+                } else if let Some(value) = line.strip_prefix("Username:") {
+                    username = value.trim();
+                }
+            }
+            if username.is_empty() {
+                return None;
+            }
+
+            let normalized_realm = normalize_url_key(realm);
+            let matches_root = !root_key.is_empty() && normalized_realm.contains(&root_key);
+            let matches_host = host_key
+                .as_ref()
+                .is_some_and(|host| normalized_realm.contains(host));
+            if matches_root || matches_host {
+                Some(SvnAuthUser {
+                    username: username.to_string(),
+                    realm: realm.to_string(),
+                })
+            } else {
+                None
+            }
+        })
+        .next()
+}
+
+fn normalize_url_key(value: &str) -> String {
+    value
+        .trim()
+        .trim_matches('<')
+        .trim_matches('>')
+        .trim_end_matches('/')
+        .to_ascii_lowercase()
+}
+
+fn extract_url_host_key(value: &str) -> Option<String> {
+    let normalized = normalize_url_key(value);
+    let (_, rest) = normalized.split_once("://")?;
+    let host = rest.split('/').next()?.trim();
+    if host.is_empty() {
+        None
+    } else {
+        Some(host.to_string())
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlameLine {
+    pub revision: u64,
+    pub author: String,
+    pub line: String,
+}
+
+pub async fn blame(workspace: &str, file: &str) -> Result<Vec<BlameLine>, SvnError> {
+    let args = vec!["blame", "--", file];
+    let output = execute_svn(&args, Some(workspace)).await?;
+    parse_blame_text(&output)
+}
+
+pub async fn diff(
+    workspace: &str,
+    file: &str,
+    old_rev: Option<u64>,
+    new_rev: Option<u64>,
+) -> Result<DiffResult, SvnError> {
+    let diff_file = normalize_workspace_diff_file(workspace, file)?;
+
+    if old_rev.is_none() && new_rev.is_none() && is_unversioned_file(workspace, &diff_file).await? {
+        let file_path = resolve_workspace_file_path(workspace, &diff_file)?;
+        let content = fs::read(&file_path)
+            .map_err(|e| SvnError::CommandFailed(format!("无法读取未版本文件：{}", e)))?;
+        let content = String::from_utf8_lossy(&content);
+        return Ok(DiffResult {
+            path: diff_file.clone(),
+            diff: build_unversioned_file_diff(&diff_file, content.as_ref()),
+            old_revision: 0,
+            new_revision: 0,
+        });
+    }
+
+    let args = build_diff_args(&diff_file, old_rev, new_rev)?;
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let output = execute_svn(&args_refs, Some(workspace)).await?;
+    let (result_old_rev, result_new_rev) = match (old_rev, new_rev) {
+        (Some(old), Some(new)) => (old, new),
+        (Some(change), None) => (change.saturating_sub(1), change),
+        _ => (0, 0),
+    };
+
+    Ok(DiffResult {
+        path: diff_file,
+        diff: output,
+        old_revision: result_old_rev,
+        new_revision: result_new_rev,
+    })
+}
+
+fn patch_output_has_conflicts(output: &str) -> bool {
+    output.lines().any(|line| {
+        let trimmed = line.trim_start();
+        trimmed.starts_with("C ")
+            || trimmed.contains(".svnpatch.rej")
+            || trimmed.to_ascii_lowercase().contains("rejected hunk")
+    })
+}
+
+pub async fn apply_patch(workspace: &str, patch: &str, reverse: bool) -> Result<String, SvnError> {
+    if patch.trim().is_empty() {
+        return Err(SvnError::InvalidArguments("补丁内容不能为空".to_string()));
+    }
+
+    let workspace_path = Path::new(workspace)
+        .canonicalize()
+        .map_err(|e| SvnError::CommandFailed(format!("无法访问工作副本目录：{}", e)))?;
+    if !workspace_path.is_dir() {
+        return Err(SvnError::InvalidArguments(
+            "工作副本路径必须是目录".to_string(),
+        ));
+    }
+
+    let patch_path = std::env::temp_dir().join(format!(
+        "orcasvn-stash-{}-{}.patch",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or_default()
+    ));
+    fs::write(&patch_path, patch)
+        .map_err(|e| SvnError::CommandFailed(format!("无法创建临时补丁文件：{}", e)))?;
+
+    let mut args = vec!["patch".to_string()];
+    if reverse {
+        args.push("--reverse-diff".to_string());
+    }
+    args.push(patch_path.to_string_lossy().into_owned());
+    let workspace_cwd = workspace_path.to_string_lossy().into_owned();
+
+    let mut dry_run_args = args.clone();
+    dry_run_args.insert(1, "--dry-run".to_string());
+    let dry_run_refs: Vec<&str> = dry_run_args.iter().map(|arg| arg.as_str()).collect();
+    let dry_run = execute_svn(&dry_run_refs, Some(&workspace_cwd)).await;
+    if let Ok(output) = &dry_run {
+        if patch_output_has_conflicts(output) {
+            let _ = fs::remove_file(&patch_path);
+            return Err(SvnError::CommandFailed(
+                "补丁与当前工作副本冲突，未应用任何更改".to_string(),
+            ));
+        }
+    }
+    if let Err(error) = dry_run {
+        let _ = fs::remove_file(&patch_path);
+        return Err(error);
+    }
+
+    let args_refs: Vec<&str> = args.iter().map(|arg| arg.as_str()).collect();
+    let result = execute_svn(&args_refs, Some(&workspace_cwd))
+        .await
+        .and_then(|output| {
+            if patch_output_has_conflicts(&output) {
+                Err(SvnError::CommandFailed(
+                    "补丁应用时发生冲突，贮藏记录已保留".to_string(),
+                ))
+            } else {
+                Ok(output)
+            }
+        });
+    let _ = fs::remove_file(&patch_path);
+    result
+}
+
+pub async fn add(path: &str, files: &[String]) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec!["add".to_string()];
+    append_targets(&mut args, files);
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+pub async fn delete(path: &str, files: &[String]) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec!["delete".to_string()];
+    append_targets(&mut args, files);
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+pub async fn revert(path: &str, files: &[String]) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec!["revert".to_string()];
+    append_targets(&mut args, files);
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+pub async fn resolve(path: &str, files: &[String], strategy: &str) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec![
+        "resolve".to_string(),
+        "--accept".to_string(),
+        strategy.to_string(),
+    ];
+    append_targets(&mut args, files);
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+pub async fn cleanup(path: &str) -> Result<String, SvnError> {
+    let args = vec!["cleanup"];
+    execute_svn(&args, Some(path)).await
+}
+
+pub async fn switch_cmd(path: &str, url: &str) -> Result<String, SvnError> {
+    let args = vec!["switch", url];
+    execute_svn(&args, Some(path)).await
+}
+
+pub async fn merge(
+    path: &str,
+    source: &str,
+    rev_start: u64,
+    rev_end: u64,
+) -> Result<String, SvnError> {
+    let args = vec![
+        "merge".to_string(),
+        "-r".to_string(),
+        format!("{}:{}", rev_start, rev_end),
+        source.to_string(),
+    ];
+    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        append_targets, append_unique_log_matches, build_diff_args, build_log_args,
+        build_unversioned_file_diff, commit, log_entry_matches, log_entry_matches_dates,
+        normalize_diff_target, normalize_svn_path, patch_output_has_conflicts,
+    };
+    use crate::svn::executor::SvnError;
+    use crate::{SvnLogEntry, SvnLogPath};
+    use std::collections::HashSet;
+
+    #[test]
+    fn target_arguments_are_separated_from_options() {
+        let mut args = vec!["add".to_string()];
+        append_targets(
+            &mut args,
+            &["-leading-dash.txt".to_string(), "src/main.rs".to_string()],
+        );
+        assert_eq!(args, ["add", "--", "-leading-dash.txt", "src/main.rs"]);
+    }
+
+    #[test]
+    fn empty_targets_do_not_add_separator() {
+        let mut args = vec!["commit".to_string()];
+        append_targets(&mut args, &[]);
+        assert_eq!(args, ["commit"]);
+    }
+
+    #[test]
+    fn patch_conflicts_are_detected_before_pop_removes_the_entry() {
+        assert!(patch_output_has_conflicts(
+            "C         src/main.rs\n>         rejected hunk @@ -1 +1 @@"
+        ));
+        assert!(patch_output_has_conflicts("path/to/file.svnpatch.rej"));
+        assert!(patch_output_has_conflicts("> rejected hunk @@ -2 +2 @@"));
+        assert!(!patch_output_has_conflicts(
+            "U         src/main.rs\n> applied hunk with offset 2"
+        ));
+    }
+
+    #[test]
+    fn commit_rejects_an_explicit_empty_file_list() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("failed to build tokio runtime");
+        let result = runtime.block_on(commit(".", "message", Some(&[])));
+        assert!(matches!(result, Err(SvnError::InvalidArguments(_))));
+    }
+
+    // Uses an isolated local repository; never touches a user's working copy.
+    #[test]
+    fn selected_commit_preserves_unselected_children_and_other_directories() {
+        use std::process::Command;
+        if Command::new("svnadmin").arg("--version").output().is_err() {
+            eprintln!("Skipping local repository test: svnadmin is unavailable");
+            return;
+        }
+        let directory = std::env::temp_dir().join(format!(
+            "orcasvn-commit-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let repository = directory.join("repository");
+        let wc = directory.join("wc");
+        let created = Command::new("svnadmin")
+            .arg("create")
+            .arg(&repository)
+            .output()
+            .unwrap();
+        assert!(created.status.success());
+        let url = format!(
+            "file:///{}",
+            repository
+                .to_string_lossy()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+        );
+        let run = |args: &[&str]| {
+            let output = Command::new("svn")
+                .args(args)
+                .current_dir(if wc.exists() { &wc } else { &directory })
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        run(&["checkout", &url, wc.to_str().unwrap()]);
+        std::fs::create_dir_all(wc.join("A")).unwrap();
+        std::fs::create_dir_all(wc.join("B")).unwrap();
+        for name in ["A/selected.txt", "A/keep.txt", "B/keep.txt"] {
+            std::fs::write(wc.join(name), "before").unwrap();
+        }
+        run(&["add", "A", "B"]);
+        run(&["commit", "-m", "initial"]);
+        for name in ["A/selected.txt", "A/keep.txt", "B/keep.txt"] {
+            std::fs::write(wc.join(name), "after").unwrap();
+        }
+        run(&["propset", "test:property", "changed", "A"]);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "selected",
+                Some(&["A".into(), "A/selected.txt".into()]),
+            ))
+            .unwrap();
+        let remaining = run(&["status"]);
+        assert!(remaining.contains("A/keep.txt") || remaining.contains("A\\keep.txt"));
+        assert!(remaining.contains("B/keep.txt") || remaining.contains("B\\keep.txt"));
+        assert!(!remaining.contains("selected.txt"));
+        assert_eq!(run(&["cat", "-r", "HEAD", "A/keep.txt"]), "before");
+        assert_eq!(run(&["cat", "-r", "HEAD", "A/selected.txt"]), "after");
+        std::fs::create_dir(wc.join("A/new")).unwrap();
+        std::fs::write(wc.join("A/new/chosen.txt"), "chosen").unwrap();
+        std::fs::write(wc.join("A/new/excluded.txt"), "excluded").unwrap();
+        run(&["add", "A/new"]);
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "new directory",
+                Some(&["A/new".into(), "A/new/chosen.txt".into()]),
+            ))
+            .unwrap();
+        assert!(run(&["status"]).contains("excluded.txt"));
+        assert!(!run(&["list", "-r", "HEAD", "A/new"]).contains("excluded.txt"));
+        run(&["update"]);
+        run(&["delete", "--force", "A"]);
+        let partial_delete = runtime.block_on(commit(
+            wc.to_str().unwrap(),
+            "partial deletion",
+            Some(&["A".into(), "A/selected.txt".into()]),
+        ));
+        assert!(matches!(partial_delete, Err(SvnError::InvalidArguments(_))));
+        assert!(run(&["list", "-r", "HEAD", &url]).contains("A/"));
+        let deletions = runtime
+            .block_on(super::status(wc.to_str().unwrap()))
+            .unwrap()
+            .into_iter()
+            .filter(|entry| {
+                entry.path == "A" || entry.path.starts_with("A/") || entry.path.starts_with("A\\")
+            })
+            .map(|entry| entry.path)
+            .collect::<Vec<_>>();
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "complete deletion",
+                Some(&deletions),
+            ))
+            .unwrap();
+        assert!(!run(&["list", "-r", "HEAD", &url]).contains("A/"));
+        run(&["copy", "B", "C"]);
+        let copied_directory = runtime.block_on(commit(
+            wc.to_str().unwrap(),
+            "copied directory",
+            Some(&["C".into()]),
+        ));
+        assert!(matches!(
+            copied_directory,
+            Err(SvnError::InvalidArguments(_))
+        ));
+        assert!(!run(&["list", "-r", "HEAD", &url]).contains("C/"));
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
+
+    #[test]
+    fn diff_builds_working_copy_arguments() {
+        assert_eq!(
+            build_diff_args("src/main.rs", None, None).unwrap(),
+            ["diff", "--", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn diff_builds_revision_range_arguments() {
+        assert_eq!(
+            build_diff_args("src/main.rs", Some(10), Some(12)).unwrap(),
+            ["diff", "-r", "10:12", "--", "src/main.rs"]
+        );
+    }
+
+    #[test]
+    fn diff_builds_change_arguments() {
+        assert_eq!(
+            build_diff_args("https://example.test/repo/file@12", Some(12), None).unwrap(),
+            [
+                "diff",
+                "-c",
+                "12",
+                "--",
+                "https://example.test/repo/file@12"
+            ]
+        );
+    }
+
+    #[test]
+    fn diff_rejects_new_revision_without_old_revision() {
+        assert!(matches!(
+            build_diff_args("src/main.rs", None, Some(12)),
+            Err(SvnError::InvalidArguments(_))
+        ));
+    }
+
+    #[test]
+    fn diff_escapes_peg_revision_marker_in_local_path() {
+        assert_eq!(
+            normalize_diff_target("src/name@domain.txt"),
+            "src/name@domain.txt@"
+        );
+        assert_eq!(
+            normalize_diff_target("src/name@domain.txt@"),
+            "src/name@domain.txt@"
+        );
+    }
+
+    #[test]
+    fn diff_keeps_url_peg_revision() {
+        assert_eq!(
+            normalize_diff_target("https://example.test/repo/file@12"),
+            "https://example.test/repo/file@12"
+        );
+    }
+
+    #[test]
+    fn normalizes_svn_paths_to_forward_slashes() {
+        assert_eq!(normalize_svn_path("src\\main.rs"), "src/main.rs");
+    }
+
+    #[test]
+    fn keeps_relative_diff_target_normalized() {
+        assert_eq!(
+            super::normalize_workspace_diff_file(".", "src\\main.rs").unwrap(),
+            "src/main.rs"
+        );
+    }
+
+    #[test]
+    fn unversioned_file_diff_is_rendered_as_added_file() {
+        let diff = build_unversioned_file_diff("src/new.txt", "hello\nworld\n");
+
+        assert!(diff.contains("Index: src/new.txt\n"));
+        assert!(diff.contains("--- src/new.txt\t(nonexistent)\n"));
+        assert!(diff.contains("+++ src/new.txt\t(working copy)\n"));
+        assert!(diff.contains("@@ -0,0 +1,2 @@\n"));
+        assert!(diff.contains("+hello\n+world\n"));
+    }
+
+    #[test]
+    fn log_keyword_does_not_match_changed_path_or_action_label() {
+        let entry = SvnLogEntry {
+            revision: 8,
+            author: "mark_chen".to_string(),
+            date: "2026-06-26T00:00:00Z".to_string(),
+            message: "seed".to_string(),
+            changed_paths: vec![SvnLogPath {
+                path: "/trunk/add-file.txt".to_string(),
+                action: "A".to_string(),
+            }],
+        };
+
+        assert!(!log_entry_matches(&entry, Some("add"), None));
+        assert!(!log_entry_matches(&entry, Some("新增"), None));
+        assert!(!log_entry_matches(&entry, Some("mark"), None));
+    }
+
+    #[test]
+    fn log_date_range_scans_newest_first_and_includes_end_day() {
+        let args = build_log_args(None, None, None, Some("2026-06-01"), Some("2026-06-26"));
+        assert_eq!(args[4], "{2026-06-26T23:59:59.999999}:{2026-06-01}");
+        let next = build_log_args(
+            Some(50),
+            Some(99),
+            None,
+            Some("2026-06-01"),
+            Some("2026-06-26"),
+        );
+        assert_eq!(next[6], "99:{2026-06-01}");
+        let end_only = build_log_args(None, None, None, None, Some("2026-06-26"));
+        assert_eq!(end_only[4], "{2026-06-26T23:59:59.999999}:1");
+    }
+
+    #[test]
+    fn log_date_filter_excludes_revision_before_start_day() {
+        let entry = SvnLogEntry {
+            revision: 8,
+            author: "author".to_string(),
+            date: "2026-06-25T12:00:00Z".to_string(),
+            message: "earlier".to_string(),
+            changed_paths: Vec::new(),
+        };
+        assert!(!log_entry_matches_dates(&entry, Some("2026-06-26"), None));
+        assert!(log_entry_matches_dates(&entry, None, Some("2026-06-26")));
+    }
+
+    #[test]
+    fn log_keyword_matches_commit_message() {
+        let entry = SvnLogEntry {
+            revision: 4,
+            author: "mark_chen".to_string(),
+            date: "2026-04-12T00:00:00Z".to_string(),
+            message: "conf: add api key".to_string(),
+            changed_paths: Vec::new(),
+        };
+
+        assert!(log_entry_matches(&entry, Some("add"), None));
+    }
+
+    #[test]
+    fn log_author_filter_matches_exact_author_case_insensitively() {
+        let entry = SvnLogEntry {
+            revision: 8,
+            author: "mark_chen".to_string(),
+            date: "2026-06-26T00:00:00Z".to_string(),
+            message: "seed".to_string(),
+            changed_paths: Vec::new(),
+        };
+
+        assert!(log_entry_matches(&entry, None, Some("MARK_CHEN")));
+        assert!(!log_entry_matches(&entry, None, Some("other")));
+    }
+
+    #[test]
+    fn filtered_log_discards_duplicate_revisions() {
+        let entry = SvnLogEntry {
+            revision: 8,
+            author: "mark_chen".to_string(),
+            date: "2026-06-26T00:00:00Z".to_string(),
+            message: "seed".to_string(),
+            changed_paths: Vec::new(),
+        };
+        let batch = vec![entry.clone(), entry];
+        let mut matches = Vec::new();
+        let mut seen_revisions = HashSet::new();
+
+        let reached_limit = append_unique_log_matches(
+            &mut matches,
+            &mut seen_revisions,
+            &batch,
+            None,
+            Some("mark_chen"),
+            None,
+        );
+
+        assert!(!reached_limit);
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].revision, 8);
+    }
+}

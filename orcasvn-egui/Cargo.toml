@@ -1,0 +1,29 @@
+[package]
+name = "orcasvn"
+version = "0.7.0"
+description = "OrcaSVN 客户端 (Rust + egui)"
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "glow", "links", "wayland", "x11"] }
+egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
+egui_extras = "0.37"
+rfd = "0.17"
+image = { version = "0.25", default-features = false, features = ["png"] }
+directories = "6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "process", "sync"] }
+thiserror = "2"
+quick-xml = "0.37"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+chrono = "0.4"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl"] }
+
+[profile.release]
+lto = true
+strip = true
