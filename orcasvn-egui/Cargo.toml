@@ -1,6 +1,6 @@
 [package]
 name = "orcasvn"
-version = "0.7.0"
+version = "0.7.0-alpha.1"
 description = "OrcaSVN 客户端 (Rust + egui)"
 license = "MIT"
 edition = "2021"
