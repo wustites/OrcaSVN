@@ -1,3 +1,4 @@
+import { watch } from 'vue'
 import { createI18n } from 'vue-i18n'
 import zhCN from './locales/zh-CN'
 import zhTW from './locales/zh-TW'
@@ -52,5 +53,12 @@ const i18n = createI18n({
     'en-US': enUS,
   },
 })
+
+function syncDocumentLang(locale: string) {
+  document.documentElement.lang = locale
+}
+
+syncDocumentLang(i18n.global.locale.value)
+watch(i18n.global.locale, syncDocumentLang)
 
 export default i18n

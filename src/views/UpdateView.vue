@@ -190,7 +190,7 @@ const loadUpdateState = async (force = false) => {
   } catch (err) {
     if (!isCurrent()) return
     workspaceStore.setError(String(err))
-    ElMessage.error(`${t('common.error')}：${err}`)
+    ElMessage.error(`${t('common.error')}: ${err}`)
   } finally {
     if (generation === updateRequestGeneration) loading.value = false
   }
@@ -210,7 +210,7 @@ const doUpdate = async () => {
   } catch (err) {
     if (workspaceStore.currentPath !== requestedPath) return
     workspaceStore.setError(String(err))
-    ElMessage.error(`${t('common.error')}：${err}`)
+    ElMessage.error(`${t('common.error')}: ${err}`)
   } finally {
     updating.value = false
   }

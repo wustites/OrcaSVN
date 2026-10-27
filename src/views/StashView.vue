@@ -110,7 +110,7 @@
               </div>
               <el-tag type="warning" effect="plain">{{ $t('stash.files', { count: unversionedFiles.length }) }}</el-tag>
             </div>
-            <div v-for="file in unversionedFiles" :key="file.path" class="unversioned-file" :class="{ selected: selectedUnversioned.includes(file.path) }" @click="onUnversionedToggle(file.path, !selectedUnversioned.includes(file.path))">
+            <div v-for="file in unversionedFiles" :key="file.path" class="unversioned-file" :class="{ selected: selectedUnversioned.includes(file.path) }" role="button" tabindex="0" :aria-pressed="selectedUnversioned.includes(file.path)" @keydown.self.enter.space.prevent="onUnversionedToggle(file.path, !selectedUnversioned.includes(file.path))" @click="onUnversionedToggle(file.path, !selectedUnversioned.includes(file.path))">
               <div class="unversioned-file-header">
                 <el-checkbox :model-value="selectedUnversioned.includes(file.path)" @click.stop @change="onUnversionedToggle(file.path, $event)" />
                 <el-icon><Document /></el-icon>
@@ -141,7 +141,7 @@
               </el-checkbox>
               <span class="hunk-count">{{ $t('stash.hunks', { count: file.hunks.length }) }}</span>
             </div>
-            <div v-for="hunk in file.hunks" :key="hunk.id" class="hunk-card" :class="{ selected: selectedHunks.includes(hunk.id) }" @click="toggleHunk(hunk.id, !selectedHunks.includes(hunk.id))">
+            <div v-for="hunk in file.hunks" :key="hunk.id" class="hunk-card" :class="{ selected: selectedHunks.includes(hunk.id) }" role="button" tabindex="0" :aria-pressed="selectedHunks.includes(hunk.id)" @keydown.self.enter.space.prevent="toggleHunk(hunk.id, !selectedHunks.includes(hunk.id))" @click="toggleHunk(hunk.id, !selectedHunks.includes(hunk.id))">
               <div class="hunk-heading">
                 <el-checkbox :model-value="selectedHunks.includes(hunk.id)" @click.stop @change="onHunkToggle(hunk.id, $event)">
                   <code>{{ hunk.header }}</code>
@@ -249,7 +249,7 @@ const openCreateDialog = async () => {
     selectedUnversioned.value = unversionedFiles.value.map(file => file.path)
   } catch (err) {
     diffFiles.value = []
-    ElMessage.error(`${t('common.error')}：${err}`)
+    ElMessage.error(`${t('common.error')}: ${err}`)
   } finally {
     loadingDiffs.value = false
   }
@@ -302,7 +302,7 @@ const createStash = async () => {
       ? await readUnversionedFiles(workspacePath, selectedUnversioned.value)
       : []
   } catch (err) {
-    ElMessage.error(`${t('stash.createFailed')}：${err}`)
+    ElMessage.error(`${t('stash.createFailed')}: ${err}`)
     return
   }
 
@@ -325,7 +325,7 @@ const createStash = async () => {
     // Save the only durable copy before removing changes from the working copy.
     stashStore.addEntry(entry)
   } catch (err) {
-    ElMessage.error(`${t('stash.createFailed')}：${err}`)
+    ElMessage.error(`${t('stash.createFailed')}: ${err}`)
     creating.value = false
     return
   }
@@ -340,7 +340,7 @@ const createStash = async () => {
     // The patch is already stored, so retain it and keep the source changes.
     createDialogVisible.value = false
     await refreshStatusAfterMutation()
-    ElMessage.warning(`${t('stash.savedButNotHidden')}：${err}`)
+    ElMessage.warning(`${t('stash.savedButNotHidden')}: ${err}`)
   } finally {
     creating.value = false
   }
@@ -359,7 +359,7 @@ const applyEntry = async (entry: StashEntry, removeAfterApply: boolean) => {
     await refreshStatusAfterMutation()
     ElMessage.success(removeAfterApply ? t('stash.popped') : t('stash.applied'))
   } catch (err) {
-    ElMessage.error(`${t('stash.applyFailed')}：${err}`)
+    ElMessage.error(`${t('stash.applyFailed')}: ${err}`)
   } finally {
     applyingEntryId.value = null
     applyingMode.value = null
@@ -378,7 +378,7 @@ const copyEntry = async (entry: StashEntry) => {
     await navigator.clipboard.writeText(entry.patch)
     ElMessage.success(t('stash.copied'))
   } catch (err) {
-    ElMessage.error(`${t('stash.copyFailed')}：${err}`)
+    ElMessage.error(`${t('stash.copyFailed')}: ${err}`)
   }
 }
 
@@ -392,7 +392,7 @@ const exportEntry = async (entry: StashEntry) => {
     await writeTextFile(path, entry.patch)
     ElMessage.success(t('stash.exported'))
   } catch (err) {
-    ElMessage.error(`${t('stash.exportFailed')}：${err}`)
+    ElMessage.error(`${t('stash.exportFailed')}: ${err}`)
   }
 }
 
@@ -406,7 +406,7 @@ const deleteEntry = async (entry: StashEntry) => {
     stashStore.removeEntry(entry.id)
   } catch (err) {
     if (err === 'cancel' || err === 'close') return
-    ElMessage.error(`${t('stash.deleteFailed')}：${err}`)
+    ElMessage.error(`${t('stash.deleteFailed')}: ${err}`)
   }
 }
 

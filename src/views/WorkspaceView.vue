@@ -413,7 +413,7 @@ const revealSelectedFile = async () => {
   try {
     await revealWorkspaceFile(workspaceStore.currentPath, file.path)
   } catch (err) {
-    ElMessage.error(`${t('common.error')}：${err}`)
+    ElMessage.error(`${t('common.error')}: ${err}`)
   } finally {
     hideFileContextMenu()
   }

@@ -132,7 +132,7 @@
               <div class="diff-tags">
                 <el-tag class="path-tag" type="primary">
                   <el-icon><Document /></el-icon>
-                  <span class="path-label" :title="diffResult?.path">{{ $t('diff.file') }}：{{ diffResult?.path }}</span>
+                  <span class="path-label" :title="diffResult?.path">{{ $t('diff.file') }}: {{ diffResult?.path }}</span>
                 </el-tag>
                 <el-tag v-if="diffResult?.old_revision && diffResult?.new_revision" type="info">
                   {{ $t('common.version') }}：{{ diffResult?.old_revision }} → {{ diffResult?.new_revision }}
