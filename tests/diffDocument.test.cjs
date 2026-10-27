@@ -51,3 +51,11 @@ test('full-text search finds offscreen matches, cycles in both directions, and h
   assert.equal(findDiffMatch(text, 'NEEDLE', 0, 'next'), -1)
   assert.equal(findDiffMatch(text, '', 0, 'next'), -1)
 })
+
+test('rows carry original-file line numbers from hunk headers', () => {
+  const text = ['--- a', '+++ b', '@@ -10,3 +20,3 @@', ' keep', '-- dashed', '+new', '\\ No newline at end of file', ' tail', '@@ -50 +60,2 @@', '-x', '+y', '+z'].join('\n')
+  const index = indexDiff(text)
+  const rows = getDiffRows(text, index, 0, index.offsets.length)
+  const nums = rows.map(row => [row.oldLine, row.newLine])
+  assert.equal(JSON.stringify(nums), JSON.stringify([[0, 0], [0, 0], [0, 0], [10, 20], [11, 0], [0, 21], [0, 0], [12, 22], [0, 0], [50, 0], [0, 60], [0, 61]]))
+})

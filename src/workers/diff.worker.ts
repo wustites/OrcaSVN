@@ -7,7 +7,7 @@ self.onmessage = (event: MessageEvent<
   if (request.type === 'index') {
     text = request.text
     const index = indexDiff(text)
-    self.postMessage({ type: 'index', index }, { transfer: [index.offsets.buffer] })
+    self.postMessage({ type: 'index', index }, { transfer: [index.offsets.buffer, index.oldLines.buffer, index.newLines.buffer] })
   } else {
     self.postMessage({ type: 'find', id: request.id, offset: findDiffMatch(text, request.query, request.from, request.direction) })
   }

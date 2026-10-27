@@ -21,7 +21,8 @@
         <div v-for="line in visibleRows(start, end)" :key="line.index" class="diff-row"
           :class="[line.className, { 'is-search-match': matchedLine === line.index - 1 }]"
           :style="{ height: `${rowHeight}px` }" role="row" :aria-rowindex="line.index">
-          <span class="diff-line-number" role="cell">{{ line.index }}</span>
+          <span class="diff-line-number" role="cell">{{ line.oldLine || '' }}</span>
+          <span class="diff-line-number" role="cell">{{ line.newLine || '' }}</span>
           <span class="diff-marker" role="cell">{{ line.marker }}</span>
           <code class="diff-code" role="cell"><template v-for="(part, partIndex) in highlight(line)" :key="partIndex"><mark v-if="part.match">{{ part.text }}</mark><template v-else>{{ part.text }}</template></template></code>
         </div>
@@ -51,7 +52,7 @@ const noMatch = ref(false)
 const copying = ref(false)
 const characterWidth = ref(8)
 const rowHeight = computed(() => props.compact ? 24 : 28)
-const gutterWidth = computed(() => props.compact ? 70 : 98)
+const gutterWidth = computed(() => props.compact ? 94 : 130)
 const contentWidth = computed(() => gutterWidth.value + 24 + (documentIndex.value?.maxColumns || 0) * characterWidth.value)
 const matchedLine = computed(() => activeOffset.value >= 0 && documentIndex.value ? lineAtOffset(documentIndex.value, activeOffset.value) : -1)
 let worker: Worker | undefined
@@ -190,8 +191,8 @@ onBeforeUnmount(() => {
 .indexing-diff { padding: 16px; color: var(--md-sys-color-on-surface-variant); }
 .diff-lines { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-label); line-height: 20px; }
 .compact .diff-lines { font-size: var(--app-font-size-sm); }
-.diff-row { display: grid; grid-template-columns: 64px 34px minmax(0, 1fr); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
-.compact .diff-row { grid-template-columns: 46px 24px minmax(0, 1fr); }
+.diff-row { display: grid; grid-template-columns: 56px 56px 34px minmax(0, 1fr); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
+.compact .diff-row { grid-template-columns: 35px 35px 24px minmax(0, 1fr); }
 .diff-line-number, .diff-marker { user-select: none; padding: 3px 8px; color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-low); text-align: right; }
 .diff-marker { text-align: center; font-weight: 700; }
 .diff-code { padding: 3px 12px; white-space: pre; tab-size: 8; color: var(--md-sys-color-on-surface); font: inherit; }

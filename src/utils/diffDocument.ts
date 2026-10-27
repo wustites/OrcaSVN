@@ -1,16 +1,24 @@
 export interface DiffIndex {
   offsets: Uint32Array
+  /** Line number in the original file for each row; 0 when the row has none. */
+  oldLines: Uint32Array
+  /** Line number in the new file for each row; 0 when the row has none. */
+  newLines: Uint32Array
   added: number
   removed: number
   maxColumns: number
 }
 export interface DiffRow {
   index: number
+  oldLine: number
+  newLine: number
   marker: string
   text: string
   className: string
   start: number
 }
+
+const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 
 function classify(line: string) {
   if (line.startsWith('+') && !line.startsWith('+++')) return 'added'
@@ -21,6 +29,9 @@ function classify(line: string) {
 
 export function indexDiff(text: string): DiffIndex {
   const offsets: number[] = []
+  const oldLines: number[] = []
+  const newLines: number[] = []
+  let oldNext = 0, newNext = 0, oldRemain = 0, newRemain = 0
   let added = 0, removed = 0, maxColumns = 0
   if (text) {
     let start = 0
@@ -30,6 +41,20 @@ export function indexDiff(text: string): DiffIndex {
       const end = newline === -1 ? text.length : newline
       const line = text.slice(start, end).replace(/\r$/, '')
       const type = classify(line)
+      let oldLine = 0, newLine = 0
+      const hunk = oldRemain > 0 || newRemain > 0 ? null : HUNK_HEADER.exec(line)
+      if (hunk) {
+        oldNext = Number(hunk[1]); oldRemain = hunk[2] === undefined ? 1 : Number(hunk[2])
+        newNext = Number(hunk[3]); newRemain = hunk[4] === undefined ? 1 : Number(hunk[4])
+      } else if (oldRemain > 0 || newRemain > 0) {
+        // Inside a hunk the first character decides the side, so content such as "-- x" is counted correctly.
+        const side = line[0]
+        if (side === '-') { oldLine = oldNext++; oldRemain-- }
+        else if (side === '+') { newLine = newNext++; newRemain-- }
+        else if (side !== '\\') { oldLine = oldNext++; newLine = newNext++; oldRemain--; newRemain-- }
+      }
+      oldLines.push(oldLine)
+      newLines.push(newLine)
       if (type === 'added') added++
       if (type === 'removed') removed++
       let columns = 0
@@ -43,7 +68,7 @@ export function indexDiff(text: string): DiffIndex {
       start = newline + 1
     } while (start <= text.length)
   }
-  return { offsets: Uint32Array.from(offsets), added, removed, maxColumns }
+  return { offsets: Uint32Array.from(offsets), oldLines: Uint32Array.from(oldLines), newLines: Uint32Array.from(newLines), added, removed, maxColumns }
 }
 
 export function getDiffRows(text: string, index: DiffIndex, start: number, end: number): DiffRow[] {
@@ -54,7 +79,7 @@ export function getDiffRows(text: string, index: DiffIndex, start: number, end: 
     const line = text.slice(offset, limit).replace(/\r$/, '')
     const type = classify(line)
     const changed = type === 'added' || type === 'removed'
-    rows.push({ index: row + 1, marker: changed ? line[0] : type === 'meta' ? '@' : '',
+    rows.push({ index: row + 1, oldLine: index.oldLines[row], newLine: index.newLines[row], marker: changed ? line[0] : type === 'meta' ? '@' : '',
       text: changed ? line.slice(1) : line, className: `diff-${type}`, start: offset + Number(changed) })
   }
   return rows
