@@ -85,6 +85,11 @@
             <el-switch v-model="settings.gitignoreEnabled" @change="handleGitignoreChange" />
             <span class="form-item-hint">{{ $t('settings.gitignoreHint') }}</span>
           </el-form-item>
+
+          <el-form-item :label="$t('settings.autoDeleteMissingOnCommit')" class="form-item">
+            <el-switch v-model="settings.autoDeleteMissingOnCommit" />
+            <span class="form-item-hint">{{ $t('settings.autoDeleteMissingOnCommitHint') }}</span>
+          </el-form-item>
         </div>
       </el-form>
 

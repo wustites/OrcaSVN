@@ -175,6 +175,15 @@ pub async fn commit(
     message: &str,
     files: Option<&[String]>,
 ) -> Result<String, SvnError> {
+    commit_with_options(path, message, files, false).await
+}
+
+pub async fn commit_with_options(
+    path: &str,
+    message: &str,
+    files: Option<&[String]>,
+    auto_delete_missing: bool,
+) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["commit".to_string(), "-m".to_string(), message.to_string()];
 
     if let Some(file_list) = files {
@@ -183,9 +192,10 @@ pub async fn commit(
                 "显式文件列表不能为空；省略文件列表可提交整个工作副本".to_string(),
             ));
         }
-        // SVN directory deletion/replacement is atomic even with --depth empty.
-        // Validate against fresh status so deselected descendants cannot slip in.
-        let statuses = status(path).await?;
+        // A file removed outside SVN is reported as "missing" (!). Schedule
+        // selected missing targets for deletion before committing, matching
+        // `svn delete --force`, while leaving unselected targets untouched.
+        let mut statuses = status(path).await?;
         let selected: HashSet<String> = file_list
             .iter()
             .map(|file| {
@@ -195,6 +205,37 @@ pub async fn commit(
                     .to_string()
             })
             .collect();
+
+        if auto_delete_missing {
+            let missing: Vec<String> = statuses
+                .iter()
+                .filter(|entry| entry.status_code == "missing")
+                .filter(|entry| selected.contains(&normalize_svn_path(&entry.path)))
+                .map(|entry| entry.path.clone())
+                .collect();
+            for target in &missing {
+                let target = normalize_svn_path(target);
+                let prefix = format!("{target}/");
+                if statuses.iter().any(|child| {
+                    let child_path = normalize_svn_path(&child.path);
+                    child_path.starts_with(&prefix) && !selected.contains(&child_path)
+                }) {
+                    return Err(SvnError::InvalidArguments(format!(
+                        "目录 {} 的删除必须包含全部子项，请完整勾选该目录或取消该目录的选择",
+                        target
+                    )));
+                }
+            }
+            if !missing.is_empty() {
+                delete_missing(path, &missing).await?;
+                // Validate the resulting scheduled deletions and their descendants
+                // against a fresh status before constructing the commit command.
+                statuses = status(path).await?;
+            }
+        }
+
+        // SVN directory deletion/replacement is atomic even with --depth empty.
+        // Validate against fresh status so deselected descendants cannot slip in.
         for entry in &statuses {
             let target = normalize_svn_path(&entry.path);
             if !selected.contains(&target) {
@@ -223,6 +264,13 @@ pub async fn commit(
     }
 
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    execute_svn(&args_refs, Some(path)).await
+}
+
+async fn delete_missing(path: &str, files: &[String]) -> Result<String, SvnError> {
+    let mut args: Vec<String> = vec!["delete".to_string(), "--force".to_string()];
+    append_targets(&mut args, files);
+    let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     execute_svn(&args_refs, Some(path)).await
 }
 
@@ -838,19 +886,47 @@ mod tests {
         run(&["checkout", &url, wc.to_str().unwrap()]);
         std::fs::create_dir_all(wc.join("A")).unwrap();
         std::fs::create_dir_all(wc.join("B")).unwrap();
-        for name in ["A/selected.txt", "A/keep.txt", "B/keep.txt"] {
+        for name in [
+            "A/selected.txt",
+            "A/keep.txt",
+            "A/missing.txt",
+            "A/missing-keep.txt",
+            "B/keep.txt",
+        ] {
             std::fs::write(wc.join(name), "before").unwrap();
         }
         run(&["add", "A", "B"]);
         run(&["commit", "-m", "initial"]);
-        for name in ["A/selected.txt", "A/keep.txt", "B/keep.txt"] {
-            std::fs::write(wc.join(name), "after").unwrap();
-        }
-        run(&["propset", "test:property", "changed", "A"]);
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
+        std::fs::remove_file(wc.join("A/missing.txt")).unwrap();
+        std::fs::remove_file(wc.join("A/missing-keep.txt")).unwrap();
+        let automatic_delete_disabled = runtime.block_on(commit(
+            wc.to_str().unwrap(),
+            "missing deletion",
+            Some(&["A/missing.txt".into()]),
+        ));
+        assert!(automatic_delete_disabled.is_ok());
+        assert!(run(&["status"]).contains("missing.txt"));
+        assert!(run(&["list", "-r", "HEAD", &format!("{url}/A")]).contains("missing.txt"));
+        runtime
+            .block_on(super::commit_with_options(
+                wc.to_str().unwrap(),
+                "missing deletion",
+                Some(&["A/missing.txt".into()]),
+                true,
+            ))
+            .unwrap();
+        assert!(!run(&["list", "-r", "HEAD", &format!("{url}/A")]).contains("missing.txt"));
+        let remaining_missing = run(&["status"]);
+        assert!(remaining_missing.contains("missing-keep.txt"));
+        run(&["update"]);
+        for name in ["A/selected.txt", "A/keep.txt", "B/keep.txt"] {
+            std::fs::write(wc.join(name), "after").unwrap();
+        }
+        run(&["propset", "test:property", "changed", "A"]);
         runtime
             .block_on(commit(
                 wc.to_str().unwrap(),
