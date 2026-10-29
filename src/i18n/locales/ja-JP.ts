@@ -193,6 +193,7 @@ export default {
     localTitle: 'ローカル変更',
     localHint: 'まだコミットされていないローカル変更です',
     noIncoming: '更新可能なリモートコミットはありません',
+    conflictsTitle: 'この更新で競合が発生しました。先にこれらのファイルを解決してください',
   },
   checkout: {
     title: 'コードをチェックアウト',

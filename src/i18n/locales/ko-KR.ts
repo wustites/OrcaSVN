@@ -193,6 +193,7 @@ export default {
     localTitle: '로컬 변경',
     localHint: '아직 커밋되지 않은 로컬 변경 파일입니다',
     noIncoming: '업데이트할 원격 커밋이 없습니다',
+    conflictsTitle: '이 업데이트에서 충돌이 발생했습니다. 먼저 이 파일을 해결하세요',
   },
   checkout: {
     title: '코드 체크아웃',

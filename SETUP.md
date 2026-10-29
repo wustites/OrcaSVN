@@ -12,7 +12,20 @@ cargo --version
 svn --version --quiet
 ```
 
-Windows 还需要 Visual Studio C++ Build Tools 和 WebView2。Linux、macOS 的系统依赖请参考 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)。
+Windows 还需要 Visual Studio C++ Build Tools 和 WebView2。
+
+Rust 需要 **1.88 或更高版本**。依赖使用 edition 2024（1.85 起才能编译），本仓库还使用 1.88 才稳定的 `slice::as_chunks`。1.83 及更早版本会在解析依赖时失败。
+
+Linux（Debian/Ubuntu）还需 Tauri 2 的系统包，并安装 Subversion（含 `svnversion`）：
+
+```bash
+sudo apt-get update
+sudo apt-get install -y pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev patchelf build-essential \
+  libssl-dev subversion
+```
+
+macOS 与其他发行版的图形库请参考 [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/)。
 
 ## 启动项目
 
@@ -29,7 +42,15 @@ npm run tauri dev
 npm run check
 ```
 
-该命令依次检查前端类型和构建、运行前端单元测试，再检查 Rust 格式并运行 Rust 单元测试。
+该命令依次检查前端类型和构建、运行前端单元测试，再检查 Rust 格式并运行 Rust 单元测试。提交前还可以单独运行：
+
+```bash
+npm run build
+npm run test:unit
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+```
 
 ## 发布构建
 

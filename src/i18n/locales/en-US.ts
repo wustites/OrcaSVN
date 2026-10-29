@@ -193,6 +193,7 @@ export default {
     localTitle: 'Local Changes',
     localHint: 'Local changes that have not been committed yet',
     noIncoming: 'No remote commits to update',
+    conflictsTitle: 'This update produced conflicts. Resolve these files first',
   },
   checkout: {
     title: 'Checkout Code',

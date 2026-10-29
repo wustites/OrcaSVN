@@ -2,6 +2,7 @@ export interface CommandResult {
   success: boolean
   output: string
   error: string | null
+  conflicts?: string[]
 }
 
 export interface SvnStatus {

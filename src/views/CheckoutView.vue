@@ -81,8 +81,8 @@
             <el-icon><Document /></el-icon>
             {{ $t('checkout.output') }}
           </span>
-          <el-tag :type="output.includes('Error') ? 'danger' : 'success'" size="small">
-            {{ output.includes('Error') ? $t('common.error') : $t('common.success') }}
+          <el-tag :type="outputSucceeded ? 'success' : 'danger'" size="small">
+            {{ outputSucceeded ? $t('common.success') : $t('common.error') }}
           </el-tag>
         </div>
         <el-input
@@ -117,6 +117,7 @@ const form = reactive({
 
 const loading = ref(false)
 const output = ref('')
+const outputSucceeded = ref(false)
 
 const selectDirectory = async () => {
   const selected = await open({
@@ -137,10 +138,12 @@ const doCheckout = async () => {
 
   loading.value = true
   output.value = ''
+  outputSucceeded.value = false
 
   try {
     const result = await svnCheckout(form.url, form.path, form.revision)
     output.value = result.output
+    outputSucceeded.value = true
 
     workspaceStore.setCurrentPath(form.path)
 
@@ -149,6 +152,7 @@ const doCheckout = async () => {
     }, 1500)
   } catch (err) {
     output.value = `${t('common.error')}：${err}`
+    outputSucceeded.value = false
   } finally {
     loading.value = false
   }
@@ -159,6 +163,7 @@ const resetForm = () => {
   form.path = ''
   form.revision = undefined
   output.value = ''
+  outputSucceeded.value = false
 }
 </script>
 

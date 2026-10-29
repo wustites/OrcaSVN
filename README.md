@@ -59,9 +59,17 @@ svn --version --quiet
 要求：
 
 - Node.js 18 或更高版本
-- 最新稳定版 Rust
-- SVN CLI 1.10 或更高版本
+- Rust **1.88** 或更高版本。依赖使用 Rust edition 2024，1.85 起才能编译这类包；本仓库还会用到 1.88 稳定的 `slice::as_chunks`。1.83 及更早版本无法通过 `cargo check`。
+- SVN CLI 1.10 或更高版本（含 `svnversion`，用于读取工作副本中已有的最高版本）
 - 平台对应的 Tauri 2 构建依赖
+
+Linux（Debian/Ubuntu）系统包示例：
+
+```bash
+sudo apt-get install pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev patchelf build-essential \
+  libssl-dev subversion
+```
 
 ```bash
 npm ci
@@ -71,10 +79,25 @@ npm run tauri dev
 提交改动前运行：
 
 ```bash
-npm run check
+npm run build
+npm run test:unit
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
+`npm run check` 会依次做前端类型检查与构建、前端单元测试、Rust 格式检查和 `cargo test`。
+
 详细环境配置和常见问题见 [SETUP.md](SETUP.md)，贡献约定见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### 工作副本行为
+
+- macOS 与 Linux 上，SVN 子进程使用 UTF-8 locale（macOS 为 `en_US.UTF-8`，Linux 为 `C.UTF-8`），避免桌面启动时继承缺失、ASCII 或无效 locale 导致中文路径、仓库 URL、提交说明和命令输出乱码。这对应 [#7](https://github.com/wustites/OrcaSVN/issues/7)。
+- 界面上的本地版本取工作副本里已经存在的最高版本（`svnversion` 的上界）。按文件部分提交仍使用 `--depth empty`，但刚提交的版本不会再被更新页当成尚未应用到本地。
+- 加入版本控制时，如果 SVN 把有效 UTF-8 文本自动标成 `application/octet-stream`，会去掉该属性，使差异和 Blame 仍能显示正文。含 NUL 或非法 UTF-8 的二进制文件保持原样。
+- 检出结果按成功或失败状态显示，不靠错误文本里是否出现英文字符串 `Error`。
+- 更新若产生文本、属性或树冲突，会列出冲突路径并给出警告。SVN 在这种情况下仍以退出码 0 结束。
+- 未跟踪目录中的文件也可以查看差异，内容按新增显示。文件一旦不再出现在状态列表中，工作区会清掉对应的差异预览。
 
 当前正式版本为 **0.6.4**，更新内容见 [发布说明](docs/releases/v0.6.4.md)。正式发布步骤见 [发布流程](docs/releasing.md)，候选版本见 [预发布说明](docs/prerelease.md)，与 v0.6.2 的性能对照及测量边界见 [性能基准](docs/workspace-startup-benchmark.md)。
 

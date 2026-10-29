@@ -52,7 +52,7 @@ fn field<const N: usize>(buffer: &[u8], offset: usize) -> io::Result<[u8; N]> {
         .ok_or_else(|| invalid("truncated Windows record"))
 }
 fn name(buffer: &[u8], offset: usize, length: usize) -> io::Result<String> {
-    if length == 0 || length % 2 != 0 || offset % 2 != 0 {
+    if length == 0 || !length.is_multiple_of(2) || !offset.is_multiple_of(2) {
         return Err(invalid("invalid UTF-16 record name"));
     }
     let bytes = buffer
@@ -63,10 +63,11 @@ fn name(buffer: &[u8], offset: usize, length: usize) -> io::Result<String> {
                     .ok_or_else(|| invalid("name overflow"))?,
         )
         .ok_or_else(|| invalid("truncated record name"))?;
-    let units: Vec<_> = bytes
-        .chunks_exact(2)
-        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
-        .collect();
+    let (pairs, remainder) = bytes.as_chunks::<2>();
+    if !remainder.is_empty() {
+        return Err(invalid("invalid UTF-16 record name"));
+    }
+    let units: Vec<u16> = pairs.iter().copied().map(u16::from_le_bytes).collect();
     let name = String::from_utf16(&units).map_err(|_| invalid("non-Unicode Windows filename"))?;
     if name.contains(['/', '\\', '\0', ':']) {
         return Err(invalid("unsafe Windows filename"));
@@ -83,7 +84,7 @@ fn parse_page(buffer: &[u8]) -> io::Result<(i64, Vec<Record>)> {
         let end = offset
             .checked_add(length)
             .ok_or_else(|| invalid("USN record overflow"))?;
-        if length < 60 || length % 8 != 0 || end > buffer.len() {
+        if length < 60 || !length.is_multiple_of(8) || end > buffer.len() {
             return Err(invalid("invalid USN record length"));
         }
         let record = &buffer[offset..end];
