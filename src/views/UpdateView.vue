@@ -23,6 +23,18 @@
       <el-empty v-if="!workspaceStore.currentPath" :description="$t('log.openWorkspaceFirst')" class="empty-workspace" />
 
       <div v-else class="update-content">
+        <el-alert
+          v-if="updateConflicts.length"
+          type="warning"
+          :closable="false"
+          show-icon
+          :title="$t('update.conflictsTitle')"
+          class="update-conflicts"
+        >
+          <ul class="update-conflict-list">
+            <li v-for="file in updateConflicts" :key="file">{{ file }}</li>
+          </ul>
+        </el-alert>
         <div class="revision-strip">
           <div>
             <span>{{ $t('update.localRevision') }}</span>
@@ -134,6 +146,7 @@ const { settings } = useSettings()
 const loading = ref(false)
 const updating = ref(false)
 const incomingLogs = ref<SvnLogEntry[]>([])
+const updateConflicts = ref<string[]>([])
 const remoteRevision = ref(0)
 let isActive = false
 let updateStateTimer: number | undefined
@@ -201,12 +214,17 @@ const doUpdate = async () => {
   const requestedPath = workspaceStore.currentPath
   updating.value = true
   try {
-    await svnUpdate(requestedPath)
+    const result = await svnUpdate(requestedPath)
     if (workspaceStore.currentPath !== requestedPath) return
+    updateConflicts.value = result?.conflicts ?? []
     updateStateCache.delete(requestedPath)
     await loadUpdateState(true)
     if (workspaceStore.currentPath !== requestedPath) return
-    ElMessage.success(`${t('common.update')} ${t('common.success')}`)
+    if (updateConflicts.value.length) {
+      ElMessage.warning(t('update.conflictsTitle'))
+    } else {
+      ElMessage.success(`${t('common.update')} ${t('common.success')}`)
+    }
   } catch (err) {
     if (workspaceStore.currentPath !== requestedPath) return
     workspaceStore.setError(String(err))
@@ -295,6 +313,11 @@ watch(
   display: flex;
   flex-direction: column;
   gap: 14px;
+}
+
+.update-conflict-list {
+  margin: 6px 0 0;
+  padding-left: 18px;
 }
 
 .revision-strip {

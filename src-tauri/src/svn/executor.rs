@@ -65,18 +65,12 @@ fn build_command_args(args: &[String]) -> Vec<String> {
     command_args
 }
 
-async fn execute_svn_inner(
-    executable: PathBuf,
-    args: &[&str],
-    path: Option<&str>,
-) -> Result<String, SvnError> {
-    let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
-    let mut cmd = Command::new(&executable);
-    cmd.args(build_command_args(&args_vec));
+fn apply_utf8_locale(cmd: &mut Command) {
     // SVN converts paths and messages using the process locale. Desktop launches
     // may inherit no locale, an ASCII locale, or a non-UTF-8 locale even though
     // Rust passes UTF-8 arguments. Override LC_ALL (which takes precedence over
     // LANG and LC_CTYPE) for the child only, keeping its output UTF-8 as well.
+    // This is the Linux/macOS fix for non-ASCII working-copy paths (issue #7).
     #[cfg(unix)]
     {
         // macOS ships en_US.UTF-8; C.UTF-8 is available on Linux without
@@ -87,22 +81,72 @@ async fn execute_svn_inner(
         const SVN_LOCALE: &str = "C.UTF-8";
         cmd.env("LC_ALL", SVN_LOCALE);
     }
+}
+
+fn prepare_command(executable: &PathBuf, args: &[String]) -> Command {
+    let mut cmd = Command::new(executable);
+    cmd.args(args);
+    apply_utf8_locale(&mut cmd);
     cmd.stdout(Stdio::piped());
     cmd.stderr(Stdio::piped());
     // Dropping the output future on timeout kills the child rather than leaving
     // an SVN process running. Tokio drains stdout and stderr concurrently.
     cmd.kill_on_drop(true);
-    if let Some(path) = path {
-        cmd.current_dir(path);
-    }
-
     #[cfg(windows)]
     {
         const CREATE_NO_WINDOW: u32 = 0x08000000;
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
+    cmd
+}
 
+async fn execute_svn_inner(
+    executable: PathBuf,
+    args: &[&str],
+    path: Option<&str>,
+) -> Result<String, SvnError> {
+    let args_vec = build_command_args(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>());
+    let mut cmd = prepare_command(&executable, &args_vec);
+    if let Some(path) = path {
+        cmd.current_dir(path);
+    }
     collect_command_output(&mut cmd, SVN_TIMEOUT).await
+}
+
+/// Run a companion tool such as `svnversion` with the same UTF-8 locale, without
+/// injecting `svn --non-interactive`.
+pub(super) async fn execute_program(
+    executable: PathBuf,
+    args: &[&str],
+    path: Option<&str>,
+) -> Result<String, SvnError> {
+    let args_vec: Vec<String> = args.iter().map(|arg| (*arg).to_string()).collect();
+    let mut cmd = prepare_command(&executable, &args_vec);
+    if let Some(path) = path {
+        cmd.current_dir(path);
+    }
+    collect_command_output(&mut cmd, SVN_TIMEOUT).await
+}
+
+pub(super) fn svnversion_executable() -> PathBuf {
+    let Ok(svn) = current_svn_executable() else {
+        return PathBuf::from("svnversion");
+    };
+    let name = svn
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("")
+        .to_string();
+    if name == "svn" || name == "svn.exe" {
+        let mut path = svn;
+        path.set_file_name(if name.ends_with(".exe") {
+            "svnversion.exe"
+        } else {
+            "svnversion"
+        });
+        return path;
+    }
+    PathBuf::from("svnversion")
 }
 
 async fn collect_command_output(cmd: &mut Command, deadline: Duration) -> Result<String, SvnError> {

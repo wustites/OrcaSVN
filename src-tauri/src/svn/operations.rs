@@ -153,15 +153,91 @@ fn build_unversioned_file_diff(file: &str, content: &str) -> String {
     diff
 }
 
-async fn is_unversioned_file(workspace: &str, file: &str) -> Result<bool, SvnError> {
+fn workspace_child_exists(workspace: &str, file: &str) -> bool {
+    let Ok(root) = Path::new(workspace).canonicalize() else {
+        return false;
+    };
+    let Ok(child) = root.join(file).canonicalize() else {
+        return false;
+    };
+    child.starts_with(&root)
+}
+
+async fn is_unversioned_target(workspace: &str, file: &str) -> Result<bool, SvnError> {
     let target = normalize_diff_target(file);
     let args = vec!["status", "--xml", "--", target.as_str()];
-    let output = execute_svn(&args, Some(workspace)).await?;
-    let statuses = parse_status_xml(&output)?;
-    let normalized_file = normalize_svn_path(file);
-    Ok(statuses.iter().any(|status| {
-        status.status_code == "unversioned" && normalize_svn_path(&status.path) == normalized_file
-    }) || (statuses.len() == 1 && statuses[0].status_code == "unversioned"))
+    match execute_svn(&args, Some(workspace)).await {
+        Ok(output) => {
+            let statuses = parse_status_xml(&output)?;
+            let normalized_file = normalize_svn_path(file);
+            let marked = statuses.iter().any(|status| {
+                status.status_code == "unversioned"
+                    && normalize_svn_path(&status.path) == normalized_file
+            }) || (statuses.len() == 1 && statuses[0].status_code == "unversioned");
+            if marked {
+                return Ok(true);
+            }
+            // A file inside an unversioned directory yields an empty status
+            // target instead of E155010. An unchanged versioned file does too,
+            // so confirm with info before treating the path as new content.
+            if statuses.is_empty() && workspace_child_exists(workspace, file) {
+                return match execute_svn(&["info", "--xml", "--", target.as_str()], Some(workspace))
+                    .await
+                {
+                    Ok(_) => Ok(false),
+                    Err(error) => {
+                        let text = error.to_string();
+                        if text.contains("E155010")
+                            || text.contains("W155010")
+                            || text.contains("was not found")
+                            || text.contains("not a working copy")
+                        {
+                            Ok(true)
+                        } else {
+                            Err(error)
+                        }
+                    }
+                };
+            }
+            Ok(false)
+        }
+        Err(error) => {
+            let text = error.to_string();
+            if (text.contains("E155010") || text.contains("was not found"))
+                && workspace_child_exists(workspace, file)
+            {
+                Ok(true)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+fn build_unversioned_directory_diff(file: &str, directory: &Path) -> String {
+    let mut names = Vec::new();
+    if let Ok(entries) = fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let mut name = entry.file_name().to_string_lossy().into_owned();
+            if entry.path().is_dir() {
+                name.push('/');
+            }
+            names.push(name);
+        }
+    }
+    names.sort();
+    let mut diff = String::new();
+    diff.push_str(&format!("Index: {file}\n"));
+    diff.push_str("===================================================================\n");
+    diff.push_str(&format!("--- {file}\t(nonexistent)\n"));
+    diff.push_str(&format!("+++ {file}\t(unversioned directory)\n"));
+    diff.push_str(&format!("@@ -0,0 +1,{} @@\n", names.len()));
+    for name in &names {
+        diff.push('+');
+        diff.push_str(name);
+        diff.push('\n');
+    }
+    diff
 }
 
 pub async fn remote_info(path: &str) -> Result<SvnInfo, SvnError> {
@@ -407,6 +483,7 @@ fn append_unique_log_matches(
     false
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn filtered_log(
     path: &str,
     limit: Option<u32>,
@@ -450,6 +527,7 @@ async fn filtered_log(
     Ok(matches)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn log(
     path: &str,
     limit: Option<u32>,
@@ -491,13 +569,86 @@ pub async fn info(path: &str) -> Result<SvnInfo, SvnError> {
     parse_info_xml(&output)
 }
 
+/// Highest revision already present in the working copy.
+///
+/// `svn info` on the root reports the directory base. A partial commit
+/// (`svn commit --depth empty` with an explicit file list) advances the
+/// committed files but leaves that base behind, so the update page would
+/// treat the revision just created as incoming. `svnversion` prints the
+/// mixed range (`2:3M`); the upper bound is the newest revision the WC has.
+pub fn parse_svnversion_upper(output: &str) -> Option<u64> {
+    let token = output.split_whitespace().next()?;
+    let numeric: String = token
+        .chars()
+        .take_while(|ch| ch.is_ascii_digit() || *ch == ':')
+        .collect();
+    let upper = numeric.split(':').next_back()?;
+    if upper.is_empty() {
+        None
+    } else {
+        upper.parse().ok()
+    }
+}
+
 pub async fn local_revision(path: &str) -> Result<u64, SvnError> {
+    let version_output =
+        super::executor::execute_program(super::executor::svnversion_executable(), &[path], None)
+            .await;
+    if let Ok(output) = version_output {
+        if let Some(revision) = parse_svnversion_upper(&output) {
+            return Ok(revision);
+        }
+    }
+
     let args = vec!["info", "--show-item", "revision"];
     let output = execute_svn(&args, Some(path)).await?;
     output
         .trim()
         .parse()
         .map_err(|_| SvnError::ParseError(format!("无法解析本地工作副本版本：{}", output.trim())))
+}
+
+pub fn parse_update_conflicts(output: &str) -> Vec<String> {
+    let mut conflicts = Vec::new();
+    for line in output.lines() {
+        if let Some(path) = conflict_path_from_update_line(line) {
+            if !conflicts.contains(&path) {
+                conflicts.push(path);
+            }
+        }
+    }
+    if conflicts.is_empty() {
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if conflict_summary_count(trimmed).is_some_and(|count| count > 0) {
+                conflicts.push(trimmed.to_string());
+            }
+        }
+    }
+    conflicts
+}
+
+fn conflict_path_from_update_line(line: &str) -> Option<String> {
+    let split = line.find("  ")?;
+    let status = line[..split].trim();
+    let path = line[split..].trim();
+    if status.is_empty()
+        || path.is_empty()
+        || !status.chars().all(|ch| ch.is_ascii_uppercase())
+        || !status.contains('C')
+    {
+        return None;
+    }
+    Some(path.to_string())
+}
+
+fn conflict_summary_count(line: &str) -> Option<u64> {
+    const LABELS: [&str; 3] = ["Text conflicts:", "Tree conflicts:", "Property conflicts:"];
+    let count = LABELS
+        .iter()
+        .find_map(|label| line.strip_prefix(label))?
+        .trim();
+    count.parse().ok()
 }
 
 fn parse_auth_user(output: &str, repository_root: &str) -> Option<SvnAuthUser> {
@@ -578,14 +729,22 @@ pub async fn diff(
 ) -> Result<DiffResult, SvnError> {
     let diff_file = normalize_workspace_diff_file(workspace, file)?;
 
-    if old_rev.is_none() && new_rev.is_none() && is_unversioned_file(workspace, &diff_file).await? {
+    if old_rev.is_none()
+        && new_rev.is_none()
+        && is_unversioned_target(workspace, &diff_file).await?
+    {
         let file_path = resolve_workspace_file_path(workspace, &diff_file)?;
-        let content = fs::read(&file_path)
-            .map_err(|e| SvnError::CommandFailed(format!("无法读取未版本文件：{}", e)))?;
-        let content = String::from_utf8_lossy(&content);
+        let diff = if file_path.is_dir() {
+            build_unversioned_directory_diff(&diff_file, &file_path)
+        } else {
+            let content = fs::read(&file_path)
+                .map_err(|e| SvnError::CommandFailed(format!("无法读取未版本文件：{}", e)))?;
+            let content = String::from_utf8_lossy(&content);
+            build_unversioned_file_diff(&diff_file, content.as_ref())
+        };
         return Ok(DiffResult {
-            path: diff_file.clone(),
-            diff: build_unversioned_file_diff(&diff_file, content.as_ref()),
+            path: diff_file,
+            diff,
             old_revision: 0,
             new_revision: 0,
         });
@@ -682,11 +841,90 @@ pub async fn apply_patch(workspace: &str, patch: &str, reverse: bool) -> Result<
     result
 }
 
+const FALSE_BINARY_READ_LIMIT: u64 = 8 * 1024 * 1024;
+
+/// SVN marks a file `application/octet-stream` when most bytes are non-ASCII,
+/// which includes ordinary UTF-8 text that is entirely CJK. That blocks diff
+/// and blame. Only undo the mark for files this add just scheduled, and only
+/// when the bytes are conservative UTF-8 text.
+fn is_conservative_utf8_text(bytes: &[u8]) -> bool {
+    if bytes.contains(&0) {
+        return false;
+    }
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let mut controls = 0usize;
+    let mut total = 0usize;
+    for ch in text.chars() {
+        total += 1;
+        if ch.is_control() && !matches!(ch, '\n' | '\r' | '\t') {
+            controls += 1;
+        }
+    }
+    controls == 0 || controls.saturating_mul(20) <= total
+}
+
+async fn clear_autodetected_binary_mime(
+    workspace: &str,
+    targets: &[String],
+) -> Result<(), SvnError> {
+    if targets.is_empty() {
+        return Ok(());
+    }
+    let mut args = vec!["status".to_string(), "--xml".to_string(), "--".to_string()];
+    args.extend(targets.iter().cloned());
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = execute_svn(&refs, Some(workspace)).await?;
+    let statuses = parse_status_xml(&output)?;
+    let root = Path::new(workspace);
+    for entry in statuses {
+        if entry.status_code != "added" {
+            continue;
+        }
+        let full = root.join(&entry.path);
+        if !full.is_file() {
+            continue;
+        }
+        let length = fs::metadata(&full)
+            .map_err(|error| SvnError::CommandFailed(format!("无法读取已添加文件：{error}")))?
+            .len();
+        if length > FALSE_BINARY_READ_LIMIT {
+            continue;
+        }
+        let bytes = fs::read(&full)
+            .map_err(|error| SvnError::CommandFailed(format!("无法读取已添加文件：{error}")))?;
+        if !is_conservative_utf8_text(&bytes) {
+            continue;
+        }
+        let target = normalize_diff_target(&entry.path);
+        let mime = execute_svn(
+            &["propget", "svn:mime-type", "--", target.as_str()],
+            Some(workspace),
+        )
+        .await;
+        let Ok(mime) = mime else {
+            continue;
+        };
+        if mime.trim() != "application/octet-stream" {
+            continue;
+        }
+        execute_svn(
+            &["propdel", "svn:mime-type", "--", target.as_str()],
+            Some(workspace),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 pub async fn add(path: &str, files: &[String]) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["add".to_string()];
     append_targets(&mut args, files);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    execute_svn(&args_refs, Some(path)).await
+    let output = execute_svn(&args_refs, Some(path)).await?;
+    clear_autodetected_binary_mime(path, files).await?;
+    Ok(output)
 }
 
 pub async fn delete(path: &str, files: &[String]) -> Result<String, SvnError> {
@@ -730,22 +968,24 @@ pub async fn merge(
     rev_start: u64,
     rev_end: u64,
 ) -> Result<String, SvnError> {
-    let args = vec![
+    let revision = format!("{rev_start}:{rev_end}");
+    let args = [
         "merge".to_string(),
         "-r".to_string(),
-        format!("{}:{}", rev_start, rev_end),
+        revision,
         source.to_string(),
     ];
-    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     execute_svn(&args_refs, Some(path)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        append_targets, append_unique_log_matches, build_diff_args, build_log_args,
-        build_unversioned_file_diff, commit, log_entry_matches, log_entry_matches_dates,
-        normalize_diff_target, normalize_svn_path, patch_output_has_conflicts,
+        add, append_targets, append_unique_log_matches, blame, build_diff_args, build_log_args,
+        build_unversioned_file_diff, commit, diff, is_conservative_utf8_text, local_revision,
+        log_entry_matches, log_entry_matches_dates, normalize_diff_target, normalize_svn_path,
+        parse_svnversion_upper, parse_update_conflicts, patch_output_has_conflicts,
     };
     use crate::svn::executor::SvnError;
     use crate::{SvnLogEntry, SvnLogPath};
@@ -1098,5 +1338,209 @@ mod tests {
         assert!(!reached_limit);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].revision, 8);
+    }
+
+    #[test]
+    fn svnversion_upper_bound_ignores_mixed_revision_suffixes() {
+        assert_eq!(parse_svnversion_upper("3"), Some(3));
+        assert_eq!(parse_svnversion_upper("2:3M\n"), Some(3));
+        assert_eq!(parse_svnversion_upper("4123:4168MS"), Some(4168));
+        assert_eq!(parse_svnversion_upper("0:1P"), Some(1));
+        assert_eq!(parse_svnversion_upper("Unversioned directory"), None);
+    }
+
+    #[test]
+    fn utf8_text_detection_keeps_binaries_and_accepts_cjk() {
+        assert!(is_conservative_utf8_text(
+            "纯中文内容\n没有英文\n".as_bytes()
+        ));
+        assert!(is_conservative_utf8_text(
+            b"note\n\xe4\xbd\xa0\xe5\xa5\xbd\n"
+        ));
+        assert!(is_conservative_utf8_text(b""));
+        assert!(!is_conservative_utf8_text(b"\0\x01binary"));
+        assert!(!is_conservative_utf8_text(&[0xff, 0xfe, 0x00]));
+    }
+
+    #[test]
+    fn update_conflict_parser_reads_paths_and_summaries() {
+        let output = "\
+Updating '.':\n\
+C    文档/说明.txt\n\
+Updated to revision 5.\n\
+Summary of conflicts:\n\
+  Text conflicts: 1\n";
+        assert_eq!(
+            parse_update_conflicts(output),
+            vec!["文档/说明.txt".to_string()]
+        );
+
+        let property = "\
+Updating '.':\n\
+ C   src/props.txt\n\
+Summary of conflicts:\n\
+  Property conflicts: 1\n";
+        assert_eq!(
+            parse_update_conflicts(property),
+            vec!["src/props.txt".to_string()]
+        );
+
+        let summary_only = "\
+Summary of conflicts:\n\
+  Tree conflicts: 2\n\
+  Text conflicts: 0\n";
+        assert_eq!(
+            parse_update_conflicts(summary_only),
+            vec!["Tree conflicts: 2".to_string()]
+        );
+        assert!(parse_update_conflicts("Updated to revision 4.\n").is_empty());
+    }
+
+    #[test]
+    fn partial_commit_revision_text_mime_and_nested_unversioned_diff() {
+        for tool in ["svn", "svnadmin", "svnversion"] {
+            if std::process::Command::new(tool)
+                .arg("--version")
+                .output()
+                .is_err()
+            {
+                eprintln!("skipping working-copy fix test: {tool} is unavailable");
+                return;
+            }
+        }
+
+        let directory = std::env::temp_dir().join(format!(
+            "orcasvn-fixes-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(directory.clone());
+        let repository = directory.join("repo");
+        let created = std::process::Command::new("svnadmin")
+            .args(["create", repository.to_str().unwrap()])
+            .env("LC_ALL", "C.UTF-8")
+            .output()
+            .unwrap();
+        assert!(created.status.success());
+        let url = format!("file://{}", repository.display());
+        let wc = directory.join("wc");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime
+            .block_on(super::checkout(&url, wc.to_str().unwrap(), None))
+            .unwrap();
+        std::fs::write(wc.join("plain.txt"), "hello\n").unwrap();
+        runtime
+            .block_on(add(wc.to_str().unwrap(), &["plain.txt".into()]))
+            .unwrap();
+        runtime
+            .block_on(commit(wc.to_str().unwrap(), "initial", None))
+            .unwrap();
+
+        std::fs::create_dir(wc.join("文档")).unwrap();
+        std::fs::write(wc.join("文档/说明.txt"), "你好，世界\n").unwrap();
+        std::fs::write(wc.join("纯中文.txt"), "纯中文内容\n没有英文\n").unwrap();
+        std::fs::write(wc.join("binary.bin"), b"\0\x01not-text").unwrap();
+        std::fs::write(wc.join("plain.txt"), "hello\nedited\n").unwrap();
+        runtime
+            .block_on(add(
+                wc.to_str().unwrap(),
+                &["纯中文.txt".into(), "binary.bin".into()],
+            ))
+            .unwrap();
+
+        let mime = |name: &str| {
+            std::process::Command::new("svn")
+                .args(["propget", "svn:mime-type", "--non-interactive", "--", name])
+                .current_dir(&wc)
+                .env("LC_ALL", "C.UTF-8")
+                .output()
+                .unwrap()
+        };
+        let cjk_mime = mime("纯中文.txt");
+        assert!(
+            !cjk_mime.status.success()
+                || !String::from_utf8_lossy(&cjk_mime.stdout).contains("octet-stream"),
+            "CJK text kept a binary mime type: {}",
+            String::from_utf8_lossy(&cjk_mime.stdout)
+        );
+        let binary_mime = mime("binary.bin");
+        assert!(
+            String::from_utf8_lossy(&binary_mime.stdout).contains("octet-stream"),
+            "real binary lost its mime type: {}",
+            String::from_utf8_lossy(&binary_mime.stderr)
+        );
+
+        let text_diff = runtime
+            .block_on(diff(wc.to_str().unwrap(), "纯中文.txt", None, None))
+            .unwrap();
+        assert!(
+            text_diff.diff.contains("纯中文内容"),
+            "diff hid CJK text: {}",
+            text_diff.diff
+        );
+        assert!(!text_diff.diff.contains("Cannot display"));
+
+        let nested = runtime
+            .block_on(diff(wc.to_str().unwrap(), "文档/说明.txt", None, None))
+            .unwrap();
+        assert!(
+            nested.diff.contains("你好，世界"),
+            "nested unversioned diff failed: {}",
+            nested.diff
+        );
+
+        let committed = runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "只提交说明",
+                Some(&["plain.txt".into()]),
+            ))
+            .unwrap();
+        assert!(committed.contains("Committed revision"));
+        let reported = runtime
+            .block_on(local_revision(wc.to_str().unwrap()))
+            .unwrap();
+        let directory_revision = std::process::Command::new("svn")
+            .args(["info", "--show-item", "revision", "--non-interactive"])
+            .current_dir(&wc)
+            .env("LC_ALL", "C.UTF-8")
+            .output()
+            .unwrap();
+        let directory_revision = String::from_utf8_lossy(&directory_revision.stdout)
+            .trim()
+            .parse::<u64>()
+            .unwrap();
+        assert!(
+            reported > directory_revision,
+            "local revision {reported} did not advance past the directory base {directory_revision}"
+        );
+
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "提交纯中文",
+                Some(&["纯中文.txt".into()]),
+            ))
+            .unwrap();
+        let blamed = runtime
+            .block_on(blame(wc.to_str().unwrap(), "纯中文.txt"))
+            .unwrap();
+        assert!(
+            blamed.iter().any(|line| line.line.contains("纯中文内容")),
+            "blame hid CJK text: {blamed:?}"
+        );
     }
 }

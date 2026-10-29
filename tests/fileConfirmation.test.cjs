@@ -32,6 +32,7 @@ function harness(status = 'modified', path = 'file.ts') {
     '@/components/DiffViewer.vue': {},
     '@/components/GlassLoading.vue': {},
     '@/utils/clipboard': {},
+    '@/utils/statusSelection': { retainedSelection: (selected, paths) => selected && paths.includes(selected) ? selected : null },
   }
   const script = fs.readFileSync('src/views/WorkspaceView.vue', 'utf8').match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
   const code = ts.transpileModule(script + '\nexports.actions = { handleFileAction, fileActionLabel, pendingFileAction };', { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText

@@ -193,6 +193,7 @@ export default {
     localTitle: '本地更改',
     localHint: '这些文件包含尚未提交的本地更改',
     noIncoming: '当前没有可更新的远端提交',
+    conflictsTitle: '这次更新产生了冲突，请先处理这些文件',
   },
   checkout: {
     title: '检出代码',

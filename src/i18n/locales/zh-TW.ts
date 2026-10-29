@@ -193,6 +193,7 @@ export default {
     localTitle: '本機更改',
     localHint: '這些檔案包含尚未提交的本機更改',
     noIncoming: '目前沒有可更新的遠端提交',
+    conflictsTitle: '這次更新產生了衝突，請先處理這些檔案',
   },
   checkout: {
     title: '檢出程式碼',

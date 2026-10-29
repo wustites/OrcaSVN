@@ -251,6 +251,7 @@ import VirtualViewport from '@/components/VirtualViewport.vue'
 import DiffViewer from '@/components/DiffViewer.vue'
 import GlassLoading from '@/components/GlassLoading.vue'
 import { writeClipboardText } from '@/utils/clipboard'
+import { retainedSelection } from '@/utils/statusSelection'
 import type { SvnStatus, DiffResult } from '@/types'
 
 const { t } = useI18n()
@@ -422,6 +423,14 @@ const revealSelectedFile = async () => {
 const handleDocumentKeydown = (event: KeyboardEvent) => {
   if (event.key === 'Escape') hideFileContextMenu()
 }
+
+watch(() => workspaceStore.statusList.map(file => file.path), (paths) => {
+  if (retainedSelection(selectedFile.value, paths) === selectedFile.value) return
+  diffRequestGeneration += 1
+  selectedFile.value = null
+  diffResult.value = null
+  isLoadingDiff.value = false
+})
 
 watch(() => workspaceStore.currentPath, () => {
   fileActionWorkspaceGeneration += 1

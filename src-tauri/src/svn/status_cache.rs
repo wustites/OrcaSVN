@@ -71,7 +71,7 @@ fn merge_status(previous: &[SvnStatus], fresh: Vec<SvnStatus>, paths: &[String])
     let mut entries: Vec<_> = previous
         .iter()
         .filter(|entry| {
-            !paths.iter().any(|path| entry.path == *path)
+            !paths.contains(&entry.path)
                 && !collapsed.iter().any(|path| {
                     entry
                         .path
