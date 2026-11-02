@@ -26,6 +26,10 @@ struct WorkspaceStatus {
     inventory: Option<Arc<Inventory>>,
     last_full_check: Option<Instant>,
     pending_save: Option<tokio::task::JoinHandle<()>>,
+    #[cfg(windows)]
+    watcher: Option<super::status_watch::Watcher>,
+    #[cfg(windows)]
+    watcher_ready: bool,
     #[cfg(test)]
     last_query: Option<QueryMode>,
 }
@@ -37,6 +41,10 @@ impl WorkspaceStatus {
             inventory: None,
             last_full_check: None,
             pending_save: None,
+            #[cfg(windows)]
+            watcher: None,
+            #[cfg(windows)]
+            watcher_ready: false,
             #[cfg(test)]
             last_query: None,
         }
@@ -94,21 +102,80 @@ async fn persist_status(
     before: Arc<Inventory>,
     entries: Vec<SvnStatus>,
 ) {
-    if let Some(previous) = workspace.pending_save.take() {
-        let _ = previous.await;
-    }
+    let previous = workspace.pending_save.take();
     let save_root = root.to_path_buf();
-    workspace.pending_save = Some(tokio::task::spawn_blocking(move || {
-        let Some(after) = status_snapshot::verify(&save_root, &before) else {
-            return;
-        };
-        if let Err(error) = status_snapshot::write(&directory, &save_root, after, entries) {
-            tracing::warn!(%error, "could not persist workspace status");
+    workspace.pending_save = Some(tokio::spawn(async move {
+        // Serialize writers in the background; a prior verification must not
+        // add another full traversal to the foreground response time.
+        if let Some(previous) = previous {
+            let _ = previous.await;
         }
+        let _ = tokio::task::spawn_blocking(move || {
+            let Some(after) = status_snapshot::verify(&save_root, &before) else {
+                return;
+            };
+            if let Err(error) = status_snapshot::write(&directory, &save_root, after, entries) {
+                tracing::warn!(%error, "could not persist workspace status");
+            }
+        })
+        .await;
     }));
 }
 
-/// Each scheduled refresh compares filesystem metadata, then scopes SVN queries.
+#[cfg(windows)]
+async fn start_watcher(workspace: &mut WorkspaceStatus, root: &Path) {
+    if workspace.watcher.is_some() {
+        return;
+    }
+    let watch_root = root.to_path_buf();
+    match tokio::task::spawn_blocking(move || super::status_watch::Watcher::new(&watch_root)).await
+    {
+        Ok(Ok(watcher)) => {
+            tracing::debug!(workspace = %root.display(), "directory notification fallback started");
+            workspace.watcher = Some(watcher);
+        }
+        Ok(Err(error)) => {
+            tracing::warn!(%error, "directory notifications unavailable; using metadata scans")
+        }
+        Err(error) => {
+            tracing::warn!(%error, "directory notification task failed; using metadata scans")
+        }
+    }
+    workspace.watcher_ready = false;
+}
+
+#[cfg(windows)]
+async fn watch_paths(workspace: &mut WorkspaceStatus, root: &Path) -> Option<Vec<String>> {
+    let mut watcher = workspace.watcher.take()?;
+    let inventory = workspace.inventory.clone()?;
+    let watch_root = root.to_path_buf();
+    match tokio::task::spawn_blocking(move || {
+        let result = watcher
+            .poll(&watch_root)
+            .and_then(|paths| status_snapshot::watch_changes(&watch_root, &inventory, paths));
+        (watcher, result)
+    })
+    .await
+    {
+        Ok((watcher, Ok(paths))) => {
+            workspace.watcher = Some(watcher);
+            Some(paths)
+        }
+        Ok((_, Err(error))) => {
+            tracing::debug!(%error, "directory notifications require a complete baseline");
+            workspace.watcher_ready = false;
+            None
+        }
+        Err(error) => {
+            tracing::warn!(%error, "directory notification task failed");
+            workspace.watcher_ready = false;
+            None
+        }
+    }
+}
+
+/// Prefer USN or directory notifications; metadata comparison also validates
+/// offline snapshots and recovers from lost events or unavailable listeners.
 pub async fn cached_status(
     path: &str,
     force: bool,
@@ -121,12 +188,96 @@ pub async fn cached_status(
         .map_err(|error| SvnError::CommandFailed(format!("无法访问工作副本：{error}")))?;
     let workspace = get_workspace(&root)?;
     let mut workspace = workspace.lock().await;
-    let scan_root = root.clone();
+    #[cfg(windows)]
+    let mut force = force;
+    #[cfg(windows)]
+    {
+        // Keep the journal path when available: unlike notifications, it also
+        // observes offline edits and modifications through external hard links.
+        let use_notifications = workspace
+            .inventory
+            .as_deref()
+            .is_none_or(|inventory| !status_snapshot::has_journal(inventory));
+        if use_notifications {
+            start_watcher(&mut workspace, &root).await;
+            let recent = workspace
+                .last_full_check
+                .is_some_and(|time| time.elapsed() < FULL_CHECK_INTERVAL);
+            if !force
+                && workspace.watcher_ready
+                && recent
+                && workspace.entries.is_some()
+                && workspace.inventory.is_some()
+            {
+                if let Some(paths) = watch_paths(&mut workspace, &root).await {
+                    let result = if paths.is_empty() {
+                        Ok(workspace.entries.clone().unwrap_or_default())
+                    } else {
+                        status_for_paths(&root.to_string_lossy(), &paths)
+                            .await
+                            .map(|fresh| {
+                                merge_status(
+                                    workspace.entries.as_deref().unwrap_or_default(),
+                                    fresh,
+                                    &paths,
+                                )
+                            })
+                    };
+                    match result {
+                        Ok(entries) => {
+                            tracing::debug!(
+                                changed_paths = paths.len(),
+                                "directory notification status query"
+                            );
+                            workspace.entries = Some(entries.clone());
+                            // The metadata inventory remains the last full
+                            // baseline. Do not pair it with newer disk statuses.
+                            #[cfg(test)]
+                            {
+                                workspace.last_query = Some(if paths.is_empty() {
+                                    QueryMode::Reuse
+                                } else {
+                                    QueryMode::Scoped(paths.len())
+                                });
+                            }
+                            return Ok(entries);
+                        }
+                        Err(error) => {
+                            tracing::debug!(
+                                %error,
+                                "notification scoped status failed; using full scan"
+                            )
+                        }
+                    }
+                }
+                // Events have been consumed (or lost). Recreate the listener
+                // before scanning and never reuse status from the old baseline.
+                workspace.watcher = None;
+                workspace.watcher_ready = false;
+                force = true;
+                start_watcher(&mut workspace, &root).await;
+            }
+        }
+    }
     let restore_dir = if workspace.entries.is_none() && !force {
         cache_dir.clone()
     } else {
         None
     };
+    if let Some(directory) = restore_dir {
+        let restore_root = root.clone();
+        let restored = tokio::task::spawn_blocking(move || {
+            status_snapshot::read(&directory, &restore_root)
+        })
+        .await
+        .map_err(|error| SvnError::CommandFailed(error.to_string()))?;
+        if let Some(snapshot) = restored {
+            tracing::debug!(workspace = %root.display(), "disk status baseline restored");
+            workspace.entries = Some(snapshot.entries);
+            workspace.inventory = Some(Arc::new(snapshot.inventory));
+            workspace.last_full_check = Some(Instant::now());
+        }
+    }
     let rescan_due = force
         || (workspace.entries.is_some()
             && workspace
@@ -137,24 +288,33 @@ pub async fn cached_status(
     } else {
         workspace.inventory.clone()
     };
-    // Run directory I/O away from the async command thread; enumerate once per
-    // refresh, including while the app is open, with no watcher registration.
-    let (scan, restored) = tokio::task::spawn_blocking(move || {
-        let restored =
-            restore_dir.and_then(|directory| status_snapshot::read(&directory, &scan_root));
-        let baseline = previous_inventory
-            .as_deref()
-            .or_else(|| restored.as_ref().map(|snapshot| &snapshot.inventory));
-        (status_snapshot::scan(&scan_root, baseline), restored)
-    })
-    .await
-    .map_err(|error| SvnError::CommandFailed(error.to_string()))?;
-    if let Some(snapshot) = restored {
-        tracing::debug!(workspace = %root.display(), "disk status baseline restored");
-        workspace.entries = Some(snapshot.entries);
-        workspace.inventory = Some(Arc::new(snapshot.inventory));
-        workspace.last_full_check = Some(Instant::now());
+    #[cfg(windows)]
+    if workspace.watcher.is_some() && (rescan_due || workspace.entries.is_none()) {
+        // Changes that preceded this complete query are already covered by it.
+        // Start a fresh request so only edits during the parallel operations
+        // can invalidate their shared baseline (e.g. after an SVN mutation).
+        workspace.watcher = None;
+        start_watcher(&mut workspace, &root).await;
     }
+    let scan_root = root.clone();
+    let scan_task = tokio::task::spawn_blocking(move || {
+        status_snapshot::scan(&scan_root, previous_inventory.as_deref())
+    });
+    // A listener established before both operations can prove that their
+    // overlapping baselines are stable. Without one, preserve the original
+    // scan-before-SVN ordering so edits during a query remain detectable.
+    #[cfg(windows)]
+    let prefetched = if workspace.watcher.is_some() && (rescan_due || workspace.entries.is_none())
+    {
+        Some(status(&root.to_string_lossy()).await)
+    } else {
+        None
+    };
+    #[cfg(not(windows))]
+    let prefetched: Option<Result<Vec<SvnStatus>, SvnError>> = None;
+    let scan = scan_task
+        .await
+        .map_err(|error| SvnError::CommandFailed(error.to_string()))?;
     let (current, hint, journal_reset) = match scan {
         Ok(scan) => (Some(Arc::new(scan.inventory)), scan.paths, scan.force_full),
         Err(error) => {
@@ -170,7 +330,29 @@ pub async fn cached_status(
             .zip(current.as_deref())
             .and_then(|(before, after)| status_snapshot::differences(before, after))
     });
-    let full = force
+    #[cfg(windows)]
+    let current = if prefetched.is_some() {
+        // A changed/overflowed stream cannot certify parallel scan results.
+        // Return SVN's result, but require a fresh baseline on the next poll.
+        workspace.inventory = current.clone();
+        if watch_paths(&mut workspace, &root)
+            .await
+            .is_some_and(|paths| paths.is_empty())
+        {
+            current
+        } else {
+            None
+        }
+    } else {
+        current
+    };
+    #[cfg(windows)]
+    if current.as_deref().is_some_and(status_snapshot::has_journal) {
+        // USN covers offline edits as well; do not keep an unused listener.
+        workspace.watcher = None;
+    }
+    let full = prefetched.is_some()
+        || force
         || journal_reset
         || workspace.entries.is_none()
         || changed.is_none()
@@ -192,10 +374,16 @@ pub async fn cached_status(
             }
         }
         workspace.inventory = current;
+        #[cfg(windows)]
+        {
+            workspace.watcher_ready = workspace.watcher.is_some() && workspace.inventory.is_some();
+        }
         return Ok(entries);
     }
     let mut used_full_scan = full;
-    let result = if full {
+    let result = if let Some(result) = prefetched {
+        result
+    } else if full {
         tracing::debug!(workspace = %cwd, "complete SVN status scan");
         status(&cwd).await
     } else {
@@ -219,6 +407,10 @@ pub async fn cached_status(
             // Keep the pre-query inventory: any edit during SVN execution will
             // differ on the next poll and be checked again.
             workspace.inventory = current.clone();
+            #[cfg(windows)]
+            {
+                workspace.watcher_ready = workspace.watcher.is_some() && current.is_some();
+            }
             if used_full_scan {
                 workspace.last_full_check = Some(Instant::now());
             }
@@ -238,6 +430,10 @@ pub async fn cached_status(
         Err(error) => {
             // Failed queries must not promote a new filesystem baseline.
             workspace.inventory = None;
+            #[cfg(windows)]
+            {
+                workspace.watcher_ready = false;
+            }
             Err(error)
         }
     }
@@ -339,6 +535,71 @@ mod tests {
         if let Some(save) = workspace.pending_save.take() {
             save.await.unwrap();
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn directory_fallback_skips_inventory_and_detects_timestamp_preserving_edits() {
+        let Some(fixture) = Fixture::new() else {
+            return;
+        };
+        fixture.init();
+        runtime().block_on(async {
+            let path = fixture.wc.to_str().unwrap();
+            cached_status(path, false).await.unwrap();
+            let root = fs::canonicalize(&fixture.wc).unwrap();
+            let workspace = get_workspace(&root).unwrap();
+            // Exercise the ordinary-permission fallback even on a build agent
+            // that happens to have access to the volume journal.
+            let inventory = {
+                let mut state = workspace.lock().await;
+                let inventory = Arc::new(state.inventory.as_deref().unwrap().without_journal());
+                state.inventory = Some(inventory.clone());
+                state.watcher = None;
+                start_watcher(&mut state, &root).await;
+                assert!(state.watcher.is_some());
+                state.watcher_ready = true;
+                inventory
+            };
+            cached_status(path, false).await.unwrap();
+            assert_query_mode(&fixture.wc, QueryMode::Reuse).await;
+            assert!(Arc::ptr_eq(
+                workspace.lock().await.inventory.as_ref().unwrap(),
+                &inventory,
+            ));
+
+            let file = fixture.wc.join("src/file@name.txt");
+            let modified = fs::metadata(&file).unwrap().modified().unwrap();
+            fs::write(&file, "edit\n").unwrap();
+            fs::File::options()
+                .write(true)
+                .open(&file)
+                .unwrap()
+                .set_times(fs::FileTimes::new().set_modified(modified))
+                .unwrap();
+            let expected = statuses(&status(path).await.unwrap());
+            let started = Instant::now();
+            loop {
+                let current = cached_status(path, false).await.unwrap();
+                if statuses(&current) == expected {
+                    break;
+                }
+                assert!(started.elapsed() < Duration::from_secs(3));
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_query_mode(&fixture.wc, QueryMode::Scoped(1)).await;
+            assert!(Arc::ptr_eq(
+                workspace.lock().await.inventory.as_ref().unwrap(),
+                &inventory,
+            ));
+
+            fs::create_dir(fixture.wc.join("new-directory")).unwrap();
+            fs::write(fixture.wc.join("new-directory/file"), "new\n").unwrap();
+            let expected = statuses(&status(path).await.unwrap());
+            let actual = cached_status(path, false).await.unwrap();
+            assert_eq!(statuses(&actual), expected);
+            assert_query_mode(&fixture.wc, QueryMode::Full).await;
+        });
     }
 
     fn forget_workspace(root: &Path) {

@@ -50,6 +50,13 @@ pub(super) struct Inventory {
     journal: Option<super::status_usn::Journal>,
 }
 impl Inventory {
+    #[cfg(all(windows, test))]
+    pub fn without_journal(&self) -> Self {
+        let mut inventory = self.clone();
+        inventory.journal = None;
+        inventory
+    }
+
     #[cfg(test)]
     pub fn journal_available(&self) -> bool {
         self.journal.is_some()
@@ -243,7 +250,16 @@ pub(super) fn capture_incremental(
     previous: Option<&Inventory>,
 ) -> io::Result<Inventory> {
     #[cfg(windows)]
-    let journal_start = super::status_usn::begin(root).ok();
+    let journal_start = match super::status_usn::begin(root) {
+        Ok(session) => Some(session),
+        Err(error) => {
+            tracing::debug!(
+                %error,
+                "USN unavailable; using directory notifications or metadata scans"
+            );
+            None
+        }
+    };
     let (inventory, stats) = capture_measured(root, previous)?;
     #[cfg(windows)]
     let inventory = {
@@ -437,6 +453,52 @@ pub(super) struct Scan {
     pub inventory: Inventory,
     pub paths: Option<Vec<String>>,
     pub force_full: bool,
+}
+
+/// Notifications are candidates, not SVN statuses. A listener cannot observe
+/// configuration or administration outside a selected subtree, so check those
+/// explicitly. Directory/administration changes retain the full-scan fallback.
+#[cfg(windows)]
+pub(super) fn watch_changes(
+    root: &Path,
+    previous: &Inventory,
+    paths: Vec<String>,
+) -> io::Result<Vec<String>> {
+    if configuration()? != previous.configuration
+        || ancestor_administration(root)? != previous.administration
+    {
+        return Err(io::Error::other(
+            "SVN configuration or ancestor administration changed",
+        ));
+    }
+    for path in &paths {
+        let before_directory = previous
+            .files
+            .binary_search_by(|(name, _)| name.cmp(path))
+            .ok()
+            .is_some_and(|index| previous.files[index].1.kind == 0);
+        if before_directory
+            || path.split('/').any(|part| {
+                part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn")
+            })
+        {
+            return Err(io::Error::other("directory or SVN administration changed"));
+        }
+        match fs::symlink_metadata(root.join(path)) {
+            Ok(metadata) if metadata.is_dir() || metadata.file_type().is_symlink() => {
+                return Err(io::Error::other("directory or link requires metadata scan"));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(paths)
+}
+
+#[cfg(windows)]
+pub(super) fn has_journal(inventory: &Inventory) -> bool {
+    inventory.journal.is_some()
 }
 
 pub(super) fn scan(root: &Path, previous: Option<&Inventory>) -> io::Result<Scan> {
