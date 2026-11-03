@@ -23,8 +23,10 @@ dist-ssr
 *.sln
 *.sw?
 
+# Rust build output
+target/
+
 # Tauri
-src-tauri/target
 src-tauri/dist
 
 build-output.txt
