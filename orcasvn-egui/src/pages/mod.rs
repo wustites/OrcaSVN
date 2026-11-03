@@ -101,7 +101,52 @@ impl Shared {
             self.output
                 .push(format!("$ svn {label}\n{}", output.trim_end()));
         }
-        self.ok(format!("{label} {}", t("完成", "done")));
+        let name = op_name(label);
+        self.ok(match committed_revision(output) {
+            Some(rev) => format!("{name}{} r{rev}", t("完成：", " done: ")),
+            None => format!("{name}{}", t("完成", " done")),
+        });
+    }
+}
+
+/// Localized display name for an operation label used in notices.
+fn op_name(label: &str) -> String {
+    let name = match label {
+        "update" => t("更新", "Update"),
+        "cleanup" => t("清理", "Cleanup"),
+        "resolve" => t("解决冲突", "Resolve"),
+        "commit" => t("提交", "Commit"),
+        "add" => t("添加", "Add"),
+        "revert" => t("还原", "Revert"),
+        "delete" => t("删除", "Delete"),
+        "rm" => t("删除未版本文件", "Delete unversioned"),
+        "checkout" => t("检出", "Checkout"),
+        "patch" => t("应用补丁", "Apply patch"),
+        other => return other.to_string(),
+    };
+    name.to_string()
+}
+
+/// The revision from svn's "Committed revision N." line (svn runs in an English locale).
+fn committed_revision(output: &str) -> Option<u64> {
+    output.lines().find_map(|line| {
+        line.trim()
+            .strip_prefix("Committed revision ")?
+            .trim_end_matches('.')
+            .parse()
+            .ok()
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_committed_revision() {
+        let out = "Sending        trunk/a.txt\nTransmitting file data .done\nCommitting transaction...\nCommitted revision 5.\n";
+        assert_eq!(committed_revision(out), Some(5));
+        assert_eq!(committed_revision("Updating '.':\nAt revision 4."), None);
     }
 }
 

@@ -142,7 +142,10 @@ impl OrcaApp {
             if let Some(info) = &self.shared.info {
                 ui.separator();
                 ui.label(RichText::new(format!("r{}", info.revision)).monospace())
-                    .on_hover_text(&info.url);
+                    .on_hover_text(t(
+                        "工作副本根目录的版本（提交后需更新才会变化）",
+                        "Working copy root revision (changes after an update, not a commit)",
+                    ));
                 ui.label(RichText::new(&info.url).weak())
                     .on_hover_text(&info.repository_root);
             }
