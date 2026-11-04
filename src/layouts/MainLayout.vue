@@ -221,7 +221,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -255,6 +255,12 @@ const cachedViews = ref(['WorkspaceView', 'LogView', 'UpdateView'])
 const statusRefreshIntervalMs = 60_000
 let statusRefreshTimer: number | undefined
 const selectedOpenTarget = ref<OpenWorkspaceTarget>('explorer')
+watch(() => workspaceStore.error, (error, _previousError, onCleanup) => {
+  if (!error) return
+  const message = ElMessage.error({ message: error, duration: 0, showClose: true })
+  onCleanup(() => message.close())
+})
+
 const openTargetIcons = {
   explorer: FolderOpenedIcon,
   vscode: Code,
