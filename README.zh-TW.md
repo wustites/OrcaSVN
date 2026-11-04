@@ -53,9 +53,17 @@ svn --version --quiet
 需求：
 
 - Node.js 18 或更新版本
-- 最新穩定版 Rust 工具鏈
+- 最新穩定版 Rust
 - SVN CLI 1.10 或更新版本
 - 目前平台所需的 Tauri 2 建置相依套件
+
+Linux（Debian/Ubuntu）系統套件範例：
+
+```bash
+sudo apt-get install pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev patchelf build-essential \
+  libssl-dev subversion
+```
 
 ```bash
 npm ci
@@ -65,10 +73,25 @@ npm run tauri dev
 提交變更前請執行：
 
 ```bash
-npm run check
+npm run build
+npm run test:unit
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
+`npm run check` 會依序做前端型別檢查與建置、前端單元測試、Rust 格式檢查和 `cargo test`。
+
 環境設定與疑難排解請參閱 [SETUP.md](SETUP.md)，貢獻規範請參閱 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+### 工作複本行為
+
+- macOS 與 Linux 上，SVN 子程序使用 UTF-8 locale（macOS 為 `en_US.UTF-8`，Linux 為 `C.UTF-8`），避免桌面啟動時繼承缺失、ASCII 或無效 locale 而弄亂中文路徑、倉庫 URL、提交說明與命令輸出。這對應 [#7](https://github.com/wustites/OrcaSVN/issues/7)。
+- 介面上的本機版本是工作複本根目錄的版本。只提交部分檔案後，根目錄版本不變；更新頁會核對每個提交變更的路徑，工作複本已包含的提交不再列為遠端提交，尚未拉取的提交不會被隱藏。
+- 加入版本控制時，若 SVN 把有效 UTF-8 文字自動標成 `application/octet-stream`，會移除該屬性，讓差異與 Blame 仍能顯示內容。含 NUL 或非法 UTF-8 的二進位檔維持原樣。
+- 檢出結果依成功或失敗狀態顯示，不靠錯誤文字是否包含英文字串 `Error`。
+- 更新若產生文字、屬性或樹狀衝突，會列出衝突路徑並顯示警告。SVN 在這種情況下仍以結束碼 0 結束。
+- 未追蹤目錄中的檔案也可以查看差異，內容以新增顯示。檔案一旦不再出現在狀態清單中，工作區會清掉對應的差異預覽。
 
 ## 專案結構
 

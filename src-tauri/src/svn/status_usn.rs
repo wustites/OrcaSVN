@@ -52,7 +52,7 @@ fn field<const N: usize>(buffer: &[u8], offset: usize) -> io::Result<[u8; N]> {
         .ok_or_else(|| invalid("truncated Windows record"))
 }
 fn name(buffer: &[u8], offset: usize, length: usize) -> io::Result<String> {
-    if length == 0 || length % 2 != 0 || offset % 2 != 0 {
+    if length == 0 || !length.is_multiple_of(2) || !offset.is_multiple_of(2) {
         return Err(invalid("invalid UTF-16 record name"));
     }
     let bytes = buffer
@@ -83,7 +83,7 @@ fn parse_page(buffer: &[u8]) -> io::Result<(i64, Vec<Record>)> {
         let end = offset
             .checked_add(length)
             .ok_or_else(|| invalid("USN record overflow"))?;
-        if length < 60 || length % 8 != 0 || end > buffer.len() {
+        if length < 60 || !length.is_multiple_of(8) || end > buffer.len() {
             return Err(invalid("invalid USN record length"));
         }
         let record = &buffer[offset..end];
@@ -511,7 +511,9 @@ mod native {
                         if next == 0 {
                             break;
                         }
-                        if next < offset_of!(FILE_ID_BOTH_DIR_INFO, FileName) || next % 8 != 0 {
+                        if next < offset_of!(FILE_ID_BOTH_DIR_INFO, FileName)
+                            || !next.is_multiple_of(8)
+                        {
                             return Err(invalid("invalid next directory entry"));
                         }
                         offset = offset

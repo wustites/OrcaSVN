@@ -15,6 +15,19 @@ pub struct CommandResult {
     pub success: bool,
     pub output: String,
     pub error: Option<String>,
+    /// Paths reported as conflicted by `svn update`, if any. Success stays
+    /// true because SVN itself exits 0; the UI uses this for a warning.
+    #[serde(default)]
+    pub conflicts: Vec<String>,
+}
+
+fn success_output(output: String) -> CommandResult {
+    CommandResult {
+        success: true,
+        output,
+        error: None,
+        conflicts: Vec::new(),
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -182,11 +195,7 @@ async fn delete_unversioned(path: String, files: Vec<String>) -> Result<CommandR
         removed.push(file);
     }
 
-    Ok(CommandResult {
-        success: true,
-        output: removed.join("\n"),
-        error: None,
-    })
+    Ok(success_output(removed.join("\n")))
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -541,11 +550,7 @@ async fn svn_checkout(
 ) -> Result<CommandResult, String> {
     svn::checkout(&url, &path, revision)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -553,10 +558,14 @@ async fn svn_checkout(
 async fn svn_update(path: String, revision: Option<u64>) -> Result<CommandResult, String> {
     svn::update(&path, revision)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
+        .map(|output| {
+            let conflicts = svn::parse_update_conflicts(&output);
+            CommandResult {
+                success: true,
+                output,
+                error: None,
+                conflicts,
+            }
         })
         .map_err(|e| e.to_string())
 }
@@ -575,11 +584,7 @@ async fn svn_commit(
         auto_delete_missing.unwrap_or(false),
     )
     .await
-    .map(|output| CommandResult {
-        success: true,
-        output,
-        error: None,
-    })
+    .map(success_output)
     .map_err(|e| e.to_string())
 }
 
@@ -602,6 +607,7 @@ async fn svn_status(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
 async fn svn_log(
     path: String,
     limit: Option<u32>,
@@ -624,6 +630,18 @@ async fn svn_log(
     )
     .await
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn svn_incoming_log(
+    path: String,
+    limit: Option<u32>,
+    head: u64,
+    local: u64,
+) -> Result<Vec<SvnLogEntry>, String> {
+    svn::incoming_log(&path, limit, head, local)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -666,11 +684,7 @@ async fn svn_apply_patch(
 ) -> Result<CommandResult, String> {
     svn::apply_patch(&workspace_path, &patch, reverse)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -685,11 +699,7 @@ async fn svn_blame(workspace_path: String, file: String) -> Result<Vec<svn::Blam
 async fn svn_add(path: String, files: Vec<String>) -> Result<CommandResult, String> {
     svn::add(&path, &files)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -697,11 +707,7 @@ async fn svn_add(path: String, files: Vec<String>) -> Result<CommandResult, Stri
 async fn svn_delete(path: String, files: Vec<String>) -> Result<CommandResult, String> {
     svn::delete(&path, &files)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -709,11 +715,7 @@ async fn svn_delete(path: String, files: Vec<String>) -> Result<CommandResult, S
 async fn svn_revert(path: String, files: Vec<String>) -> Result<CommandResult, String> {
     svn::revert(&path, &files)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -725,11 +727,7 @@ async fn svn_resolve(
 ) -> Result<CommandResult, String> {
     svn::resolve(&path, &files, &strategy)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -737,11 +735,7 @@ async fn svn_resolve(
 async fn svn_cleanup(path: String) -> Result<CommandResult, String> {
     svn::cleanup(&path)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -749,11 +743,7 @@ async fn svn_cleanup(path: String) -> Result<CommandResult, String> {
 async fn svn_switch(path: String, url: String) -> Result<CommandResult, String> {
     svn::switch_cmd(&path, &url)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -766,11 +756,7 @@ async fn svn_merge(
 ) -> Result<CommandResult, String> {
     svn::merge(&path, &source, rev_start, rev_end)
         .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
+        .map(success_output)
         .map_err(|e| e.to_string())
 }
 
@@ -877,6 +863,7 @@ fn main() {
             svn_commit,
             svn_status,
             svn_log,
+            svn_incoming_log,
             svn_current_user,
             svn_info,
             svn_local_revision,

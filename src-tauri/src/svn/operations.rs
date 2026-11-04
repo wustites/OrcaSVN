@@ -1,12 +1,15 @@
 use crate::{DiffResult, SvnAuthUser, SvnInfo, SvnLogEntry, SvnStatus};
 use chrono::{DateTime, Local};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 use super::executor::{execute_svn, SvnError};
-use super::parser::{parse_blame_text, parse_info_xml, parse_log_xml, parse_status_xml};
+use super::parser::{
+    parse_blame_text, parse_info_revisions_xml, parse_info_xml, parse_log_xml, parse_property_xml,
+    parse_status_xml,
+};
 
 fn append_targets(args: &mut Vec<String>, targets: &[String]) {
     if targets.is_empty() {
@@ -153,15 +156,87 @@ fn build_unversioned_file_diff(file: &str, content: &str) -> String {
     diff
 }
 
-async fn is_unversioned_file(workspace: &str, file: &str) -> Result<bool, SvnError> {
+fn workspace_child_exists(workspace: &str, file: &str) -> bool {
+    resolve_workspace_file_path(workspace, file).is_ok()
+}
+
+async fn is_unversioned_target(workspace: &str, file: &str) -> Result<bool, SvnError> {
     let target = normalize_diff_target(file);
     let args = vec!["status", "--xml", "--", target.as_str()];
-    let output = execute_svn(&args, Some(workspace)).await?;
-    let statuses = parse_status_xml(&output)?;
-    let normalized_file = normalize_svn_path(file);
-    Ok(statuses.iter().any(|status| {
-        status.status_code == "unversioned" && normalize_svn_path(&status.path) == normalized_file
-    }) || (statuses.len() == 1 && statuses[0].status_code == "unversioned"))
+    match execute_svn(&args, Some(workspace)).await {
+        Ok(output) => {
+            let statuses = parse_status_xml(&output)?;
+            let normalized_file = normalize_svn_path(file);
+            let marked = statuses.iter().any(|status| {
+                status.status_code == "unversioned"
+                    && normalize_svn_path(&status.path) == normalized_file
+            }) || (statuses.len() == 1 && statuses[0].status_code == "unversioned");
+            if marked {
+                return Ok(true);
+            }
+            // A file inside an unversioned directory yields an empty status
+            // target instead of E155010. An unchanged versioned file does too,
+            // so confirm with info before treating the path as new content.
+            if statuses.is_empty() && workspace_child_exists(workspace, file) {
+                return match execute_svn(&["info", "--xml", "--", target.as_str()], Some(workspace))
+                    .await
+                {
+                    Ok(_) => Ok(false),
+                    Err(error) => {
+                        let text = error.to_string();
+                        if text.contains("E155010")
+                            || text.contains("W155010")
+                            || text.contains("was not found")
+                            || text.contains("not a working copy")
+                        {
+                            Ok(true)
+                        } else {
+                            Err(error)
+                        }
+                    }
+                };
+            }
+            Ok(false)
+        }
+        Err(error) => {
+            let text = error.to_string();
+            if (text.contains("E155010")
+                || text.contains("W155010")
+                || text.contains("was not found"))
+                && workspace_child_exists(workspace, file)
+            {
+                Ok(true)
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+fn build_unversioned_directory_diff(file: &str, directory: &Path) -> String {
+    let mut names = Vec::new();
+    if let Ok(entries) = fs::read_dir(directory) {
+        for entry in entries.flatten() {
+            let mut name = entry.file_name().to_string_lossy().into_owned();
+            if entry.path().is_dir() {
+                name.push('/');
+            }
+            names.push(name);
+        }
+    }
+    names.sort();
+    let mut diff = String::new();
+    diff.push_str(&format!("Index: {file}\n"));
+    diff.push_str("===================================================================\n");
+    diff.push_str(&format!("--- {file}\t(nonexistent)\n"));
+    diff.push_str(&format!("+++ {file}\t(unversioned directory)\n"));
+    diff.push_str(&format!("@@ -0,0 +1,{} @@\n", names.len()));
+    for name in &names {
+        diff.push('+');
+        diff.push_str(name);
+        diff.push('\n');
+    }
+    diff
 }
 
 pub async fn remote_info(path: &str) -> Result<SvnInfo, SvnError> {
@@ -543,6 +618,7 @@ fn append_unique_log_matches(
     false
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn filtered_log(
     path: &str,
     limit: Option<u32>,
@@ -586,6 +662,7 @@ async fn filtered_log(
     Ok(matches)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn log(
     path: &str,
     limit: Option<u32>,
@@ -634,6 +711,183 @@ pub async fn local_revision(path: &str) -> Result<u64, SvnError> {
         .trim()
         .parse()
         .map_err(|_| SvnError::ParseError(format!("无法解析本地工作副本版本：{}", output.trim())))
+}
+
+fn percent_decode(value: &str) -> Option<String> {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' {
+            let hex = value.get(index + 1..index + 3)?;
+            decoded.push(u8::from_str_radix(hex, 16).ok()?);
+            index += 3;
+        } else {
+            decoded.push(bytes[index]);
+            index += 1;
+        }
+    }
+    String::from_utf8(decoded).ok()
+}
+
+/// Node revisions for working-copy paths. Paths that cannot be read are omitted,
+/// which callers must treat as not containing the revision.
+async fn node_revisions(workspace: &str, paths: &[String]) -> HashMap<String, u64> {
+    let mut revisions = HashMap::new();
+    for group in paths.chunks(64) {
+        let mut args: Vec<String> = ["info", "--xml", "--depth", "empty", "--"]
+            .iter()
+            .map(|arg| arg.to_string())
+            .collect();
+        args.extend(group.iter().map(|path| normalize_diff_target(path)));
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        if let Ok(entries) = execute_svn(&refs, Some(workspace))
+            .await
+            .and_then(|output| parse_info_revisions_xml(&output))
+        {
+            for (path, revision) in entries {
+                revisions.insert(normalize_svn_path(&path), revision);
+            }
+        }
+    }
+    revisions
+}
+
+/// Commits in `local + 1..=head` that the working copy does not fully contain.
+///
+/// The root revision stays behind after a partial commit (`--depth empty`), so
+/// its own commit also falls in this range, beside others' unpulled commits. A
+/// revision counts as present only when every path it changed is already at
+/// that revision or newer. Anything uncertain, such as a deleted or unreadable
+/// path, stays listed: an extra row is safer than hiding a pending update.
+pub async fn incoming_log(
+    path: &str,
+    limit: Option<u32>,
+    head: u64,
+    local: u64,
+) -> Result<Vec<SvnLogEntry>, SvnError> {
+    if head <= local {
+        return Ok(Vec::new());
+    }
+    let logs = fetch_log_batch(path, limit, Some(head), Some(local + 1), None, None).await?;
+    if logs.is_empty() {
+        return Ok(logs);
+    }
+    let info = info(path).await?;
+    let scope = info
+        .url
+        .strip_prefix(info.repository_root.as_str())
+        .and_then(percent_decode)
+        .map(|scope| scope.trim_end_matches('/').to_string());
+    let Some(scope) = scope else {
+        return Ok(logs);
+    };
+    let root = Path::new(path);
+    // None: the revision changed something that is not on disk here.
+    let changed: Vec<Option<Vec<String>>> = logs
+        .iter()
+        .map(|entry| {
+            let paths: Vec<String> = entry
+                .changed_paths
+                .iter()
+                .filter_map(|changed| {
+                    if changed.path == scope {
+                        return Some(".".to_string());
+                    }
+                    let relative = changed.path.strip_prefix(&scope)?.strip_prefix('/')?;
+                    Some(relative.to_string())
+                })
+                .collect();
+            let present = !paths.is_empty()
+                && paths
+                    .iter()
+                    .all(|changed| fs::symlink_metadata(root.join(changed)).is_ok());
+            present.then_some(paths)
+        })
+        .collect();
+    // Check one path per revision first. An ordinary working copy rules out every
+    // revision in this one call, so only a mixed one pays for the second query.
+    let first: Vec<String> = changed
+        .iter()
+        .flatten()
+        .map(|paths| paths[0].clone())
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let first_revisions = node_revisions(path, &first).await;
+    let rest: Vec<String> = logs
+        .iter()
+        .zip(&changed)
+        .filter_map(|(entry, paths)| {
+            let paths = paths.as_ref()?;
+            let revision = first_revisions.get(&normalize_svn_path(&paths[0]))?;
+            (*revision >= entry.revision).then(|| paths[1..].to_vec())
+        })
+        .flatten()
+        .collect::<HashSet<_>>()
+        .into_iter()
+        .collect();
+    let rest_revisions = node_revisions(path, &rest).await;
+    Ok(logs
+        .into_iter()
+        .zip(changed)
+        .filter(|(entry, paths)| {
+            !paths.as_ref().is_some_and(|paths| {
+                paths.iter().all(|changed| {
+                    let changed = normalize_svn_path(changed);
+                    first_revisions
+                        .get(&changed)
+                        .or_else(|| rest_revisions.get(&changed))
+                        .is_some_and(|revision| *revision >= entry.revision)
+                })
+            })
+        })
+        .map(|(entry, _)| entry)
+        .collect())
+}
+
+pub fn parse_update_conflicts(output: &str) -> Vec<String> {
+    let mut conflicts = Vec::new();
+    for line in output.lines() {
+        if let Some(path) = conflict_path_from_update_line(line) {
+            if !conflicts.contains(&path) {
+                conflicts.push(path);
+            }
+        }
+    }
+    if conflicts.is_empty() {
+        for line in output.lines() {
+            let trimmed = line.trim();
+            if conflict_summary_count(trimmed).is_some_and(|count| count > 0) {
+                conflicts.push(trimmed.to_string());
+            }
+        }
+    }
+    conflicts
+}
+
+/// `svn update` prints fixed columns: text, property, lock and tree status, a
+/// space, then the path. They are not translated, unlike the summary lines.
+fn conflict_path_from_update_line(line: &str) -> Option<String> {
+    let columns = line.get(..4)?.as_bytes();
+    let valid = b"ADUCGER ".contains(&columns[0])
+        && b" UCG".contains(&columns[1])
+        && b" B".contains(&columns[2])
+        && b" C".contains(&columns[3]);
+    if !valid || !columns.contains(&b'C') || line.as_bytes().get(4) != Some(&b' ') {
+        return None;
+    }
+    let path = line[5..].trim();
+    (!path.is_empty()).then(|| path.to_string())
+}
+
+fn conflict_summary_count(line: &str) -> Option<u64> {
+    const LABELS: [&str; 3] = ["Text conflicts:", "Tree conflicts:", "Property conflicts:"];
+    let count = LABELS
+        .iter()
+        .find_map(|label| line.strip_prefix(label))?
+        .trim();
+    count.parse().ok()
 }
 
 fn parse_auth_user(output: &str, repository_root: &str) -> Option<SvnAuthUser> {
@@ -714,14 +968,22 @@ pub async fn diff(
 ) -> Result<DiffResult, SvnError> {
     let diff_file = normalize_workspace_diff_file(workspace, file)?;
 
-    if old_rev.is_none() && new_rev.is_none() && is_unversioned_file(workspace, &diff_file).await? {
+    if old_rev.is_none()
+        && new_rev.is_none()
+        && is_unversioned_target(workspace, &diff_file).await?
+    {
         let file_path = resolve_workspace_file_path(workspace, &diff_file)?;
-        let content = fs::read(&file_path)
-            .map_err(|e| SvnError::CommandFailed(format!("无法读取未版本文件：{}", e)))?;
-        let content = String::from_utf8_lossy(&content);
+        let diff = if file_path.is_dir() {
+            build_unversioned_directory_diff(&diff_file, &file_path)
+        } else {
+            let content = fs::read(&file_path)
+                .map_err(|e| SvnError::CommandFailed(format!("无法读取未版本文件：{}", e)))?;
+            let content = String::from_utf8_lossy(&content);
+            build_unversioned_file_diff(&diff_file, content.as_ref())
+        };
         return Ok(DiffResult {
-            path: diff_file.clone(),
-            diff: build_unversioned_file_diff(&diff_file, content.as_ref()),
+            path: diff_file,
+            diff,
             old_revision: 0,
             new_revision: 0,
         });
@@ -818,11 +1080,138 @@ pub async fn apply_patch(workspace: &str, patch: &str, reverse: bool) -> Result<
     result
 }
 
+const FALSE_BINARY_READ_LIMIT: u64 = 8 * 1024 * 1024;
+
+/// SVN marks a file `application/octet-stream` when most bytes are non-ASCII,
+/// which includes ordinary UTF-8 text that is entirely CJK. That blocks diff
+/// and blame. Only undo the mark for files this add just scheduled, and only
+/// when the bytes are conservative UTF-8 text.
+fn is_conservative_utf8_text(bytes: &[u8]) -> bool {
+    if bytes.contains(&0) {
+        return false;
+    }
+    let Ok(text) = std::str::from_utf8(bytes) else {
+        return false;
+    };
+    let mut controls = 0usize;
+    let mut total = 0usize;
+    for ch in text.chars() {
+        total += 1;
+        if ch.is_control() && !matches!(ch, '\n' | '\r' | '\t') {
+            controls += 1;
+        }
+    }
+    controls == 0 || controls.saturating_mul(20) <= total
+}
+
+/// Auto-props can set the same value on purpose, and SVN does not record which
+/// source set it. Keep every value if a rule could have set it, or if unsure.
+async fn auto_props_may_set_binary(workspace: &str) -> bool {
+    const BINARY: &str = "application/octet-stream";
+    let configured = super::status_snapshot::configuration_directories()
+        .into_iter()
+        .any(|directory| match fs::read(directory.join("config")) {
+            Ok(bytes) => String::from_utf8_lossy(&bytes).lines().any(|line| {
+                !line.trim_start().starts_with('#') && line.to_ascii_lowercase().contains(BINARY)
+            }),
+            Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+        });
+    if configured {
+        return true;
+    }
+    let args = [
+        "propget",
+        "svn:auto-props",
+        "--xml",
+        "--show-inherited-props",
+        "--recursive",
+        "--",
+        ".",
+    ];
+    match execute_svn(&args, Some(workspace)).await {
+        Ok(output) => output.to_ascii_lowercase().contains(BINARY),
+        // Without any matching property, SVN warns and exits with an error.
+        Err(error) => !error.to_string().contains("W200017"),
+    }
+}
+
+/// Targets that are unversioned before `svn add`, so that only files this add
+/// schedules are candidates; earlier additions may have a deliberate type.
+async fn unversioned_targets(workspace: &str, targets: &[String]) -> Result<Vec<String>, SvnError> {
+    let mut args = vec!["status".to_string(), "--xml".to_string(), "--".to_string()];
+    args.extend(targets.iter().map(|target| normalize_diff_target(target)));
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = execute_svn(&refs, Some(workspace)).await?;
+    Ok(parse_status_xml(&output)?
+        .into_iter()
+        .filter(|entry| entry.status_code == "unversioned")
+        .map(|entry| entry.path)
+        .collect())
+}
+
+async fn clear_autodetected_binary_mime(
+    workspace: &str,
+    targets: &[String],
+) -> Result<(), SvnError> {
+    if targets.is_empty() || auto_props_may_set_binary(workspace).await {
+        return Ok(());
+    }
+    let mut args: Vec<String> = ["propget", "svn:mime-type", "--xml", "--recursive", "--"]
+        .iter()
+        .map(|arg| arg.to_string())
+        .collect();
+    args.extend(targets.iter().map(|target| normalize_diff_target(target)));
+    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let output = match execute_svn(&refs, Some(workspace)).await {
+        Ok(output) => output,
+        Err(error) if error.to_string().contains("W200017") => return Ok(()),
+        Err(error) => return Err(error),
+    };
+    let root = Path::new(workspace);
+    let text_files: Vec<String> = parse_property_xml(&output)?
+        .into_iter()
+        .filter(|(_, mime)| mime.trim() == "application/octet-stream")
+        .filter(|(path, _)| {
+            let full = root.join(path);
+            full.is_file()
+                && fs::metadata(&full).is_ok_and(|meta| meta.len() <= FALSE_BINARY_READ_LIMIT)
+                && fs::read(&full).is_ok_and(|bytes| is_conservative_utf8_text(&bytes))
+        })
+        .map(|(path, _)| normalize_diff_target(&path))
+        .collect();
+    for group in text_files.chunks(64) {
+        let mut args = vec![
+            "propdel".to_string(),
+            "svn:mime-type".to_string(),
+            "--".to_string(),
+        ];
+        args.extend(group.iter().cloned());
+        let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+        execute_svn(&refs, Some(workspace)).await?;
+    }
+    Ok(())
+}
+
 pub async fn add(path: &str, files: &[String]) -> Result<String, SvnError> {
+    let added = unversioned_targets(path, files).await;
     let mut args: Vec<String> = vec!["add".to_string()];
-    append_targets(&mut args, files);
+    let targets: Vec<String> = files
+        .iter()
+        .map(|file| normalize_diff_target(file))
+        .collect();
+    append_targets(&mut args, &targets);
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-    execute_svn(&args_refs, Some(path)).await
+    let output = execute_svn(&args_refs, Some(path)).await?;
+    // The add has succeeded, and reporting failure now would make a retry fail
+    // with "already under version control". A file left binary is only cosmetic.
+    let cleanup = match added {
+        Ok(added) => clear_autodetected_binary_mime(path, &added).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = cleanup {
+        tracing::warn!(%error, "could not clear auto-detected binary MIME types");
+    }
+    Ok(output)
 }
 
 pub async fn delete(path: &str, files: &[String]) -> Result<String, SvnError> {
@@ -866,22 +1255,24 @@ pub async fn merge(
     rev_start: u64,
     rev_end: u64,
 ) -> Result<String, SvnError> {
-    let args = vec![
+    let revision = format!("{rev_start}:{rev_end}");
+    let args = [
         "merge".to_string(),
         "-r".to_string(),
-        format!("{}:{}", rev_start, rev_end),
+        revision,
         source.to_string(),
     ];
-    let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+    let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     execute_svn(&args_refs, Some(path)).await
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        append_targets, append_unique_log_matches, build_diff_args, build_log_args,
-        build_unversioned_file_diff, commit, log_entry_matches, log_entry_matches_dates,
-        normalize_diff_target, normalize_svn_path, patch_output_has_conflicts,
+        add, append_targets, append_unique_log_matches, blame, build_diff_args, build_log_args,
+        build_unversioned_file_diff, commit, diff, is_conservative_utf8_text, log_entry_matches,
+        log_entry_matches_dates, normalize_diff_target, normalize_svn_path, parse_update_conflicts,
+        patch_output_has_conflicts, percent_decode,
     };
     use crate::svn::executor::SvnError;
     use crate::{SvnLogEntry, SvnLogPath};
@@ -1373,5 +1764,348 @@ mod tests {
         assert!(!reached_limit);
         assert_eq!(matches.len(), 1);
         assert_eq!(matches[0].revision, 8);
+    }
+
+    #[test]
+    fn percent_decoding_restores_repository_paths() {
+        assert_eq!(
+            percent_decode("/trunk/%E6%96%87%E6%A1%A3").as_deref(),
+            Some("/trunk/文档")
+        );
+        assert_eq!(percent_decode("/a%2").as_deref(), None);
+        assert_eq!(percent_decode("/%FF").as_deref(), None);
+    }
+
+    #[test]
+    fn utf8_text_detection_keeps_binaries_and_accepts_cjk() {
+        assert!(is_conservative_utf8_text(
+            "纯中文内容\n没有英文\n".as_bytes()
+        ));
+        assert!(is_conservative_utf8_text(
+            b"note\n\xe4\xbd\xa0\xe5\xa5\xbd\n"
+        ));
+        assert!(is_conservative_utf8_text(b""));
+        assert!(!is_conservative_utf8_text(b"\0\x01binary"));
+        assert!(!is_conservative_utf8_text(&[0xff, 0xfe, 0x00]));
+    }
+
+    #[test]
+    fn update_conflict_parser_reads_paths_and_summaries() {
+        // Plain concatenation: a string continuation would strip leading columns.
+        let output = concat!(
+            "Updating '.':\n",
+            "C    文档/说明.txt\n",
+            "Updated to revision 5.\n",
+            "Summary of conflicts:\n",
+            "  Text conflicts: 1\n",
+        );
+        assert_eq!(parse_update_conflicts(output), vec!["文档/说明.txt"]);
+
+        let property = concat!(
+            "Updating '.':\n",
+            " C   src/props.txt\n",
+            "Summary of conflicts:\n",
+            "  Property conflicts: 1\n",
+        );
+        assert_eq!(parse_update_conflicts(property), vec!["src/props.txt"]);
+
+        let summary_only = concat!(
+            "Summary of conflicts:\n",
+            "  Tree conflicts: 2\n",
+            "  Text conflicts: 0\n",
+        );
+        assert_eq!(
+            parse_update_conflicts(summary_only),
+            vec!["Tree conflicts: 2"]
+        );
+        assert!(parse_update_conflicts("Updated to revision 4.\n").is_empty());
+
+        let mixed = concat!(
+            "Updating '.':\n",
+            "   C tree.txt\n",
+            "C    g.txt\n",
+            "A    Changed.txt\n",
+            "Summary of conflicts:\n",
+            "  Text conflicts: 1\n",
+            "  Tree conflicts: 1\n",
+        );
+        assert_eq!(parse_update_conflicts(mixed), vec!["tree.txt", "g.txt"]);
+    }
+
+    // Uses an isolated local repository; never touches a user's working copy.
+    #[test]
+    fn incoming_log_and_add_keep_pending_commits_and_deliberate_mime_types() {
+        use super::{incoming_log, update};
+        use std::process::Command;
+        if Command::new("svnadmin").arg("--version").output().is_err() {
+            eprintln!("Skipping local repository test: svnadmin is unavailable");
+            return;
+        }
+        let directory = std::env::temp_dir().join(format!(
+            "orcasvn-incoming-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let repository = directory.join("repo");
+        assert!(Command::new("svnadmin")
+            .arg("create")
+            .arg(&repository)
+            .status()
+            .unwrap()
+            .success());
+        let url = format!(
+            "file:///{}/%E7%9B%AE%E5%BD%95",
+            repository
+                .to_string_lossy()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+        );
+        let run = |cwd: &std::path::Path, args: &[&str]| {
+            let output = Command::new("svn")
+                .args(args)
+                .env("LC_ALL", "C.UTF-8")
+                .current_dir(cwd)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{args:?}: {output:?}");
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        run(&directory, &["mkdir", "-m", "scope", &url]);
+        let (wc, other) = (directory.join("wc"), directory.join("other"));
+        run(&directory, &["checkout", &url, wc.to_str().unwrap()]);
+        // svn.exe decodes arguments with the ANSI code page, which on an English
+        // Windows runner cannot represent these paths.
+        let (mine, cjk) = if cfg!(windows) {
+            ("mine.txt", "cjk.txt")
+        } else {
+            ("甲.txt", "纯中文.txt")
+        };
+        for name in [mine, "other.txt", "conflict.txt"] {
+            std::fs::write(wc.join(name), "base\n").unwrap();
+            run(&wc, &["add", name]);
+        }
+        run(&wc, &["commit", "-m", "base"]);
+        run(&wc, &["update"]);
+        run(&directory, &["checkout", &url, other.to_str().unwrap()]);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let wc_path = wc.to_str().unwrap();
+        let incoming = |head, local| -> Vec<u64> {
+            runtime
+                .block_on(incoming_log(wc_path, Some(50), head, local))
+                .unwrap()
+                .iter()
+                .map(|entry| entry.revision)
+                .collect()
+        };
+
+        // r3 is someone else's commit, and r4 is this working copy's partial one.
+        std::fs::write(other.join("other.txt"), "theirs\n").unwrap();
+        run(&other, &["commit", "-m", "theirs"]);
+        std::fs::write(wc.join(mine), "mine\n").unwrap();
+        runtime
+            .block_on(commit(wc_path, "mine", Some(&[mine.into()])))
+            .unwrap();
+        assert_eq!(incoming(4, 2), vec![3]);
+        run(&wc, &["update"]);
+        assert!(incoming(4, 4).is_empty());
+
+        // A later revision does not hide an earlier path it never touched.
+        std::fs::write(other.join("other.txt"), "again\n").unwrap();
+        run(&other, &["update"]);
+        run(&other, &["commit", "-m", "again"]);
+        assert_eq!(incoming(5, 4), vec![5]);
+
+        // Tree conflicts are listed by update and shown as conflicted by status.
+        run(&wc, &["update"]);
+        run(&other, &["update"]);
+        run(&other, &["delete", "conflict.txt"]);
+        run(&other, &["commit", "-m", "remove"]);
+        std::fs::write(wc.join("conflict.txt"), "edit\n").unwrap();
+        let output = runtime.block_on(update(wc_path, None)).unwrap();
+        assert_eq!(parse_update_conflicts(&output), vec!["conflict.txt"]);
+        let statuses = runtime.block_on(super::status(wc_path)).unwrap();
+        assert!(statuses
+            .iter()
+            .any(|entry| entry.path == "conflict.txt" && entry.status_code == "conflicted"));
+
+        // Without an auto-props rule, UTF-8 text returns to text.
+        let mime = |name: &str| {
+            Command::new("svn")
+                .args(["propget", "svn:mime-type", "--", name])
+                .current_dir(&wc)
+                .output()
+                .unwrap()
+                .stdout
+        };
+        std::fs::write(wc.join(cjk), "纯中文内容\n没有英文\n").unwrap();
+        runtime.block_on(add(wc_path, &[cjk.into()])).unwrap();
+        assert!(mime(cjk).is_empty());
+
+        // A configured rule is kept, whichever source set the value.
+        run(
+            &wc,
+            &[
+                "propset",
+                "svn:auto-props",
+                "*.dat = svn:mime-type=application/octet-stream",
+                ".",
+            ],
+        );
+        std::fs::write(wc.join("a.dat"), "ascii\n").unwrap();
+        runtime.block_on(add(wc_path, &["a.dat".into()])).unwrap();
+        assert!(String::from_utf8_lossy(&mime("a.dat")).contains("octet-stream"));
+
+        // Paths containing @ can be added.
+        std::fs::write(wc.join("icon@2x.txt"), "text\n").unwrap();
+        runtime
+            .block_on(add(wc_path, &["icon@2x.txt".into()]))
+            .unwrap();
+        let _ = std::fs::remove_dir_all(&directory);
+    }
+
+    // svn.exe decodes arguments with the ANSI code page, which on an English
+    // Windows runner cannot represent these paths.
+    #[cfg(unix)]
+    #[test]
+    fn partial_commit_revision_text_mime_and_nested_unversioned_diff() {
+        for tool in ["svn", "svnadmin"] {
+            if std::process::Command::new(tool)
+                .arg("--version")
+                .output()
+                .is_err()
+            {
+                eprintln!("skipping working-copy fix test: {tool} is unavailable");
+                return;
+            }
+        }
+
+        let directory = std::env::temp_dir().join(format!(
+            "orcasvn-fixes-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        struct Cleanup(std::path::PathBuf);
+        impl Drop for Cleanup {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        let _cleanup = Cleanup(directory.clone());
+        let repository = directory.join("repo");
+        let created = std::process::Command::new("svnadmin")
+            .args(["create", repository.to_str().unwrap()])
+            .env("LC_ALL", "C.UTF-8")
+            .output()
+            .unwrap();
+        assert!(created.status.success());
+        let url = format!(
+            "file:///{}",
+            repository
+                .to_string_lossy()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+        );
+        let wc = directory.join("wc");
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime
+            .block_on(super::checkout(&url, wc.to_str().unwrap(), None))
+            .unwrap();
+        std::fs::write(wc.join("plain.txt"), "hello\n").unwrap();
+        runtime
+            .block_on(add(wc.to_str().unwrap(), &["plain.txt".into()]))
+            .unwrap();
+        runtime
+            .block_on(commit(wc.to_str().unwrap(), "initial", None))
+            .unwrap();
+
+        std::fs::create_dir(wc.join("文档")).unwrap();
+        std::fs::write(wc.join("文档/说明.txt"), "你好，世界\n").unwrap();
+        std::fs::write(wc.join("纯中文.txt"), "纯中文内容\n没有英文\n").unwrap();
+        std::fs::write(wc.join("binary.bin"), b"\0\x01not-text").unwrap();
+        std::fs::write(wc.join("plain.txt"), "hello\nedited\n").unwrap();
+        runtime
+            .block_on(add(
+                wc.to_str().unwrap(),
+                &["纯中文.txt".into(), "binary.bin".into()],
+            ))
+            .unwrap();
+
+        let mime = |name: &str| {
+            std::process::Command::new("svn")
+                .args(["propget", "svn:mime-type", "--non-interactive", "--", name])
+                .current_dir(&wc)
+                .env("LC_ALL", "C.UTF-8")
+                .output()
+                .unwrap()
+        };
+        let cjk_mime = mime("纯中文.txt");
+        assert!(
+            !cjk_mime.status.success()
+                || !String::from_utf8_lossy(&cjk_mime.stdout).contains("octet-stream"),
+            "CJK text kept a binary mime type: {}",
+            String::from_utf8_lossy(&cjk_mime.stdout)
+        );
+        let binary_mime = mime("binary.bin");
+        assert!(
+            String::from_utf8_lossy(&binary_mime.stdout).contains("octet-stream"),
+            "real binary lost its mime type: {}",
+            String::from_utf8_lossy(&binary_mime.stderr)
+        );
+
+        let text_diff = runtime
+            .block_on(diff(wc.to_str().unwrap(), "纯中文.txt", None, None))
+            .unwrap();
+        assert!(
+            text_diff.diff.contains("纯中文内容"),
+            "diff hid CJK text: {}",
+            text_diff.diff
+        );
+        assert!(!text_diff.diff.contains("Cannot display"));
+
+        let nested = runtime
+            .block_on(diff(wc.to_str().unwrap(), "文档/说明.txt", None, None))
+            .unwrap();
+        assert!(
+            nested.diff.contains("你好，世界"),
+            "nested unversioned diff failed: {}",
+            nested.diff
+        );
+
+        let committed = runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "只提交说明",
+                Some(&["plain.txt".into()]),
+            ))
+            .unwrap();
+        assert!(committed.contains("Committed revision"));
+        runtime
+            .block_on(commit(
+                wc.to_str().unwrap(),
+                "提交纯中文",
+                Some(&["纯中文.txt".into()]),
+            ))
+            .unwrap();
+        let blamed = runtime
+            .block_on(blame(wc.to_str().unwrap(), "纯中文.txt"))
+            .unwrap();
+        assert!(
+            blamed.iter().any(|line| line.line.contains("纯中文内容")),
+            "blame hid CJK text: {blamed:?}"
+        );
     }
 }

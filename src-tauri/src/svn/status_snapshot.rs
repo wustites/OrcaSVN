@@ -67,7 +67,7 @@ impl Inventory {
         self.files.len()
     }
 }
-fn configuration() -> io::Result<BTreeMap<String, u64>> {
+pub(super) fn configuration_directories() -> Vec<PathBuf> {
     let mut directories = vec![PathBuf::from("/etc/subversion")];
     for variable in ["HOME", "USERPROFILE", "APPDATA"] {
         if let Some(home) = std::env::var_os(variable) {
@@ -78,6 +78,11 @@ fn configuration() -> io::Result<BTreeMap<String, u64>> {
             }));
         }
     }
+    directories
+}
+
+fn configuration() -> io::Result<BTreeMap<String, u64>> {
+    let directories = configuration_directories();
     let mut result = BTreeMap::new();
     let executable = super::executor::current_svn_executable().map_err(io::Error::other)?;
     result.insert(format!("executable:{}", executable.display()), 0);
@@ -959,6 +964,9 @@ mod tests {
         #[cfg(unix)]
         assert_eq!(stats.enumerated_directories, 0);
         assert_eq!(stats.checked_files, 3);
+        // Windows file times tick about every 15 ms, and this edit keeps the size.
+        #[cfg(windows)]
+        std::thread::sleep(std::time::Duration::from_millis(50));
         fs::write(root.join("a/edit"), "edit").unwrap();
         let (edited, _stats) = capture_measured(&root, Some(&unchanged)).unwrap();
         assert_eq!(edited, capture_measured(&root, None).unwrap().0);

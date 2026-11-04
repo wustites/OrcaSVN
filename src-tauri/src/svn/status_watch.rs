@@ -22,7 +22,7 @@ fn paths(bytes: &[u8]) -> io::Result<Vec<String>> {
         let next = u32::from_le_bytes(record[0..4].try_into().unwrap()) as usize;
         let action = u32::from_le_bytes(record[4..8].try_into().unwrap());
         let length = u32::from_le_bytes(record[8..12].try_into().unwrap()) as usize;
-        if !(1..=5).contains(&action) || length == 0 || length % 2 != 0 {
+        if !(1..=5).contains(&action) || length == 0 || !length.is_multiple_of(2) {
             return Err(invalid("invalid directory notification"));
         }
         let end = 12usize
@@ -57,7 +57,7 @@ fn paths(bytes: &[u8]) -> io::Result<Vec<String>> {
         if next == 0 {
             break;
         }
-        if next < end || next % 4 != 0 || next >= record.len() {
+        if next < end || !next.is_multiple_of(4) || next >= record.len() {
             return Err(invalid("invalid next notification offset"));
         }
         offset = offset
@@ -341,7 +341,7 @@ mod tests {
     #[test]
     fn notifications_keep_both_rename_paths_and_ignore_only_pristine_and_tmp() {
         let mut first = record("src\\旧名.txt", 4);
-        while first.len() % 4 != 0 {
+        while !first.len().is_multiple_of(4) {
             first.push(0);
         }
         let next = first.len() as u32;
@@ -380,7 +380,7 @@ mod tests {
         for index in 0..257 {
             let mut next = record(&format!("file-{index}"), 3);
             if index < 256 {
-                while next.len() % 4 != 0 {
+                while !next.len().is_multiple_of(4) {
                     next.push(0);
                 }
                 let length = next.len() as u32;

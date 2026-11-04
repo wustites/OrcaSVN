@@ -57,6 +57,14 @@ Requirements:
 - SVN CLI 1.10 or later
 - Tauri 2 build dependencies for your platform
 
+Example Linux (Debian/Ubuntu) packages:
+
+```bash
+sudo apt-get install pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev \
+  libayatana-appindicator3-dev librsvg2-dev patchelf build-essential \
+  libssl-dev subversion
+```
+
 ```bash
 npm ci
 npm run tauri dev
@@ -65,10 +73,25 @@ npm run tauri dev
 Before submitting changes, run:
 
 ```bash
-npm run check
+npm run build
+npm run test:unit
+cargo fmt --manifest-path src-tauri/Cargo.toml -- --check
+cargo test --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ```
 
+`npm run check` runs the frontend type check and build, frontend unit tests, Rust formatting, and `cargo test`.
+
 See [SETUP.md](SETUP.md) for environment setup and troubleshooting, and [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines.
+
+### Working copy behavior
+
+- On macOS and Linux, SVN child processes use a UTF-8 locale (`en_US.UTF-8` on macOS, `C.UTF-8` on Linux). This keeps Chinese paths, repository URLs, commit messages, and command output intact when a desktop launch inherits a missing, ASCII, or invalid locale. It addresses [#7](https://github.com/wustites/OrcaSVN/issues/7).
+- The local revision shown in the app is the working copy root's revision. A partial commit leaves it unchanged, so the update page checks the paths each commit changed: commits already in the working copy are not listed as incoming, and commits not yet pulled are never hidden.
+- After add, a valid UTF-8 text file that SVN auto-marked `application/octet-stream` has that property removed, so diff and blame can show the text. Files with NUL bytes or invalid UTF-8 stay binary.
+- Checkout success and failure use an explicit state. The UI does not look for the English word `Error` in the output.
+- An update that produces text, property, or tree conflicts lists those paths and shows a warning. SVN still exits 0 in that case.
+- Diff of a file inside an unversioned directory shows the full content as added. The workspace clears its diff preview when that file is no longer in the status list.
 
 ## Project Structure
 
