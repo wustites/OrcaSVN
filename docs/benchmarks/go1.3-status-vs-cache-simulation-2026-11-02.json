@@ -1,0 +1,81 @@
+{
+  "method": "Alternating installed SVN CLI vs Python disk-cache reopen simulation; not Rust runtime",
+  "workspace": "D:\\project\\Go1.3",
+  "runs": 3,
+  "filesystem_cache": "warm",
+  "baseline_scope": "svn status --xml process and captured output",
+  "candidate_scope": "directory-watch setup, concurrent svn local revision, disk snapshot read/validation, inventory/diff and conditional SVN status; excludes desktop startup and rendering",
+  "snapshot_storage": "unique temporary disk file",
+  "inventory_entries": 110427,
+  "directories": 15072,
+  "rounds": [
+    {
+      "run": 1,
+      "order": "svn-then-cache",
+      "svn_status_ms": 10782.77170000365,
+      "cached_reopen": {
+        "total_ms": 5098.863099992741,
+        "setup_ms": 41.26090000499971,
+        "cache_read_parse_validate_ms": 480.16659999848343,
+        "inventory_ms": 4408.050099998945,
+        "directory_stat_ms": 1694.884801079752,
+        "compare_ms": 168.6158999800682,
+        "svn_status_ms": 0,
+        "query_mode": "reuse",
+        "candidate_paths": 0,
+        "administration_changes": 0,
+        "directory_changes": 0,
+        "configuration_changed": false
+      },
+      "time_reduction_percent": 52.712871589491094
+    },
+    {
+      "run": 2,
+      "order": "cache-then-svn",
+      "cached_reopen": {
+        "total_ms": 4702.53579999553,
+        "setup_ms": 27.547200006665662,
+        "cache_read_parse_validate_ms": 457.0763999945484,
+        "inventory_ms": 4060.2038000070024,
+        "directory_stat_ms": 1595.3232007159386,
+        "compare_ms": 156.76320000784472,
+        "svn_status_ms": 0,
+        "query_mode": "reuse",
+        "candidate_paths": 0,
+        "administration_changes": 0,
+        "directory_changes": 0,
+        "configuration_changed": false
+      },
+      "svn_status_ms": 10291.245200001867,
+      "time_reduction_percent": 54.30547316087001
+    },
+    {
+      "run": 3,
+      "order": "svn-then-cache",
+      "svn_status_ms": 10335.717599984491,
+      "cached_reopen": {
+        "total_ms": 4480.805200000759,
+        "setup_ms": 37.50940001918934,
+        "cache_read_parse_validate_ms": 398.27890001470223,
+        "inventory_ms": 3881.663900014246,
+        "directory_stat_ms": 1513.6002000945155,
+        "compare_ms": 162.382600014098,
+        "svn_status_ms": 0,
+        "query_mode": "reuse",
+        "candidate_paths": 0,
+        "administration_changes": 0,
+        "directory_changes": 0,
+        "configuration_changed": false
+      },
+      "time_reduction_percent": 56.64737202177928
+    }
+  ],
+  "summary": {
+    "svn_status_median_ms": 10335.717599984491,
+    "cached_reopen_median_ms": 4702.53579999553,
+    "saved_median_ms": 5633.181799988961,
+    "time_reduction_percent": 54.50208701520069,
+    "speed_ratio": 2.197903012241675
+  },
+  "application_snapshot_unchanged_during_test": true
+}

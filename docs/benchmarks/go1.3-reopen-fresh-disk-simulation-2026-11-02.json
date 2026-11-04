@@ -1,0 +1,70 @@
+{
+  "method": "Python metadata-fallback simulation; not Rust or desktop timing",
+  "filesystem_cache": "warm; repeated sequential measurements",
+  "workspace": "D:\\project\\Go1.3",
+  "runs_per_scenario": 3,
+  "existing_cache_sha256": "4c30cd4ae26019269ac491b5fd39b827a77daaadd390414c6d7268264ec806b0",
+  "existing_cache_bytes": 14390441,
+  "existing_cache_age_seconds": 38.89143991470337,
+  "snapshot_version": 6,
+  "has_usn": false,
+  "scenarios": {
+    "fresh-baseline-no-extra-edits": {
+      "rounds": [
+        {
+          "total_ms": 4423.5633999924175,
+          "setup_ms": 30.870999995386228,
+          "cache_read_parse_validate_ms": 379.1946000128519,
+          "inventory_ms": 3858.841899986146,
+          "directory_stat_ms": 1520.7064992864616,
+          "compare_ms": 153.62610001466237,
+          "svn_status_ms": 0,
+          "query_mode": "reuse",
+          "candidate_paths": 0,
+          "administration_changes": 0,
+          "directory_changes": 0,
+          "configuration_changed": false
+        },
+        {
+          "total_ms": 4425.471499998821,
+          "setup_ms": 24.968999990960583,
+          "cache_read_parse_validate_ms": 364.8263000068255,
+          "inventory_ms": 3881.7479999852367,
+          "directory_stat_ms": 1522.0081012521405,
+          "compare_ms": 152.98659997642972,
+          "svn_status_ms": 0,
+          "query_mode": "reuse",
+          "candidate_paths": 0,
+          "administration_changes": 0,
+          "directory_changes": 0,
+          "configuration_changed": false
+        },
+        {
+          "total_ms": 4434.610399999656,
+          "setup_ms": 27.395800017984584,
+          "cache_read_parse_validate_ms": 363.654700020561,
+          "inventory_ms": 3898.050099989632,
+          "directory_stat_ms": 1530.946300481446,
+          "compare_ms": 144.7358000150416,
+          "svn_status_ms": 0,
+          "query_mode": "reuse",
+          "candidate_paths": 0,
+          "administration_changes": 0,
+          "directory_changes": 0,
+          "configuration_changed": false
+        }
+      ],
+      "summary": {
+        "min_ms": 4423.5633999924175,
+        "median_ms": 4425.471499998821,
+        "max_ms": 4434.610399999656
+      }
+    }
+  },
+  "fresh_baseline_svn_output_sha256": "07ac2d765340b1911c6021750a0870e15c54886bbc7104f072814028caba7804",
+  "fresh_baseline_bytes": 14767680,
+  "fresh_baseline_storage": "unique temporary disk file; deleted after measurements",
+  "inventory_entries": 110427,
+  "directory_count": 15072,
+  "existing_cache_changed_during_test": false
+}

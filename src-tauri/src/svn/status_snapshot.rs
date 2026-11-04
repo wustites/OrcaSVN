@@ -50,6 +50,13 @@ pub(super) struct Inventory {
     journal: Option<super::status_usn::Journal>,
 }
 impl Inventory {
+    #[cfg(all(windows, test))]
+    pub fn without_journal(&self) -> Self {
+        let mut inventory = self.clone();
+        inventory.journal = None;
+        inventory
+    }
+
     #[cfg(test)]
     pub fn journal_available(&self) -> bool {
         self.journal.is_some()
@@ -243,7 +250,16 @@ pub(super) fn capture_incremental(
     previous: Option<&Inventory>,
 ) -> io::Result<Inventory> {
     #[cfg(windows)]
-    let journal_start = super::status_usn::begin(root).ok();
+    let journal_start = match super::status_usn::begin(root) {
+        Ok(session) => Some(session),
+        Err(error) => {
+            tracing::debug!(
+                %error,
+                "USN unavailable; using directory notifications or metadata scans"
+            );
+            None
+        }
+    };
     let (inventory, stats) = capture_measured(root, previous)?;
     #[cfg(windows)]
     let inventory = {
@@ -437,6 +453,80 @@ pub(super) struct Scan {
     pub inventory: Inventory,
     pub paths: Option<Vec<String>>,
     pub force_full: bool,
+}
+
+/// Notifications are candidates, not SVN statuses. A listener cannot observe
+/// configuration or administration outside a selected subtree, so check those
+/// explicitly. Directory/administration changes retain the full-scan fallback.
+#[cfg(windows)]
+pub(super) fn watch_changes(
+    root: &Path,
+    previous: &Inventory,
+    paths: Vec<String>,
+) -> io::Result<Vec<String>> {
+    if configuration()? != previous.configuration
+        || ancestor_administration(root)? != previous.administration
+    {
+        return Err(io::Error::other(
+            "SVN configuration or ancestor administration changed",
+        ));
+    }
+    for path in &paths {
+        let before_directory = previous
+            .files
+            .binary_search_by(|(name, _)| name.cmp(path))
+            .ok()
+            .is_some_and(|index| previous.files[index].1.kind == 0);
+        if before_directory
+            || path
+                .split('/')
+                .any(|part| part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn"))
+        {
+            return Err(io::Error::other("directory or SVN administration changed"));
+        }
+        match fs::symlink_metadata(root.join(path)) {
+            Ok(metadata) if metadata.is_dir() || metadata.file_type().is_symlink() => {
+                return Err(io::Error::other("directory or link requires metadata scan"));
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(paths)
+}
+
+/// Whether an entry changed at or after `since`. A scan running alongside SVN
+/// may have recorded metadata from after SVN read that path, so such an entry
+/// cannot be paired with the query's status. Dates further ahead than `until`
+/// are ignored: they predate the query but would otherwise never settle.
+#[cfg(any(windows, test))]
+pub(super) fn modified_between(
+    inventory: &Inventory,
+    since: SystemTime,
+    until: SystemTime,
+) -> bool {
+    let nanos = |time: SystemTime| {
+        time.duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos())
+    };
+    let (since, until) = (nanos(since), nanos(until));
+    inventory
+        .files
+        .iter()
+        .map(|(_, stamp)| stamp.modified)
+        .chain(
+            inventory
+                .directories
+                .values()
+                .map(|directory| directory.stamp.modified),
+        )
+        .any(|modified| (since..=until).contains(&modified))
+}
+
+#[cfg(windows)]
+pub(super) fn has_journal(inventory: &Inventory) -> bool {
+    inventory.journal.is_some()
 }
 
 pub(super) fn scan(root: &Path, previous: Option<&Inventory>) -> io::Result<Scan> {
@@ -817,6 +907,33 @@ mod tests {
             journal: None,
         }
     }
+    #[test]
+    fn parallel_query_certification_rejects_entries_changed_during_the_window() {
+        use std::time::Duration;
+        // Windows SystemTime has 100 ns resolution.
+        let at = |nanos| UNIX_EPOCH + Duration::from_nanos(nanos);
+        let mut files = inventory(1);
+        files.files[0].1.modified = 1000;
+        assert!(modified_between(&files, at(1000), at(1000)));
+        assert!(!modified_between(&files, at(1100), at(2000)));
+        assert!(!modified_between(&files, at(100), at(900)));
+
+        let mut directories = inventory(0);
+        directories.directories.insert(
+            "src".into(),
+            Directory {
+                stamp: DirectoryStamp {
+                    modified: 1000,
+                    changed: 0,
+                    device: 0,
+                    inode: 0,
+                },
+                children: Vec::new(),
+            },
+        );
+        assert!(modified_between(&directories, at(500), at(2000)));
+    }
+
     #[test]
     fn directory_reuse_detects_edits_deletions_moves_and_nested_structure() {
         let root = std::env::temp_dir().join(format!(

@@ -56,6 +56,8 @@ export default {
     encoding: '默认编码',
     gitignore: '忽略文件 (.gitignore)',
     gitignoreHint: '启用后将过滤 .gitignore 中匹配的文件',
+    autoDeleteMissingOnCommit: '提交时自动删除缺失文件',
+    autoDeleteMissingOnCommitHint: '默认关闭；开启后，提交已选中的缺失文件时会先执行 svn delete --force',
     logLimit: '日志默认加载条数',
     theme: '主题',
     themeLight: '浅色',
