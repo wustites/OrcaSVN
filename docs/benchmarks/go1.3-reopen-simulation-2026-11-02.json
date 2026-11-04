@@ -1,0 +1,131 @@
+{
+  "method": "Python metadata-fallback simulation; not Rust or desktop timing",
+  "filesystem_cache": "warm; repeated sequential measurements",
+  "workspace": "D:\\project\\Go1.3",
+  "runs_per_scenario": 3,
+  "existing_cache_sha256": "e907864c3ff76d1d3761fd0f60cd74b062d335f9d41c5e5f78142ac20f6009b0",
+  "existing_cache_bytes": 14390441,
+  "existing_cache_age_seconds": 241.55961871147156,
+  "snapshot_version": 6,
+  "has_usn": false,
+  "scenarios": {
+    "existing-disk-cache": {
+      "rounds": [
+        {
+          "total_ms": 15110.532899998361,
+          "setup_ms": 33.6288999824319,
+          "cache_read_parse_validate_ms": 431.4501000044402,
+          "inventory_ms": 4034.3419999990147,
+          "directory_stat_ms": 1579.4311017962173,
+          "compare_ms": 164.25810000509955,
+          "svn_status_ms": 10446.106999996118,
+          "query_mode": "full",
+          "candidate_paths": 955,
+          "administration_changes": 1,
+          "directory_changes": 0,
+          "configuration_changed": false
+        },
+        {
+          "total_ms": 15161.049899994396,
+          "setup_ms": 30.216800019843504,
+          "cache_read_parse_validate_ms": 442.9029000166338,
+          "inventory_ms": 4057.494199980283,
+          "directory_stat_ms": 1611.9145015254617,
+          "compare_ms": 158.02860000985675,
+          "svn_status_ms": 10471.460100001423,
+          "query_mode": "full",
+          "candidate_paths": 955,
+          "administration_changes": 1,
+          "directory_changes": 0,
+          "configuration_changed": false
+        },
+        {
+          "total_ms": 14755.784399982076,
+          "setup_ms": 45.90460000326857,
+          "cache_read_parse_validate_ms": 406.5783999976702,
+          "inventory_ms": 3879.626299982192,
+          "directory_stat_ms": 1537.8686032490805,
+          "compare_ms": 159.64139997959137,
+          "svn_status_ms": 10263.280399987707,
+          "query_mode": "full",
+          "candidate_paths": 955,
+          "administration_changes": 1,
+          "directory_changes": 0,
+          "configuration_changed": false
+        }
+      ],
+      "summary": {
+        "min_ms": 14755.784399982076,
+        "median_ms": 15110.532899998361,
+        "max_ms": 15161.049899994396
+      }
+    },
+    "fresh-baseline-no-extra-edits": {
+      "rounds": [
+        {
+          "total_ms": 4394.48089999496,
+          "setup_ms": 28.815199999371544,
+          "cache_read_parse_validate_ms": 366.0313000145834,
+          "inventory_ms": 3848.4967999975197,
+          "directory_stat_ms": 1514.9738003965467,
+          "compare_ms": 150.20579998963512,
+          "svn_status_ms": 0,
+          "query_mode": "reuse",
+          "candidate_paths": 0,
+          "administration_changes": 0,
+          "directory_changes": 0,
+          "configuration_changed": false
+        },
+        {
+          "total_ms": 4378.917499998352,
+          "setup_ms": 26.982100011082366,
+          "cache_read_parse_validate_ms": 366.9287000084296,
+          "inventory_ms": 3828.10920002521,
+          "directory_stat_ms": 1505.3540986555163,
+          "compare_ms": 155.860600003507,
+          "svn_status_ms": 0,
+          "query_mode": "reuse",
+          "candidate_paths": 0,
+          "administration_changes": 0,
+          "directory_changes": 0,
+          "configuration_changed": false
+        },
+        {
+          "total_ms": 4391.882099997019,
+          "setup_ms": 26.44680000958033,
+          "cache_read_parse_validate_ms": 359.1260999965016,
+          "inventory_ms": 3851.8047999823466,
+          "directory_stat_ms": 1517.467798985308,
+          "compare_ms": 153.48169999197125,
+          "svn_status_ms": 0,
+          "query_mode": "reuse",
+          "candidate_paths": 0,
+          "administration_changes": 0,
+          "directory_changes": 0,
+          "configuration_changed": false
+        }
+      ],
+      "summary": {
+        "min_ms": 4378.917499998352,
+        "median_ms": 4391.882099997019,
+        "max_ms": 4394.48089999496
+      }
+    }
+  },
+  "fresh_baseline_svn_output_sha256": "31b86a1bcacfff05fa2f1bc8ace390be7f6c60eb491a663a8d64b8820369d48e",
+  "fresh_baseline_bytes": 14767680,
+  "inventory_entries": 110427,
+  "directory_count": 15072,
+  "existing_cache_changed_during_test": false,
+  "fresh_baseline_storage": "in-memory payload in exploratory run; see fresh-disk report for disk-read measurements",
+  "existing_cache_comparison_caveat": "The 955 differences were size-only candidates in a cross-process metadata comparison, not SVN modified statuses. A TSD header was observed on wc.db, but this does not prove native Rust cache failure or significant TSD performance impact. SVN determines final status; normal entries are filtered.",
+  "metadata_view_observation": {
+    "size_only_differences": 955,
+    "working_file_differences": 954,
+    "administrative_file_differences": 1,
+    "administrative_size_delta_bytes": -4096,
+    "administrative_mtime_delta_ns": 0,
+    "administrative_file_tsd_header": true
+  },
+  "candidate_semantics": "Metadata candidates select SVN queries; they do not directly create modified statuses."
+}

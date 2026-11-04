@@ -112,7 +112,7 @@ fn admin(path: &str) -> bool {
     path.split('/')
         .any(|part| part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn"))
 }
-fn excluded(path: &str) -> bool {
+pub(super) fn excluded(path: &str) -> bool {
     let mut parts = path.split('/');
     while let Some(part) = parts.next() {
         if part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn") {
