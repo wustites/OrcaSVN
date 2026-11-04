@@ -478,9 +478,9 @@ pub(super) fn watch_changes(
             .ok()
             .is_some_and(|index| previous.files[index].1.kind == 0);
         if before_directory
-            || path.split('/').any(|part| {
-                part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn")
-            })
+            || path
+                .split('/')
+                .any(|part| part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn"))
         {
             return Err(io::Error::other("directory or SVN administration changed"));
         }
@@ -494,6 +494,34 @@ pub(super) fn watch_changes(
         }
     }
     Ok(paths)
+}
+
+/// Whether an entry changed at or after `since`. A scan running alongside SVN
+/// may have recorded metadata from after SVN read that path, so such an entry
+/// cannot be paired with the query's status. Dates further ahead than `until`
+/// are ignored: they predate the query but would otherwise never settle.
+#[cfg(any(windows, test))]
+pub(super) fn modified_between(
+    inventory: &Inventory,
+    since: SystemTime,
+    until: SystemTime,
+) -> bool {
+    let nanos = |time: SystemTime| {
+        time.duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos())
+    };
+    let (since, until) = (nanos(since), nanos(until));
+    inventory
+        .files
+        .iter()
+        .map(|(_, stamp)| stamp.modified)
+        .chain(
+            inventory
+                .directories
+                .values()
+                .map(|directory| directory.stamp.modified),
+        )
+        .any(|modified| (since..=until).contains(&modified))
 }
 
 #[cfg(windows)]
@@ -879,6 +907,33 @@ mod tests {
             journal: None,
         }
     }
+    #[test]
+    fn parallel_query_certification_rejects_entries_changed_during_the_window() {
+        use std::time::Duration;
+        // Windows SystemTime has 100 ns resolution.
+        let at = |nanos| UNIX_EPOCH + Duration::from_nanos(nanos);
+        let mut files = inventory(1);
+        files.files[0].1.modified = 1000;
+        assert!(modified_between(&files, at(1000), at(1000)));
+        assert!(!modified_between(&files, at(1100), at(2000)));
+        assert!(!modified_between(&files, at(100), at(900)));
+
+        let mut directories = inventory(0);
+        directories.directories.insert(
+            "src".into(),
+            Directory {
+                stamp: DirectoryStamp {
+                    modified: 1000,
+                    changed: 0,
+                    device: 0,
+                    inode: 0,
+                },
+                children: Vec::new(),
+            },
+        );
+        assert!(modified_between(&directories, at(500), at(2000)));
+    }
+
     #[test]
     fn directory_reuse_detects_edits_deletions_moves_and_nested_structure() {
         let root = std::env::temp_dir().join(format!(

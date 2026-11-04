@@ -9,6 +9,11 @@ use std::time::{Duration, Instant};
 
 const MAX_WORKSPACES: usize = 3;
 const FULL_CHECK_INTERVAL: Duration = Duration::from_secs(5 * 60);
+// Covers FAT's two-second timestamps. Tests edit files just before querying.
+#[cfg(all(windows, not(test)))]
+const PARALLEL_QUERY_MARGIN: Duration = Duration::from_secs(3);
+#[cfg(all(windows, test))]
+const PARALLEL_QUERY_MARGIN: Duration = Duration::ZERO;
 
 type Workspace = Arc<tokio::sync::Mutex<WorkspaceStatus>>;
 static WORKSPACES: OnceLock<Mutex<VecDeque<(PathBuf, Workspace)>>> = OnceLock::new();
@@ -197,7 +202,8 @@ pub async fn cached_status(
         let use_notifications = workspace
             .inventory
             .as_deref()
-            .is_none_or(|inventory| !status_snapshot::has_journal(inventory));
+            .is_none_or(|inventory| !status_snapshot::has_journal(inventory))
+            && super::status_watch::supports_notifications(&root);
         if use_notifications {
             start_watcher(&mut workspace, &root).await;
             let recent = workspace
@@ -266,11 +272,10 @@ pub async fn cached_status(
     };
     if let Some(directory) = restore_dir {
         let restore_root = root.clone();
-        let restored = tokio::task::spawn_blocking(move || {
-            status_snapshot::read(&directory, &restore_root)
-        })
-        .await
-        .map_err(|error| SvnError::CommandFailed(error.to_string()))?;
+        let restored =
+            tokio::task::spawn_blocking(move || status_snapshot::read(&directory, &restore_root))
+                .await
+                .map_err(|error| SvnError::CommandFailed(error.to_string()))?;
         if let Some(snapshot) = restored {
             tracing::debug!(workspace = %root.display(), "disk status baseline restored");
             workspace.entries = Some(snapshot.entries);
@@ -296,6 +301,8 @@ pub async fn cached_status(
         workspace.watcher = None;
         start_watcher(&mut workspace, &root).await;
     }
+    #[cfg(windows)]
+    let query_started = std::time::SystemTime::now();
     let scan_root = root.clone();
     let scan_task = tokio::task::spawn_blocking(move || {
         status_snapshot::scan(&scan_root, previous_inventory.as_deref())
@@ -304,8 +311,7 @@ pub async fn cached_status(
     // overlapping baselines are stable. Without one, preserve the original
     // scan-before-SVN ordering so edits during a query remain detectable.
     #[cfg(windows)]
-    let prefetched = if workspace.watcher.is_some() && (rescan_due || workspace.entries.is_none())
-    {
+    let prefetched = if workspace.watcher.is_some() && (rescan_due || workspace.entries.is_none()) {
         Some(status(&root.to_string_lossy()).await)
     } else {
         None
@@ -332,13 +338,23 @@ pub async fn cached_status(
     });
     #[cfg(windows)]
     let current = if prefetched.is_some() {
-        // A changed/overflowed stream cannot certify parallel scan results.
-        // Return SVN's result, but require a fresh baseline on the next poll.
+        // A changed/overflowed stream cannot certify parallel scan results, and
+        // an empty one may only mean a notification has not arrived yet. Recent
+        // timestamps cover that gap. Return SVN's result, but let the next poll
+        // build its baseline with the scan-before-SVN ordering.
         workspace.inventory = current.clone();
-        if watch_paths(&mut workspace, &root)
+        let quiet = watch_paths(&mut workspace, &root)
             .await
-            .is_some_and(|paths| paths.is_empty())
-        {
+            .is_some_and(|paths| paths.is_empty());
+        let settled = current.as_deref().is_some_and(|inventory| {
+            let now = std::time::SystemTime::now();
+            !status_snapshot::modified_between(
+                inventory,
+                query_started - PARALLEL_QUERY_MARGIN,
+                now + PARALLEL_QUERY_MARGIN,
+            )
+        });
+        if quiet && settled {
             current
         } else {
             None

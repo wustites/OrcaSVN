@@ -72,11 +72,15 @@ mod native {
     use super::*;
     use std::cell::UnsafeCell;
     use std::os::windows::ffi::OsStrExt;
+    use std::path::{PathBuf, Prefix};
     use std::ptr::{null, null_mut};
+    use std::sync::mpsc;
+    use std::thread::JoinHandle;
     use windows_sys::Win32::Foundation::{
         CloseHandle, ERROR_IO_INCOMPLETE, ERROR_IO_PENDING, HANDLE, INVALID_HANDLE_VALUE,
     };
     use windows_sys::Win32::Storage::FileSystem::*;
+    use windows_sys::Win32::System::WindowsProgramming::DRIVE_FIXED;
     use windows_sys::Win32::System::IO::{CancelIoEx, GetOverlappedResult, OVERLAPPED};
 
     const BUFFER_WORDS: usize = 16 * 1024;
@@ -117,7 +121,86 @@ mod native {
         ))
     }
 
+    /// Remote and removable volumes can miss or delay notifications, for example
+    /// another SMB client's edit, so they keep the per-poll metadata comparison.
+    /// Canonical paths resolve mapped and `subst` drives before this check.
+    pub(in crate::svn) fn supports_notifications(root: &Path) -> bool {
+        let Some(Component::Prefix(prefix)) = root.components().next() else {
+            return false;
+        };
+        let (Prefix::Disk(drive) | Prefix::VerbatimDisk(drive)) = prefix.kind() else {
+            return false;
+        };
+        let name = [drive as u16, b':' as u16, b'\\' as u16, 0];
+        unsafe { GetDriveTypeW(name.as_ptr()) == DRIVE_FIXED }
+    }
+
+    type PollReply = mpsc::Sender<io::Result<Vec<String>>>;
+
+    /// Windows cancels a thread's pending I/O when that thread exits, so the
+    /// request must not be issued from Tokio's short-lived blocking pool. One
+    /// dedicated thread issues and polls it for the lifetime of the watcher.
     pub(in crate::svn) struct Watcher {
+        commands: Option<mpsc::Sender<(PathBuf, PollReply)>>,
+        thread: Option<JoinHandle<()>>,
+    }
+
+    impl Watcher {
+        pub(in crate::svn) fn new(root: &Path) -> io::Result<Self> {
+            let (commands, requests) = mpsc::channel::<(PathBuf, PollReply)>();
+            let (started, ready) = mpsc::channel();
+            let watch_root = root.to_path_buf();
+            let thread = std::thread::Builder::new()
+                .name("orcasvn-status-watch".into())
+                .spawn(move || {
+                    let mut request = match Request::new(&watch_root) {
+                        Ok(request) => {
+                            let _ = started.send(Ok(()));
+                            request
+                        }
+                        Err(error) => {
+                            let _ = started.send(Err(error));
+                            return;
+                        }
+                    };
+                    while let Ok((root, reply)) = requests.recv() {
+                        let _ = reply.send(request.poll(&root));
+                    }
+                })?;
+            let watcher = Self {
+                commands: Some(commands),
+                thread: Some(thread),
+            };
+            ready
+                .recv()
+                .map_err(|_| io::Error::other("directory notification thread stopped"))??;
+            Ok(watcher)
+        }
+
+        pub(in crate::svn) fn poll(&mut self, root: &Path) -> io::Result<Vec<String>> {
+            let stopped = || io::Error::other("directory notification thread stopped");
+            let (reply, response) = mpsc::channel();
+            self.commands
+                .as_ref()
+                .ok_or_else(stopped)?
+                .send((root.to_path_buf(), reply))
+                .map_err(|_| stopped())?;
+            response.recv().map_err(|_| stopped())?
+        }
+    }
+
+    impl Drop for Watcher {
+        fn drop(&mut self) {
+            // Closing the channel ends the thread, which cancels the request and
+            // waits for the kernel to release its buffers.
+            self.commands = None;
+            if let Some(thread) = self.thread.take() {
+                let _ = thread.join();
+            }
+        }
+    }
+
+    struct Request {
         handle: HANDLE,
         identity: (u32, u32, u32),
         // Stable, aligned allocations: Windows owns these addresses until the
@@ -129,23 +212,19 @@ mod native {
         pending: bool,
     }
 
-    // One workspace mutex owns the watcher. Only its overlapped request accesses
-    // the allocations concurrently; poll waits for completion before reading.
-    unsafe impl Send for Watcher {}
-
-    impl Watcher {
-        pub(in crate::svn) fn new(root: &Path) -> io::Result<Self> {
+    impl Request {
+        fn new(root: &Path) -> io::Result<Self> {
             let handle = open(root, FILE_LIST_DIRECTORY, FILE_FLAG_OVERLAPPED)?;
-            let mut watcher = Self {
+            let mut request = Self {
                 handle,
                 identity: (0, 0, 0),
                 buffer: Box::new(UnsafeCell::new([0; BUFFER_WORDS])),
                 overlapped: Box::new(UnsafeCell::new(OVERLAPPED::default())),
                 pending: false,
             };
-            watcher.identity = identity(handle)?;
-            watcher.arm()?;
-            Ok(watcher)
+            request.identity = identity(handle)?;
+            request.arm()?;
+            Ok(request)
         }
 
         fn arm(&mut self) -> io::Result<()> {
@@ -182,7 +261,7 @@ mod native {
             Ok(())
         }
 
-        pub(in crate::svn) fn poll(&mut self, root: &Path) -> io::Result<Vec<String>> {
+        fn poll(&mut self, root: &Path) -> io::Result<Vec<String>> {
             // A watched directory can be moved/replaced without a child event.
             let current = open(root, FILE_READ_ATTRIBUTES, 0)?;
             let current_identity = identity(current);
@@ -197,9 +276,8 @@ mod native {
             // watcher, starts a new one, and establishes a fresh full baseline.
             for _ in 0..16 {
                 let mut count = 0;
-                if unsafe {
-                    GetOverlappedResult(self.handle, self.overlapped.get(), &mut count, 0)
-                } == 0
+                if unsafe { GetOverlappedResult(self.handle, self.overlapped.get(), &mut count, 0) }
+                    == 0
                 {
                     let error = io::Error::last_os_error();
                     if error.raw_os_error() == Some(ERROR_IO_INCOMPLETE as i32) {
@@ -212,9 +290,8 @@ mod native {
                 if count == 0 || count as usize > BUFFER_BYTES {
                     return Err(invalid("directory notification buffer overflow"));
                 }
-                let bytes = unsafe {
-                    std::slice::from_raw_parts(self.buffer.get().cast(), count as usize)
-                };
+                let bytes =
+                    unsafe { std::slice::from_raw_parts(self.buffer.get().cast(), count as usize) };
                 let changed = paths(bytes)?;
                 // Re-arm before metadata/SVN work. Windows queues notifications
                 // on this same directory handle between consecutive requests.
@@ -228,7 +305,7 @@ mod native {
         }
     }
 
-    impl Drop for Watcher {
+    impl Drop for Request {
         fn drop(&mut self) {
             unsafe {
                 if self.pending {
@@ -245,7 +322,7 @@ mod native {
 }
 
 #[cfg(windows)]
-pub(super) use native::Watcher;
+pub(super) use native::{supports_notifications, Watcher};
 
 #[cfg(test)]
 mod tests {
@@ -273,7 +350,10 @@ mod tests {
         assert_eq!(paths(&first).unwrap(), ["src/新名.txt", "src/旧名.txt"]);
         assert!(paths(&record(".svn\\pristine\\a", 3)).unwrap().is_empty());
         assert!(paths(&record(".svn\\tmp\\a", 3)).unwrap().is_empty());
-        assert_eq!(paths(&record("src\\pristine\\a", 3)).unwrap(), ["src/pristine/a"]);
+        assert_eq!(
+            paths(&record("src\\pristine\\a", 3)).unwrap(),
+            ["src/pristine/a"]
+        );
         assert_eq!(paths(&record(".svn\\wc.db", 3)).unwrap(), [".svn/wc.db"]);
     }
 
@@ -335,8 +415,16 @@ mod tests {
         let _cleanup = Cleanup(base.clone());
         let root = fs::canonicalize(base.join("wc")).unwrap();
         fs::write(root.join("file"), "base\n").unwrap();
-        let mut watcher =
-            Watcher::new(&root).expect("directory notifications need no volume privileges");
+        assert!(supports_notifications(&root));
+        assert!(!supports_notifications(Path::new(r"\\server\share\wc")));
+        // The issuing thread exits immediately, as a Tokio blocking thread does
+        // when idle. Its exit must not cancel the outstanding request.
+        let mut watcher = std::thread::spawn({
+            let root = root.clone();
+            move || Watcher::new(&root).expect("directory notifications need no volume privileges")
+        })
+        .join()
+        .unwrap();
         assert!(watcher.poll(&root).unwrap().is_empty());
 
         fn wait(watcher: &mut Watcher, root: &Path, expected: &[&str]) {
