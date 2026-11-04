@@ -401,6 +401,7 @@ const doCommit = async () => {
     }, 1500)
   } catch (err) {
     output.value = `${t('common.error')}：${err}`
+    await refreshStatusAfterMutation()
   } finally {
     loading.value = false
   }

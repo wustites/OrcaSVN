@@ -175,15 +175,6 @@ pub async fn commit(
     message: &str,
     files: Option<&[String]>,
 ) -> Result<String, SvnError> {
-    commit_with_options(path, message, files, false).await
-}
-
-pub async fn commit_with_options(
-    path: &str,
-    message: &str,
-    files: Option<&[String]>,
-    auto_delete_missing: bool,
-) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["commit".to_string(), "-m".to_string(), message.to_string()];
 
     if let Some(file_list) = files {
@@ -192,10 +183,9 @@ pub async fn commit_with_options(
                 "显式文件列表不能为空；省略文件列表可提交整个工作副本".to_string(),
             ));
         }
-        // A file removed outside SVN is reported as "missing" (!). Schedule
-        // selected missing targets for deletion before committing, matching
-        // `svn delete --force`, while leaving unselected targets untouched.
-        let mut statuses = status(path).await?;
+        // SVN directory deletion/replacement is atomic even with --depth empty.
+        // Validate against fresh status so deselected descendants cannot slip in.
+        let statuses = status(path).await?;
         let selected: HashSet<String> = file_list
             .iter()
             .map(|file| {
@@ -206,36 +196,6 @@ pub async fn commit_with_options(
             })
             .collect();
 
-        if auto_delete_missing {
-            let missing: Vec<String> = statuses
-                .iter()
-                .filter(|entry| entry.status_code == "missing")
-                .filter(|entry| selected.contains(&normalize_svn_path(&entry.path)))
-                .map(|entry| entry.path.clone())
-                .collect();
-            for target in &missing {
-                let target = normalize_svn_path(target);
-                let prefix = format!("{target}/");
-                if statuses.iter().any(|child| {
-                    let child_path = normalize_svn_path(&child.path);
-                    child_path.starts_with(&prefix) && !selected.contains(&child_path)
-                }) {
-                    return Err(SvnError::InvalidArguments(format!(
-                        "目录 {} 的删除必须包含全部子项，请完整勾选该目录或取消该目录的选择",
-                        target
-                    )));
-                }
-            }
-            if !missing.is_empty() {
-                delete_missing(path, &missing).await?;
-                // Validate the resulting scheduled deletions and their descendants
-                // against a fresh status before constructing the commit command.
-                statuses = status(path).await?;
-            }
-        }
-
-        // SVN directory deletion/replacement is atomic even with --depth empty.
-        // Validate against fresh status so deselected descendants cannot slip in.
         for entry in &statuses {
             let target = normalize_svn_path(&entry.path);
             if !selected.contains(&target) {
@@ -260,18 +220,146 @@ pub async fn commit_with_options(
             }
         }
         args.extend(["--depth".to_string(), "empty".to_string()]);
-        append_targets(&mut args, file_list);
+        let targets: Vec<String> = file_list
+            .iter()
+            .map(|file| normalize_diff_target(file))
+            .collect();
+        append_targets(&mut args, &targets);
     }
 
     let args_refs: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
     execute_svn(&args_refs, Some(path)).await
 }
 
+/// Commit, first scheduling selected missing files for deletion. A file removed
+/// outside SVN is reported as missing (`!`), which `svn commit` would skip.
+pub async fn commit_with_options(
+    path: &str,
+    message: &str,
+    files: Option<&[String]>,
+    auto_delete_missing: bool,
+) -> Result<String, SvnError> {
+    if !auto_delete_missing || files.is_some_and(<[String]>::is_empty) {
+        return commit(path, message, files).await;
+    }
+    let statuses = status(path).await?;
+    let selected: Option<HashSet<String>> = files.map(|list| {
+        list.iter()
+            .map(|file| {
+                normalize_svn_path(file)
+                    .trim_start_matches("./")
+                    .trim_end_matches('/')
+                    .to_string()
+            })
+            .collect()
+    });
+    let is_selected = |target: &str| selected.as_ref().is_none_or(|set| set.contains(target));
+    let missing: Vec<String> = statuses
+        .iter()
+        .filter(|entry| entry.status_code == "missing")
+        .map(|entry| normalize_svn_path(&entry.path))
+        .filter(|target| is_selected(target))
+        .collect();
+    if missing.is_empty() {
+        return commit(path, message, files).await;
+    }
+    for target in &missing {
+        let prefix = format!("{target}/");
+        if statuses.iter().any(|child| {
+            let child_path = normalize_svn_path(&child.path);
+            child_path.starts_with(&prefix) && !is_selected(&child_path)
+        }) {
+            return Err(SvnError::InvalidArguments(format!(
+                "目录 {target} 的删除必须包含全部子项，请完整勾选该目录或取消该目录的选择"
+            )));
+        }
+    }
+
+    delete_missing(path, &missing).await?;
+    // Deleting a file that was only scheduled for addition cancels the add, so
+    // it is no longer versioned and cannot be a commit target.
+    let scheduled = match status(path).await {
+        Ok(fresh) => fresh
+            .iter()
+            .map(|entry| normalize_svn_path(&entry.path))
+            .collect::<HashSet<_>>(),
+        Err(error) => return restore_missing(path, &missing, error).await,
+    };
+    let (scheduled, cancelled): (Vec<String>, Vec<String>) = missing
+        .into_iter()
+        .partition(|target| scheduled.contains(target));
+    let targets: Option<Vec<String>> = files.map(|list| {
+        list.iter()
+            .filter(|file| {
+                let file = normalize_svn_path(file);
+                !cancelled
+                    .iter()
+                    .any(|target| *target == file.trim_start_matches("./").trim_end_matches('/'))
+            })
+            .cloned()
+            .collect()
+    });
+    if targets.as_ref().is_some_and(Vec::is_empty) {
+        return Ok(String::new());
+    }
+    match commit(path, message, targets.as_deref()).await {
+        Ok(output) => Ok(output),
+        Err(error) => restore_missing(path, &scheduled, error).await,
+    }
+}
+
 async fn delete_missing(path: &str, files: &[String]) -> Result<String, SvnError> {
     let mut args: Vec<String> = vec!["delete".to_string(), "--force".to_string()];
-    append_targets(&mut args, files);
+    let targets: Vec<String> = files
+        .iter()
+        .map(|file| normalize_diff_target(file))
+        .collect();
+    append_targets(&mut args, &targets);
     let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
     execute_svn(&args_refs, Some(path)).await
+}
+
+/// Undo `delete_missing` after a failed commit so nothing stays scheduled that
+/// the user did not commit. `svn revert` also restores the files from the
+/// pristine store, so remove them again to return them to missing.
+async fn restore_missing<T>(path: &str, files: &[String], error: SvnError) -> Result<T, SvnError> {
+    if files.is_empty() {
+        return Err(error);
+    }
+    let mut args: Vec<String> = ["revert", "--depth", "infinity"]
+        .iter()
+        .map(|arg| arg.to_string())
+        .collect();
+    let targets: Vec<String> = files
+        .iter()
+        .map(|file| normalize_diff_target(file))
+        .collect();
+    append_targets(&mut args, &targets);
+    let args_refs: Vec<&str> = args.iter().map(String::as_str).collect();
+    let mut restored = execute_svn(&args_refs, Some(path)).await.map(|_| ());
+    if restored.is_ok() {
+        for file in files {
+            let full = Path::new(path).join(file);
+            let removed = if full.is_dir() {
+                fs::remove_dir_all(&full)
+            } else {
+                fs::remove_file(&full)
+            };
+            match removed {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+                    restored = Err(SvnError::CommandFailed(error.to_string()));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    }
+    match restored {
+        Ok(()) => Err(error),
+        Err(restore_error) => Err(SvnError::CommandFailed(format!(
+            "{error}\n无法撤销缺失文件的删除安排：{restore_error}"
+        ))),
+    }
 }
 
 pub async fn status(path: &str) -> Result<Vec<SvnStatus>, SvnError> {
@@ -826,6 +914,117 @@ mod tests {
         assert!(!patch_output_has_conflicts(
             "U         src/main.rs\n> applied hunk with offset 2"
         ));
+    }
+
+    // Uses an isolated local repository; never touches a user's working copy.
+    #[cfg(unix)]
+    #[test]
+    fn auto_delete_missing_handles_failures_cancelled_adds_and_at_signs() {
+        use super::commit_with_options;
+        use std::os::unix::fs::PermissionsExt;
+        use std::process::Command;
+        if Command::new("svnadmin").arg("--version").output().is_err() {
+            eprintln!("Skipping local repository test: svnadmin is unavailable");
+            return;
+        }
+        let directory = std::env::temp_dir().join(format!(
+            "orcasvn-auto-delete-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let repository = directory.join("repository");
+        let wc = directory.join("wc");
+        assert!(Command::new("svnadmin")
+            .arg("create")
+            .arg(&repository)
+            .status()
+            .unwrap()
+            .success());
+        let url = format!("file://{}", repository.display());
+        let run = |args: &[&str]| {
+            let output = Command::new("svn")
+                .args(args)
+                .current_dir(if args[0] == "checkout" {
+                    &directory
+                } else {
+                    &wc
+                })
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{args:?}: {output:?}");
+            String::from_utf8_lossy(&output.stdout).into_owned()
+        };
+        run(&["checkout", &url, wc.to_str().unwrap()]);
+        std::fs::create_dir(wc.join("dir")).unwrap();
+        for name in ["gone.txt", "icon@2x.png", "keep.txt", "dir/child.txt"] {
+            std::fs::write(wc.join(name), "before").unwrap();
+        }
+        run(&["add", "dir", "gone.txt", "icon@2x.png@", "keep.txt"]);
+        run(&["commit", "-m", "initial"]);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        let wc_path = wc.to_str().unwrap();
+        let commit_selected = |files: &[&str]| {
+            let files: Vec<String> = files.iter().map(|file| file.to_string()).collect();
+            runtime.block_on(commit_with_options(wc_path, "remove", Some(&files), true))
+        };
+
+        // A rejected commit returns selected files to missing.
+        let hook = repository.join("hooks/pre-commit");
+        std::fs::write(&hook, "#!/bin/sh\nexit 1\n").unwrap();
+        std::fs::set_permissions(&hook, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::fs::remove_file(wc.join("gone.txt")).unwrap();
+        std::fs::remove_dir_all(wc.join("dir")).unwrap();
+        assert!(commit_selected(&["gone.txt", "dir", "dir/child.txt"]).is_err());
+        assert!(!wc.join("gone.txt").exists());
+        assert!(!wc.join("dir").exists());
+        let status = run(&["status"]);
+        assert!(status.contains("!       gone.txt"), "{status}");
+        assert!(status.contains("!       dir"), "{status}");
+        assert!(!status.contains("D  "), "{status}");
+        std::fs::remove_file(&hook).unwrap();
+
+        // Unselected descendants are rejected before the working copy changes.
+        assert!(commit_selected(&["dir"]).is_err());
+        assert!(run(&["status"]).contains("!       dir"));
+
+        // A file added and then removed only loses its scheduled add, without
+        // aborting the commit of the other selected files.
+        std::fs::write(wc.join("new.txt"), "new").unwrap();
+        run(&["add", "new.txt"]);
+        std::fs::remove_file(wc.join("new.txt")).unwrap();
+        commit_selected(&["new.txt", "gone.txt"]).unwrap();
+        let listed = run(&["list", "-r", "HEAD", &url]);
+        assert!(!listed.contains("gone.txt"), "{listed}");
+        assert!(!run(&["status"]).contains("new.txt"));
+
+        // Only a cancelled add was selected, so there is nothing to commit.
+        std::fs::write(wc.join("new.txt"), "new").unwrap();
+        run(&["add", "new.txt"]);
+        std::fs::remove_file(wc.join("new.txt")).unwrap();
+        assert_eq!(commit_selected(&["new.txt"]).unwrap(), "");
+        assert!(!run(&["status"]).contains("new.txt"));
+
+        // Peg-revision syntax does not break paths containing @.
+        std::fs::remove_file(wc.join("icon@2x.png")).unwrap();
+        commit_selected(&["icon@2x.png"]).unwrap();
+        assert!(!run(&["list", "-r", "HEAD", &url]).contains("icon@2x.png"));
+
+        // Committing the whole working copy also schedules missing files.
+        std::fs::remove_file(wc.join("keep.txt")).unwrap();
+        runtime
+            .block_on(commit_with_options(wc_path, "remove", None, true))
+            .unwrap();
+        let listed = run(&["list", "-r", "HEAD", &url]);
+        assert!(!listed.contains("keep.txt"), "{listed}");
+        assert!(!listed.contains("dir/"), "{listed}");
+        let _ = std::fs::remove_dir_all(&directory);
     }
 
     #[test]
