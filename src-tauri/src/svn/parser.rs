@@ -4,6 +4,67 @@ use quick_xml::Reader;
 
 use super::executor::SvnError;
 
+/// `(path, value)` pairs from `svn propget --xml`.
+pub fn parse_property_xml(xml: &str) -> Result<Vec<(String, String)>, SvnError> {
+    let mut properties = Vec::new();
+    let mut reader = Reader::from_str(xml);
+    let mut path = String::new();
+    let mut in_property = false;
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"target" => {
+                path = e
+                    .try_get_attribute("path")
+                    .ok()
+                    .flatten()
+                    .and_then(|attr| attr.unescape_value().ok().map(|value| value.into_owned()))
+                    .unwrap_or_default();
+            }
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"property" => in_property = true,
+            Ok(Event::Text(ref e)) if in_property => {
+                let value = e
+                    .unescape()
+                    .map_err(|error| SvnError::ParseError(error.to_string()))?;
+                properties.push((path.clone(), value.into_owned()));
+            }
+            Ok(Event::End(ref e)) if e.name().as_ref() == b"property" => in_property = false,
+            Ok(Event::Eof) => break,
+            Err(error) => return Err(SvnError::ParseError(error.to_string())),
+            _ => {}
+        }
+    }
+    Ok(properties)
+}
+
+/// `(path, revision)` pairs from `svn info --xml`; schedule-add nodes have no
+/// revision and are omitted.
+pub fn parse_info_revisions_xml(xml: &str) -> Result<Vec<(String, u64)>, SvnError> {
+    let mut revisions = Vec::new();
+    let mut reader = Reader::from_str(xml);
+    loop {
+        match reader.read_event() {
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"entry" => {
+                let attribute = |name: &str| {
+                    e.try_get_attribute(name)
+                        .ok()
+                        .flatten()
+                        .and_then(|attr| attr.unescape_value().ok().map(|value| value.into_owned()))
+                };
+                if let (Some(path), Some(revision)) = (
+                    attribute("path"),
+                    attribute("revision").and_then(|value| value.parse().ok()),
+                ) {
+                    revisions.push((path, revision));
+                }
+            }
+            Ok(Event::Eof) => break,
+            Err(error) => return Err(SvnError::ParseError(error.to_string())),
+            _ => {}
+        }
+    }
+    Ok(revisions)
+}
+
 pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
     let mut statuses = Vec::new();
     let mut reader = Reader::from_str(xml);
@@ -38,6 +99,7 @@ pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
                     }
                 }
                 b"wc-status" if in_entry => {
+                    let mut tree_conflicted = false;
                     for attr in e.attributes().flatten() {
                         match attr.key.as_ref() {
                             b"item" => {
@@ -55,8 +117,15 @@ pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
                             b"history" | b"copied" => {
                                 history = attr.value.as_ref() == b"true";
                             }
+                            b"tree-conflicted" => {
+                                tree_conflicted = attr.value.as_ref() == b"true";
+                            }
                             _ => {}
                         }
+                    }
+                    // SVN reports a tree conflict beside an otherwise normal item.
+                    if tree_conflicted {
+                        status_code = "conflicted".to_string();
                     }
                 }
                 _ => {}

@@ -24,7 +24,7 @@
 
       <div v-else class="update-content">
         <el-alert
-          v-if="updateConflicts.length"
+          v-if="visibleConflicts.length"
           type="warning"
           :closable="false"
           show-icon
@@ -32,7 +32,7 @@
           class="update-conflicts"
         >
           <ul class="update-conflict-list">
-            <li v-for="file in updateConflicts" :key="file">{{ file }}</li>
+            <li v-for="file in visibleConflicts" :key="file">{{ file }}</li>
           </ul>
         </el-alert>
         <div class="revision-strip">
@@ -123,7 +123,7 @@ import { computed, onActivated, onDeactivated, onUnmounted, ref, watch } from 'v
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus/es/components/message/index'
-import { svnLog, svnRemoteInfo, svnUpdate } from '@/api/svn'
+import { svnIncomingLog, svnRemoteInfo, svnUpdate } from '@/api/svn'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useWorkspace } from '@/composables/useWorkspace'
 import { getStatusClass, getStatusLabelKey } from '@/composables/useSvnStatus'
@@ -156,6 +156,17 @@ const updateStateIntervalMs = 30_000
 const localRevision = computed(() => workspaceStore.svnInfo?.revision || 0)
 const localChanges = computed(() => workspaceStore.statusList.filter(status => status.status_code !== 'normal' && status.status_code !== ''))
 
+// Hide conflicts once resolved. If paths cannot be matched, as with a summary
+// line, keep the list for as long as anything remains conflicted.
+const visibleConflicts = computed(() => {
+  const conflicted = new Set(workspaceStore.statusList
+    .filter(status => status.status_code === 'conflicted' || status.prop_status === 'conflicted')
+    .map(status => status.path.replace(/\\/g, '/')))
+  if (conflicted.size === 0) return []
+  const matched = updateConflicts.value.filter(path => conflicted.has(path.replace(/\\/g, '/')))
+  return matched.length ? matched : updateConflicts.value
+})
+
 const formatDate = (date: string) => date ? new Date(date).toLocaleString(locale.value) : ''
 
 const applyCachedState = (path: string) => {
@@ -187,7 +198,7 @@ const loadUpdateState = async (force = false) => {
     remoteRevision.value = info.revision
     const local = workspaceStore.svnInfo?.revision || 0
     if (info.revision > local) {
-      const logs = await svnLog(requestedPath, settings.logLimit || 50, info.revision, local + 1)
+      const logs = await svnIncomingLog(requestedPath, settings.logLimit || 50, info.revision, local)
       if (!isCurrent()) return
       incomingLogs.value = logs
     } else {
@@ -213,6 +224,7 @@ const doUpdate = async () => {
   if (!workspaceStore.currentPath) return
   const requestedPath = workspaceStore.currentPath
   updating.value = true
+  updateConflicts.value = []
   try {
     const result = await svnUpdate(requestedPath)
     if (workspaceStore.currentPath !== requestedPath) return
@@ -220,7 +232,7 @@ const doUpdate = async () => {
     updateStateCache.delete(requestedPath)
     await loadUpdateState(true)
     if (workspaceStore.currentPath !== requestedPath) return
-    if (updateConflicts.value.length) {
+    if (visibleConflicts.value.length) {
       ElMessage.warning(t('update.conflictsTitle'))
     } else {
       ElMessage.success(`${t('common.update')} ${t('common.success')}`)
@@ -267,6 +279,7 @@ watch(
     loading.value = false
     incomingLogs.value = []
     remoteRevision.value = 0
+    updateConflicts.value = []
     if (isActive && path && !applyCachedState(path)) {
       loadUpdateState()
     }

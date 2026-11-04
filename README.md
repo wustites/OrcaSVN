@@ -59,8 +59,8 @@ svn --version --quiet
 要求：
 
 - Node.js 18 或更高版本
-- Rust **1.88** 或更高版本。依赖使用 Rust edition 2024，1.85 起才能编译这类包；本仓库还会用到 1.88 稳定的 `slice::as_chunks`。1.83 及更早版本无法通过 `cargo check`。
-- SVN CLI 1.10 或更高版本（含 `svnversion`，用于读取工作副本中已有的最高版本）
+- 最新稳定版 Rust
+- SVN CLI 1.10 或更高版本
 - 平台对应的 Tauri 2 构建依赖
 
 Linux（Debian/Ubuntu）系统包示例：
@@ -93,7 +93,7 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ### 工作副本行为
 
 - macOS 与 Linux 上，SVN 子进程使用 UTF-8 locale（macOS 为 `en_US.UTF-8`，Linux 为 `C.UTF-8`），避免桌面启动时继承缺失、ASCII 或无效 locale 导致中文路径、仓库 URL、提交说明和命令输出乱码。这对应 [#7](https://github.com/wustites/OrcaSVN/issues/7)。
-- 界面上的本地版本取工作副本里已经存在的最高版本（`svnversion` 的上界）。按文件部分提交仍使用 `--depth empty`，但刚提交的版本不会再被更新页当成尚未应用到本地。
+- 界面上的本地版本是工作副本根目录的版本。只提交部分文件后，根目录版本不变；更新页会核对每个提交改动的路径，工作副本已包含的提交不再列为远端提交，尚未拉取的提交不会被隐藏。
 - 加入版本控制时，如果 SVN 把有效 UTF-8 文本自动标成 `application/octet-stream`，会去掉该属性，使差异和 Blame 仍能显示正文。含 NUL 或非法 UTF-8 的二进制文件保持原样。
 - 检出结果按成功或失败状态显示，不靠错误文本里是否出现英文字符串 `Error`。
 - 更新若产生文本、属性或树冲突，会列出冲突路径并给出警告。SVN 在这种情况下仍以退出码 0 结束。

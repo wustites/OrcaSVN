@@ -633,6 +633,18 @@ async fn svn_log(
 }
 
 #[tauri::command]
+async fn svn_incoming_log(
+    path: String,
+    limit: Option<u32>,
+    head: u64,
+    local: u64,
+) -> Result<Vec<SvnLogEntry>, String> {
+    svn::incoming_log(&path, limit, head, local)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn svn_current_user(path: String) -> Result<Option<SvnAuthUser>, String> {
     svn::current_user(&path).await.map_err(|e| e.to_string())
 }
@@ -851,6 +863,7 @@ fn main() {
             svn_commit,
             svn_status,
             svn_log,
+            svn_incoming_log,
             svn_current_user,
             svn_info,
             svn_local_revision,

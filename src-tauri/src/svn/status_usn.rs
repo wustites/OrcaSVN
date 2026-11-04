@@ -63,11 +63,10 @@ fn name(buffer: &[u8], offset: usize, length: usize) -> io::Result<String> {
                     .ok_or_else(|| invalid("name overflow"))?,
         )
         .ok_or_else(|| invalid("truncated record name"))?;
-    let (pairs, remainder) = bytes.as_chunks::<2>();
-    if !remainder.is_empty() {
-        return Err(invalid("invalid UTF-16 record name"));
-    }
-    let units: Vec<u16> = pairs.iter().copied().map(u16::from_le_bytes).collect();
+    let units: Vec<_> = bytes
+        .chunks_exact(2)
+        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .collect();
     let name = String::from_utf16(&units).map_err(|_| invalid("non-Unicode Windows filename"))?;
     if name.contains(['/', '\\', '\0', ':']) {
         return Err(invalid("unsafe Windows filename"));
@@ -512,7 +511,9 @@ mod native {
                         if next == 0 {
                             break;
                         }
-                        if next < offset_of!(FILE_ID_BOTH_DIR_INFO, FileName) || next % 8 != 0 {
+                        if next < offset_of!(FILE_ID_BOTH_DIR_INFO, FileName)
+                            || !next.is_multiple_of(8)
+                        {
                             return Err(invalid("invalid next directory entry"));
                         }
                         offset = offset

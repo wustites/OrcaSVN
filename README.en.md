@@ -53,8 +53,8 @@ For usage instructions, see the [quick start](QUICKSTART.md) and [user guide](do
 Requirements:
 
 - Node.js 18 or later
-- Rust **1.88** or newer. Dependencies use Rust edition 2024, which needs Rust 1.85 or newer to compile, and this repository also uses `slice::as_chunks` (stable in 1.88). Rust 1.83 and older cannot pass `cargo check`.
-- SVN CLI 1.10 or later, including `svnversion` (used for the highest revision already present in a working copy)
+- Latest stable Rust toolchain
+- SVN CLI 1.10 or later
 - Tauri 2 build dependencies for your platform
 
 Example Linux (Debian/Ubuntu) packages:
@@ -87,7 +87,7 @@ See [SETUP.md](SETUP.md) for environment setup and troubleshooting, and [CONTRIB
 ### Working copy behavior
 
 - On macOS and Linux, SVN child processes use a UTF-8 locale (`en_US.UTF-8` on macOS, `C.UTF-8` on Linux). This keeps Chinese paths, repository URLs, commit messages, and command output intact when a desktop launch inherits a missing, ASCII, or invalid locale. It addresses [#7](https://github.com/wustites/OrcaSVN/issues/7).
-- The local revision shown in the app is the highest revision already present in the working copy (the upper bound from `svnversion`). Partial commits still use `--depth empty`, but the revision just committed is not listed as a pending update.
+- The local revision shown in the app is the working copy root's revision. A partial commit leaves it unchanged, so the update page checks the paths each commit changed: commits already in the working copy are not listed as incoming, and commits not yet pulled are never hidden.
 - After add, a valid UTF-8 text file that SVN auto-marked `application/octet-stream` has that property removed, so diff and blame can show the text. Files with NUL bytes or invalid UTF-8 stay binary.
 - Checkout success and failure use an explicit state. The UI does not look for the English word `Error` in the output.
 - An update that produces text, property, or tree conflicts lists those paths and shows a warning. SVN still exits 0 in that case.

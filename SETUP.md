@@ -14,9 +14,7 @@ svn --version --quiet
 
 Windows 还需要 Visual Studio C++ Build Tools 和 WebView2。
 
-Rust 需要 **1.88 或更高版本**。依赖使用 edition 2024（1.85 起才能编译），本仓库还使用 1.88 才稳定的 `slice::as_chunks`。1.83 及更早版本会在解析依赖时失败。
-
-Linux（Debian/Ubuntu）还需 Tauri 2 的系统包，并安装 Subversion（含 `svnversion`）：
+Linux（Debian/Ubuntu）还需 Tauri 2 的系统包，并安装 Subversion：
 
 ```bash
 sudo apt-get update

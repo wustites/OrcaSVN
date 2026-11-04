@@ -45,6 +45,15 @@ export async function svnLog(
   return invoke<SvnLogEntry[]>('svn_log', { path, limit, startRev, endRev, keyword, author, dateFrom, dateTo })
 }
 
+export async function svnIncomingLog(
+  path: string,
+  limit: number,
+  head: number,
+  local: number
+): Promise<SvnLogEntry[]> {
+  return invoke<SvnLogEntry[]>('svn_incoming_log', { path, limit, head, local })
+}
+
 export async function svnCurrentUser(path: string): Promise<SvnAuthUser | null> {
   return invoke<SvnAuthUser | null>('svn_current_user', { path })
 }
