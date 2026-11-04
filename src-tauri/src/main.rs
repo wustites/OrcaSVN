@@ -566,15 +566,21 @@ async fn svn_commit(
     path: String,
     message: String,
     files: Option<Vec<String>>,
+    auto_delete_missing: Option<bool>,
 ) -> Result<CommandResult, String> {
-    svn::commit(&path, &message, files.as_deref())
-        .await
-        .map(|output| CommandResult {
-            success: true,
-            output,
-            error: None,
-        })
-        .map_err(|e| e.to_string())
+    svn::commit_with_options(
+        &path,
+        &message,
+        files.as_deref(),
+        auto_delete_missing.unwrap_or(false),
+    )
+    .await
+    .map(|output| CommandResult {
+        success: true,
+        output,
+        error: None,
+    })
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

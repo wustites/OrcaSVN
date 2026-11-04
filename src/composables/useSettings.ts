@@ -8,6 +8,7 @@ export interface AppSettings {
   theme: 'light' | 'dark' | 'auto'
   language: string
   gitignoreEnabled: boolean
+  autoDeleteMissingOnCommit: boolean
 }
 
 const STORAGE_KEY = 'orcasvn-settings'
@@ -19,6 +20,7 @@ const defaults: AppSettings = {
   theme: 'auto',
   language: detectSystemLocale(),
   gitignoreEnabled: false,
+  autoDeleteMissingOnCommit: false,
 }
 
 function loadSettings(): AppSettings {

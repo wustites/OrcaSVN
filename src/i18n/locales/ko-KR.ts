@@ -56,6 +56,8 @@ export default {
     encoding: '기본 인코딩',
     gitignore: '무시 파일 (.gitignore)',
     gitignoreHint: '활성화하면 .gitignore와 일치하는 파일이 필터링됩니다',
+    autoDeleteMissingOnCommit: '누락 파일 자동 삭제',
+    autoDeleteMissingOnCommitHint: '기본값은 꺼짐입니다. 켜면 선택한 누락 파일에 대해 커밋 전에 svn delete --force를 실행합니다.',
     logLimit: '기본 로그 로드 개수',
     theme: '테마',
     themeLight: '라이트',
