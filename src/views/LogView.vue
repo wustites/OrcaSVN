@@ -436,6 +436,8 @@ const openWorkspace = async () => {
   }
 }
 
+let lastLogError: string | null = null
+
 const fetchLogPage = async (index: number, refreshCache = false) => {
   const requestedPath = workspaceStore.currentPath
   if (!requestedPath) return
@@ -460,8 +462,15 @@ const fetchLogPage = async (index: number, refreshCache = false) => {
     if (hasMore.value) pageCursors.value[index + 1] = logs.value[logs.value.length - 1].revision - 1
     await nextTick()
     if (logScroller.value) logScroller.value.scrollTop = 0
+    if (lastLogError !== null) {
+      if (workspaceStore.error === lastLogError) workspaceStore.setError(null)
+      lastLogError = null
+    }
   } catch (err) {
-    if (generation === requestGeneration) workspaceStore.setError(String(err))
+    if (generation === requestGeneration) {
+      lastLogError = String(err)
+      workspaceStore.setError(lastLogError)
+    }
   } finally {
     if (generation === requestGeneration) loading.value = false
   }

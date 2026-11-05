@@ -83,6 +83,7 @@ export default {
     addWorkspace: 'Add Workspace',
     removeWorkspace: 'Remove from list',
     selectWorkspaceTitle: 'Select SVN Workspace Directory',
+    svnInfoUnavailable: 'Unable to read SVN workspace information',
     repositoryInfo: 'Repository Info',
     noRepositoryInfo: 'No Repository Info',
     fileStatus: 'File Status',

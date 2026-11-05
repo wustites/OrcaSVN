@@ -181,7 +181,16 @@ const applyCachedState = (path: string) => {
   return true
 }
 
-const loadUpdateState = async (force = false) => {
+// Polls report a failure once and clear it on recovery, so a dismissed error stays dismissed.
+let lastUpdateError: string | null = null
+
+const reportUpdateError = (err: unknown, background = false) => {
+  const message = String(err)
+  if (!background || message !== lastUpdateError) workspaceStore.setError(message)
+  lastUpdateError = message
+}
+
+const loadUpdateState = async (force = false, background = false) => {
   // A completed update must refresh shared workspace state even after navigation.
   if (!workspaceStore.currentPath || (!force && (!isActive || loading.value || updating.value))) return
   const requestedPath = workspaceStore.currentPath
@@ -211,10 +220,13 @@ const loadUpdateState = async (force = false) => {
         changed_paths: [...(entry.changed_paths || [])],
       })),
     })
+    if (lastUpdateError !== null) {
+      if (workspaceStore.error === lastUpdateError) workspaceStore.setError(null)
+      lastUpdateError = null
+    }
   } catch (err) {
     if (!isCurrent()) return
-    workspaceStore.setError(String(err))
-    ElMessage.error(`${t('common.error')}: ${err}`)
+    reportUpdateError(err, background)
   } finally {
     if (generation === updateRequestGeneration) loading.value = false
   }
@@ -239,8 +251,7 @@ const doUpdate = async () => {
     }
   } catch (err) {
     if (workspaceStore.currentPath !== requestedPath) return
-    workspaceStore.setError(String(err))
-    ElMessage.error(`${t('common.error')}: ${err}`)
+    reportUpdateError(err)
   } finally {
     updating.value = false
   }
@@ -266,7 +277,7 @@ onActivated(() => {
     applyCachedState(workspaceStore.currentPath)
     void loadUpdateState()
   }
-  updateStateTimer = window.setInterval(() => { void loadUpdateState() }, updateStateIntervalMs)
+  updateStateTimer = window.setInterval(() => { void loadUpdateState(false, true) }, updateStateIntervalMs)
 })
 
 onDeactivated(stopUpdatePolling)

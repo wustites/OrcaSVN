@@ -229,6 +229,7 @@ import { launchWorkspacePath, openWorkspaceTarget, type OpenWorkspaceTarget } fr
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useStashStore } from '@/stores/stash'
 import { useWorkspace } from '@/composables/useWorkspace'
+import { useWorkspaceErrorToast } from '@/composables/useWorkspaceErrorToast'
 import { useUpdateCheck } from '@/composables/useUpdateCheck'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import {
@@ -243,7 +244,7 @@ const route = useRoute()
 const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
 const stashStore = useStashStore()
-const { loadWorkspace, openWorkspace, refreshStatus, refreshStatusIfStale, restoreLastWorkspace } = useWorkspace()
+const { loadWorkspace, openWorkspace, refreshStatus, refreshStatusIfStale, openStartupWorkspace } = useWorkspace()
 const {
   currentVersion: appVersion,
   state: updateState,
@@ -255,6 +256,8 @@ const cachedViews = ref(['WorkspaceView', 'LogView', 'UpdateView'])
 const statusRefreshIntervalMs = 60_000
 let statusRefreshTimer: number | undefined
 const selectedOpenTarget = ref<OpenWorkspaceTarget>('explorer')
+useWorkspaceErrorToast()
+
 const openTargetIcons = {
   explorer: FolderOpenedIcon,
   vscode: Code,
@@ -310,10 +313,7 @@ const refreshStatusSilently = async () => {
 
 onMounted(async () => {
   void checkForUpdates()
-  const launchPath = await launchWorkspacePath().catch(() => null)
-  if (!launchPath || !(await loadWorkspace(launchPath))) {
-    await restoreLastWorkspace()
-  }
+  await openStartupWorkspace(await launchWorkspacePath().catch(() => null))
   statusRefreshTimer = window.setInterval(refreshStatusSilently, statusRefreshIntervalMs)
 })
 
