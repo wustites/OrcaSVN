@@ -25,27 +25,35 @@ function harness() {
     },
     'vue-router': { useRouter: () => ({}) },
     'vue-i18n': { useI18n: () => ({ t: key => key, locale: vue.ref('en-US') }) },
-    'element-plus/es/components/message/index': { ElMessage: { success() {}, error() {} } },
+    'element-plus/es/components/message/index': { ElMessage: {
+      success() { calls.push('toast:success') },
+      warning() { calls.push('toast:warning') },
+      error() {},
+    } },
     '@/stores/workspace': { useWorkspaceStore: () => store },
     '@/composables/useWorkspace': { useWorkspace: () => ({
       refreshStatusIfStale: async () => false,
       refreshStatusAfterMutation: async () => {
         calls.push('refresh')
         await refresh.promise
+        if (store.refreshFails) {
+          store.statusIsStale = true
+          return false
+        }
         store.svnInfo = store.revisionUnavailable ? null : { revision: 2 }
-        store.statusList = [{ path: 'conflict.txt', status_code: 'conflicted' }]
+        store.statusList = store.statusHidesConflicts ? [] : [{ path: 'conflict.txt', status_code: 'conflicted' }]
         return true
       },
     }) },
     '@/composables/useSettings': { useSettings: () => ({ settings: {} }) },
     '@/composables/useSvnStatus': {},
     '@/api/svn': {
-      svnUpdate: async () => { calls.push('update'); await update.promise },
+      svnUpdate: async () => { calls.push('update'); await update.promise; return { conflicts: store.reportedConflicts ?? [] } },
       svnRemoteInfo: async () => { calls.push('remote'); return { revision: 2 } },
     },
   }
   const script = fs.readFileSync('src/views/UpdateView.vue', 'utf8').match(/<script setup lang="ts">([\s\S]*?)<\/script>/)[1]
-  const code = ts.transpileModule(script + '\nexports.actions = { doUpdate, updating };', { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
+  const code = ts.transpileModule(script + '\nexports.actions = { doUpdate, updating, visibleConflicts };', { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
   const context = {
     exports: {}, require: name => { assert.ok(name in mocks, name); return mocks[name] },
     window: {
@@ -66,7 +74,7 @@ test('leaving during an update still refreshes the shared revision and conflict 
   h.update.resolve()
   h.refresh.resolve()
   await pending
-  assert.deepEqual(h.calls, ['update', 'refresh'])
+  assert.deepEqual(h.calls.filter(call => !call.startsWith('toast:')), ['update', 'refresh'])
   assert.equal(h.store.svnInfo.revision, 2)
   assert.equal(h.store.statusList[0].status_code, 'conflicted')
   assert.equal(h.updating.value, false)
@@ -82,7 +90,7 @@ test('deactivation during the post-update refresh suppresses remote requests', a
   h.lifecycle.deactivate()
   h.refresh.resolve()
   await pending
-  assert.deepEqual(h.calls, ['update', 'refresh'])
+  assert.deepEqual(h.calls.filter(call => !call.startsWith('toast:')), ['update', 'refresh'])
   assert.equal(h.store.svnInfo.revision, 2)
 })
 
@@ -93,7 +101,7 @@ test('an active update refreshes local state once before querying the remote rev
   h.update.resolve()
   h.refresh.resolve()
   await pending
-  assert.deepEqual(h.calls, ['update', 'refresh', 'remote'])
+  assert.deepEqual(h.calls.filter(call => !call.startsWith('toast:')), ['update', 'refresh', 'remote'])
 })
 
 test('completion in a different workspace does not refresh that workspace', async () => {
@@ -114,5 +122,32 @@ test('an unknown local revision does not treat remote commits as incoming', asyn
   h.update.resolve()
   h.refresh.resolve()
   await pending
-  assert.deepEqual(h.calls, ['update', 'refresh'])
+  assert.deepEqual(h.calls.filter(call => !call.startsWith('toast:')), ['update', 'refresh'])
+})
+
+test('a conflict reported by svn update is shown even when the refresh fails', async () => {
+  const h = harness()
+  h.store.reportedConflicts = ['src/x']
+  h.store.refreshFails = true
+  h.lifecycle.activate()
+  const pending = h.doUpdate()
+  h.update.resolve()
+  h.refresh.resolve()
+  await pending
+  assert.ok(h.calls.includes('toast:warning'))
+  assert.ok(!h.calls.includes('toast:success'))
+  assert.deepEqual([...h.visibleConflicts.value], ['src/x'])
+})
+
+test('a reported conflict warns even when status does not list the path', async () => {
+  const h = harness()
+  h.store.reportedConflicts = ['ignored/x']
+  h.store.statusHidesConflicts = true
+  h.lifecycle.activate()
+  const pending = h.doUpdate()
+  h.update.resolve()
+  h.refresh.resolve()
+  await pending
+  assert.ok(h.calls.includes('toast:warning'))
+  assert.ok(!h.calls.includes('toast:success'))
 })

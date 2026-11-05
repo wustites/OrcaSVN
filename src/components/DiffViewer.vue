@@ -52,7 +52,8 @@ const noMatch = ref(false)
 const copying = ref(false)
 const characterWidth = ref(8)
 const rowHeight = computed(() => props.compact ? 24 : 28)
-const gutterWidth = computed(() => props.compact ? 94 : 130)
+// Must equal the first three `grid-template-columns` of `.diff-row`.
+const gutterWidth = computed(() => props.compact ? 120 : 146)
 const contentWidth = computed(() => gutterWidth.value + 24 + (documentIndex.value?.maxColumns || 0) * characterWidth.value)
 const matchedLine = computed(() => activeOffset.value >= 0 && documentIndex.value ? lineAtOffset(documentIndex.value, activeOffset.value) : -1)
 let worker: Worker | undefined
@@ -192,11 +193,12 @@ onBeforeUnmount(() => {
 .diff-lines { font-family: var(--app-font-family-mono); font-size: var(--app-font-size-label); line-height: 20px; }
 .compact .diff-lines { font-size: var(--app-font-size-sm); }
 .diff-row { display: grid; grid-template-columns: 56px 56px 34px minmax(0, 1fr); border-bottom: 1px solid var(--md-sys-color-outline-variant); }
-.compact .diff-row { grid-template-columns: 35px 35px 24px minmax(0, 1fr); }
+.compact .diff-row { grid-template-columns: 48px 48px 24px minmax(0, 1fr); }
 .diff-line-number, .diff-marker { user-select: none; padding: 3px 8px; color: var(--md-sys-color-on-surface-variant); background: var(--md-sys-color-surface-container-low); text-align: right; }
 .diff-marker { text-align: center; font-weight: 700; }
 .diff-code { padding: 3px 12px; white-space: pre; tab-size: 8; color: var(--md-sys-color-on-surface); font: inherit; }
 .compact .diff-line-number, .compact .diff-marker, .compact .diff-code { padding-top: 1px; padding-bottom: 1px; }
+.compact .diff-line-number { padding-left: 6px; padding-right: 6px; }
 .diff-added { background: var(--app-color-status-added-bg); }
 .diff-added .diff-code { color: var(--app-color-status-added-text); }
 .diff-added .diff-line-number, .diff-added .diff-marker { background: var(--app-color-status-added-bg); color: var(--app-color-status-added-text); }

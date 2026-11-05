@@ -59,3 +59,32 @@ test('rows carry original-file line numbers from hunk headers', () => {
   const nums = rows.map(row => [row.oldLine, row.newLine])
   assert.equal(JSON.stringify(nums), JSON.stringify([[0, 0], [0, 0], [0, 0], [10, 20], [11, 0], [0, 21], [0, 0], [12, 22], [0, 0], [50, 0], [0, 60], [0, 61]]))
 })
+
+test('hunk content that looks like a file header is still a changed line', () => {
+  const text = '--- a.sql\n+++ a.sql\n@@ -1,2 +1,2 @@\n--- note\n+++i\n keep\n--- b.sql\n+++ b.sql\n'
+  const index = indexDiff(text)
+  assert.equal(index.removed, 1)
+  assert.equal(index.added, 1)
+  const rows = getDiffRows(text, index, 0, index.offsets.length)
+  assert.equal(rows[0].className, 'diff-meta')
+  assert.equal(rows[3].className, 'diff-removed')
+  assert.equal(rows[3].marker, '-')
+  assert.equal(rows[3].text, '-- note')
+  assert.equal(rows[3].oldLine, 1)
+  assert.equal(rows[4].className, 'diff-added')
+  assert.equal(rows[4].text, '++i')
+  assert.equal(rows[4].newLine, 1)
+  assert.equal(rows[5].className, 'diff-context')
+  // The next file's headers come after the hunk's declared line counts.
+  assert.equal(rows[6].className, 'diff-meta')
+  assert.equal(rows[7].className, 'diff-meta')
+})
+
+test('the gutter width matches the row grid in both layouts', () => {
+  const source = fs.readFileSync('src/components/DiffViewer.vue', 'utf8')
+  const [, compact, full] = source.match(/gutterWidth = computed\(\(\) => props\.compact \? (\d+) : (\d+)\)/)
+  const columns = selector => source.match(new RegExp(`${selector} \\{ display: grid; grid-template-columns: ([^;]+)|${selector} \\{ grid-template-columns: ([^;]+)`)).slice(1).find(Boolean)
+    .match(/(\d+)px/g).reduce((sum, width) => sum + parseInt(width), 0)
+  assert.equal(columns('\\.diff-row'), Number(full))
+  assert.equal(columns('\\.compact \\.diff-row'), Number(compact))
+})

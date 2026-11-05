@@ -1163,7 +1163,7 @@ async fn clear_autodetected_binary_mime(
     workspace: &str,
     targets: &[String],
 ) -> Result<(), SvnError> {
-    if targets.is_empty() || auto_props_may_set_binary(workspace).await {
+    if targets.is_empty() {
         return Ok(());
     }
     let mut args: Vec<String> = ["propget", "svn:mime-type", "--xml", "--recursive", "--"]
@@ -1189,6 +1189,10 @@ async fn clear_autodetected_binary_mime(
         })
         .map(|(path, _)| normalize_diff_target(&path))
         .collect();
+    // This walks the whole working copy, so only ask once there is something to clear.
+    if text_files.is_empty() || auto_props_may_set_binary(workspace).await {
+        return Ok(());
+    }
     for group in text_files.chunks(64) {
         let mut args = vec![
             "propdel".to_string(),

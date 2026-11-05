@@ -162,7 +162,8 @@ const visibleConflicts = computed(() => {
   const conflicted = new Set(workspaceStore.statusList
     .filter(status => status.status_code === 'conflicted' || status.prop_status === 'conflicted')
     .map(status => status.path.replace(/\\/g, '/')))
-  if (conflicted.size === 0) return []
+  // A failed refresh leaves the list out of date, so it cannot show they were resolved.
+  if (conflicted.size === 0) return workspaceStore.statusIsStale ? updateConflicts.value : []
   const matched = updateConflicts.value.filter(path => conflicted.has(path.replace(/\\/g, '/')))
   return matched.length ? matched : updateConflicts.value
 })
@@ -243,7 +244,8 @@ const doUpdate = async () => {
     updateStateCache.delete(requestedPath)
     await loadUpdateState(true)
     if (workspaceStore.currentPath !== requestedPath) return
-    if (visibleConflicts.value.length) {
+    // Status can miss a reported conflict, for example when a filter hides the path.
+    if (updateConflicts.value.length) {
       ElMessage.warning(t('update.conflictsTitle'))
     } else {
       ElMessage.success(`${t('common.update')} ${t('common.success')}`)

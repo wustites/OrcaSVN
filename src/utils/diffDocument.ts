@@ -20,7 +20,9 @@ export interface DiffRow {
 
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/
 
-function classify(line: string) {
+function classify(line: string, inHunk: boolean) {
+  // Content such as "-- note" appears as "--- note", which only looks like a file header.
+  if (inHunk) return line[0] === '+' ? 'added' : line[0] === '-' ? 'removed' : 'context'
   if (line.startsWith('+') && !line.startsWith('+++')) return 'added'
   if (line.startsWith('-') && !line.startsWith('---')) return 'removed'
   if (line.startsWith('@@') || line.startsWith('+++') || line.startsWith('---')) return 'meta'
@@ -40,7 +42,6 @@ export function indexDiff(text: string): DiffIndex {
       const newline = text.indexOf('\n', start)
       const end = newline === -1 ? text.length : newline
       const line = text.slice(start, end).replace(/\r$/, '')
-      const type = classify(line)
       let oldLine = 0, newLine = 0
       const hunk = oldRemain > 0 || newRemain > 0 ? null : HUNK_HEADER.exec(line)
       if (hunk) {
@@ -55,6 +56,7 @@ export function indexDiff(text: string): DiffIndex {
       }
       oldLines.push(oldLine)
       newLines.push(newLine)
+      const type = classify(line, oldLine > 0 || newLine > 0)
       if (type === 'added') added++
       if (type === 'removed') removed++
       let columns = 0
@@ -77,7 +79,7 @@ export function getDiffRows(text: string, index: DiffIndex, start: number, end: 
     const offset = index.offsets[row]
     const limit = row + 1 < index.offsets.length ? index.offsets[row + 1] - 1 : text.length
     const line = text.slice(offset, limit).replace(/\r$/, '')
-    const type = classify(line)
+    const type = classify(line, index.oldLines[row] > 0 || index.newLines[row] > 0)
     const changed = type === 'added' || type === 'removed'
     rows.push({ index: row + 1, oldLine: index.oldLines[row], newLine: index.newLines[row], marker: changed ? line[0] : type === 'meta' ? '@' : '',
       text: changed ? line.slice(1) : line, className: `diff-${type}`, start: offset + Number(changed) })
