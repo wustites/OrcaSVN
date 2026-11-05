@@ -115,6 +115,11 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   function clearWorkspace() {
     localStorage.removeItem(LAST_WORKSPACE_KEY)
+    resetWorkspaceState()
+  }
+
+  // A failed load must not forget the workspace to restore on the next launch.
+  function resetWorkspaceState() {
     currentPath.value = null
     svnInfo.value = null
     statusList.value = []
@@ -164,5 +169,6 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     setGitignoreMtime,
     setGitignoreWorkspacePath,
     clearWorkspace,
+    resetWorkspaceState,
   }
 })

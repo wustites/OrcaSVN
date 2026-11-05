@@ -221,7 +221,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus/es/components/message/index'
@@ -229,6 +229,7 @@ import { launchWorkspacePath, openWorkspaceTarget, type OpenWorkspaceTarget } fr
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useStashStore } from '@/stores/stash'
 import { useWorkspace } from '@/composables/useWorkspace'
+import { useWorkspaceErrorToast } from '@/composables/useWorkspaceErrorToast'
 import { useUpdateCheck } from '@/composables/useUpdateCheck'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import {
@@ -243,7 +244,7 @@ const route = useRoute()
 const { t } = useI18n()
 const workspaceStore = useWorkspaceStore()
 const stashStore = useStashStore()
-const { loadWorkspace, openWorkspace, refreshStatus, refreshStatusIfStale, restoreLastWorkspace } = useWorkspace()
+const { loadWorkspace, openWorkspace, refreshStatus, refreshStatusIfStale, openStartupWorkspace } = useWorkspace()
 const {
   currentVersion: appVersion,
   state: updateState,
@@ -255,11 +256,7 @@ const cachedViews = ref(['WorkspaceView', 'LogView', 'UpdateView'])
 const statusRefreshIntervalMs = 60_000
 let statusRefreshTimer: number | undefined
 const selectedOpenTarget = ref<OpenWorkspaceTarget>('explorer')
-watch(() => workspaceStore.error, (error, _previousError, onCleanup) => {
-  if (!error) return
-  const message = ElMessage.error({ message: error, duration: 0, showClose: true })
-  onCleanup(() => message.close())
-})
+useWorkspaceErrorToast()
 
 const openTargetIcons = {
   explorer: FolderOpenedIcon,
@@ -316,10 +313,7 @@ const refreshStatusSilently = async () => {
 
 onMounted(async () => {
   void checkForUpdates()
-  const launchPath = await launchWorkspacePath().catch(() => null)
-  if (!launchPath || !(await loadWorkspace(launchPath))) {
-    await restoreLastWorkspace()
-  }
+  await openStartupWorkspace(await launchWorkspacePath().catch(() => null))
   statusRefreshTimer = window.setInterval(refreshStatusSilently, statusRefreshIntervalMs)
 })
 

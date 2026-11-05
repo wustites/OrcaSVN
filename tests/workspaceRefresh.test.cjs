@@ -21,6 +21,10 @@ function harness() {
     setError(value) { this.error = value },
     setGitignorePatterns(value) { this.gitignorePatterns = value },
     setGitignoreMtime() {}, setGitignoreWorkspacePath() {}, rememberWorkspace() {},
+    lastWorkspacePath: null,
+    getLastWorkspacePath() { return this.lastWorkspacePath },
+    clearWorkspace() { this.lastWorkspacePath = null; this.resetWorkspaceState() },
+    resetWorkspaceState() { this.currentPath = null; this.error = null },
   }
   let filter = async list => list
   const mocks = {
@@ -31,6 +35,7 @@ function harness() {
     },
     '@tauri-apps/plugin-dialog': {},
     '@/composables/useSettings': { useSettings: () => ({ settings: { gitignoreEnabled: false } }) },
+    '@/i18n': { default: { global: { t: key => key } } },
     '@/utils/gitignore': {},
     '@/utils/gitignoreWorker': { filterByGitignoreAsync: list => filter(list) },
     '@/utils/workspaceSnapshot': { getWorkspaceSnapshot: path => snapshots.get(path) || null, cacheWorkspaceSnapshot: (...args) => writes.push(args), invalidateWorkspaceSnapshot: path => { invalidations.push(path); snapshots.delete(path) } },
@@ -178,4 +183,80 @@ test('filesystem-scoped background checks do not satisfy an explicit complete re
   h.requests[0].resolve([{ path: 'old.ts' }])
   assert.equal(await background, false)
   assert.equal(h.store.statusList[0].path, 'verified.ts')
+})
+
+test('a background refresh reports a failure once, so a dismissed error stays dismissed', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  const first = workspace.refreshStatusIfStale(0)
+  h.requests[0].reject(new Error('offline'))
+  assert.equal(await first, false)
+  assert.match(h.store.error, /offline/)
+
+  h.store.setError(null)
+  const repeated = workspace.refreshStatusIfStale(0)
+  h.requests[1].reject(new Error('offline'))
+  assert.equal(await repeated, false)
+  assert.equal(h.store.error, null)
+
+  const changed = workspace.refreshStatusIfStale(0)
+  h.requests[2].reject(new Error('denied'))
+  assert.equal(await changed, false)
+  assert.match(h.store.error, /denied/)
+})
+
+test('a background refresh leaves other errors alone and clears only its own on recovery', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  h.store.setError('cleanup failed')
+  const unrelated = workspace.refreshStatusIfStale(0)
+  assert.equal(h.store.error, 'cleanup failed')
+  h.requests[0].resolve([])
+  assert.equal(await unrelated, true)
+  assert.equal(h.store.error, 'cleanup failed')
+
+  const failed = workspace.refreshStatus()
+  h.requests[1].reject(new Error('offline'))
+  await failed
+  const recovered = workspace.refreshStatusIfStale(0)
+  h.requests[2].resolve([])
+  assert.equal(await recovered, true)
+  assert.equal(h.store.error, null)
+})
+
+test('loading a workspace does not join a background refresh that hides its errors', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  const background = workspace.refreshStatusIfStale(0)
+  const load = workspace.loadWorkspace('/a')
+  assert.equal(h.requests.length, 2)
+  h.requests[1].reject(new Error('offline'))
+  assert.equal(await load, false)
+  assert.match(h.store.error, /offline/)
+  h.requests[0].resolve([])
+  assert.equal(await background, false)
+})
+
+test('a failed first load keeps the remembered workspace', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  h.store.currentPath = null
+  h.store.lastWorkspacePath = '/last'
+  const pending = workspace.loadWorkspace('/b')
+  h.requests[0].reject(new Error('offline'))
+  assert.equal(await pending, false)
+  assert.equal(h.store.currentPath, null)
+  assert.equal(h.store.lastWorkspacePath, '/last')
+  assert.match(h.store.error, /offline/)
+})
+
+test('a failed launch path stays reported after falling back to the last workspace', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  h.store.currentPath = null
+  h.store.lastWorkspacePath = '/last'
+  const pending = workspace.openStartupWorkspace('/launch')
+  h.requests[0].reject(new Error('launch failed'))
+  for (let i = 0; i < 20 && h.requests.length < 2; i++) await new Promise(resolve => setImmediate(resolve))
+  assert.equal(h.requests[1].path, '/last')
+  assert.equal(h.store.error, null)
+  h.requests[1].resolve([])
+  await pending
+  assert.equal(h.store.currentPath, '/last')
+  assert.match(h.store.error, /launch failed/)
 })

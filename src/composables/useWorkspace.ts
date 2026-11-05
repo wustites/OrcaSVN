@@ -2,6 +2,7 @@ import { useWorkspaceStore } from '@/stores/workspace'
 import { svnStatus, svnInfo, svnLocalRevision, readGitignore } from '@/api/svn'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useSettings } from '@/composables/useSettings'
+import i18n from '@/i18n'
 import { parseGitignore } from '@/utils/gitignore'
 import { filterByGitignoreAsync } from '@/utils/gitignoreWorker'
 import { cacheSvnInfoMetadata, getCachedSvnInfoMetadata, type SvnInfoMetadata } from '@/utils/svnInfoCache'
@@ -9,12 +10,15 @@ import { cacheWorkspaceSnapshot, getWorkspaceSnapshot, invalidateWorkspaceSnapsh
 import type { SvnInfo } from '@/types'
 
 let workspaceRequestGeneration = 0
-let pendingRequest: { path: string; generation: number; force: boolean; promise: Promise<boolean> } | null = null
+let pendingRequest: { path: string; generation: number; force: boolean; background: boolean; promise: Promise<boolean> } | null = null
+// The status failure last reported to the user, so that background polls report
+// it once and clear it on recovery without touching errors from other operations.
+let lastStatusError: string | null = null
 let lastRefresh: { path: string; generation: number; timestamp: number } | null = null
 
-function trackRequest(path: string, operation: () => Promise<boolean>, force = false): Promise<boolean> {
+function trackRequest(path: string, operation: () => Promise<boolean>, force = false, background = false): Promise<boolean> {
   const promise = operation()
-  const request = { path, generation: workspaceRequestGeneration, force, promise }
+  const request = { path, generation: workspaceRequestGeneration, force, background, promise }
   pendingRequest = request
   request.promise = promise.then(success => {
     if (success && request.generation === workspaceRequestGeneration) {
@@ -85,7 +89,7 @@ async function loadWorkspaceInfo(path: string, isCurrent: () => boolean): Promis
   if (!isCurrent()) return null
 
   const metadata = cachedMetadata || (freshInfo ? toSvnInfoMetadata(freshInfo) : null)
-  if (!metadata) throw new Error('无法获取 SVN 工作区元信息')
+  if (!metadata) throw new Error(i18n.global.t('workspace.svnInfoUnavailable'))
   if (!cachedMetadata && freshInfo) cacheSvnInfoMetadata(path, metadata)
 
   return { ...metadata, revision }
@@ -105,6 +109,16 @@ function requestWorkspaceInfo(path: string, isCurrent: () => boolean): Promise<I
 export function useWorkspace() {
   const workspaceStore = useWorkspaceStore()
 
+  function clearStatusError() {
+    lastStatusError = null
+    workspaceStore.setError(null)
+  }
+
+  function reportStatusError(message: string) {
+    lastStatusError = message
+    workspaceStore.setError(message)
+  }
+
   async function performLoadWorkspace(path: string): Promise<boolean> {
     const generation = ++workspaceRequestGeneration
     const previousPath = workspaceStore.currentPath
@@ -119,7 +133,7 @@ export function useWorkspace() {
     )
 
     workspaceStore.setLoading(true)
-    workspaceStore.setError(null)
+    clearStatusError()
 
     // 提前设置 currentPath，让依赖工作区路径的视图尽早切换。
     workspaceStore.setCurrentPath(path, false)
@@ -158,15 +172,15 @@ export function useWorkspace() {
         workspaceStore.setStatusList(snapshot.statusList)
         workspaceStore.setSvnInfo(snapshot.svnInfo)
         workspaceStore.setStatusIsStale(true)
-        workspaceStore.setError(String(err))
+        reportStatusError(String(err))
         return false
       }
       if (previousPath) workspaceStore.setCurrentPath(previousPath, false)
-      else workspaceStore.clearWorkspace()
+      else workspaceStore.resetWorkspaceState()
       workspaceStore.setStatusList(previousStatusList)
       workspaceStore.setSvnInfo(previousSvnInfo)
       workspaceStore.setStatusIsStale(previousStatusIsStale)
-      workspaceStore.setError(String(err))
+      reportStatusError(String(err))
       return false
     } finally {
       if (isCurrentGeneration()) workspaceStore.setLoading(false)
@@ -192,7 +206,7 @@ export function useWorkspace() {
     return loadWorkspace(path)
   }
 
-  async function performRefreshStatus(force = false): Promise<boolean> {
+  async function performRefreshStatus(force = false, background = false): Promise<boolean> {
     if (!workspaceStore.currentPath) return false
 
     const generation = ++workspaceRequestGeneration
@@ -202,7 +216,7 @@ export function useWorkspace() {
     )
 
     workspaceStore.setLoading(true)
-    workspaceStore.setError(null)
+    if (!background) clearStatusError()
     try {
       const statusRequest = svnStatus(path, force)
       const infoRequest = requestWorkspaceInfo(path, isCurrent)
@@ -220,10 +234,15 @@ export function useWorkspace() {
       workspaceStore.setSvnInfo(info)
       workspaceStore.setStatusIsStale(false)
       cacheWorkspaceSnapshot(path, filteredStatus, info, useSettings().settings.gitignoreEnabled)
+      if (lastStatusError !== null) {
+        if (workspaceStore.error === lastStatusError) workspaceStore.setError(null)
+        lastStatusError = null
+      }
       return true
     } catch (err) {
       if (!isCurrent()) return false
-      workspaceStore.setError(String(err))
+      const message = String(err)
+      if (!background || message !== lastStatusError) reportStatusError(message)
       return false
     } finally {
       if (isCurrent()) workspaceStore.setLoading(false)
@@ -231,7 +250,7 @@ export function useWorkspace() {
   }
 
   function loadWorkspace(path: string): Promise<boolean> {
-    if (pendingRequest?.path === path && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
+    if (pendingRequest?.path === path && !pendingRequest.background && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
     return trackRequest(path, () => performLoadWorkspace(path))
   }
 
@@ -259,8 +278,17 @@ export function useWorkspace() {
     if (pendingRequest?.path === path && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
     if (lastRefresh?.path === path && lastRefresh.generation === workspaceRequestGeneration
       && Date.now() - lastRefresh.timestamp < maxAgeMs) return Promise.resolve(true)
-    return trackRequest(path, () => performRefreshStatus(false))
+    return trackRequest(path, () => performRefreshStatus(false, true), false, true)
   }
 
-  return { loadWorkspace, openWorkspace, restoreLastWorkspace, refreshStatus, refreshStatusAfterMutation, refreshStatusIfStale }
+  // A failed launch path falls back to the last workspace; keep its error visible
+  // because that fallback's own load would otherwise clear it.
+  async function openStartupWorkspace(launchPath: string | null): Promise<void> {
+    if (launchPath && await loadWorkspace(launchPath)) return
+    const launchError = launchPath ? workspaceStore.error : null
+    await restoreLastWorkspace()
+    if (launchError && !workspaceStore.error) reportStatusError(launchError)
+  }
+
+  return { loadWorkspace, openWorkspace, restoreLastWorkspace, openStartupWorkspace, refreshStatus, refreshStatusAfterMutation, refreshStatusIfStale }
 }

@@ -83,6 +83,7 @@ export default {
     addWorkspace: '添加工作区',
     removeWorkspace: '从列表中移除',
     selectWorkspaceTitle: '选择 SVN 工作区目录',
+    svnInfoUnavailable: '无法获取 SVN 工作区元信息',
     repositoryInfo: '仓库信息',
     noRepositoryInfo: '暂无仓库信息',
     fileStatus: '文件状态',
