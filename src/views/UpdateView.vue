@@ -197,7 +197,8 @@ const loadUpdateState = async (force = false, background = false) => {
   loading.value = true
   try {
     const refreshed = await (force ? refreshStatusAfterMutation() : refreshStatusIfStale(updateStateIntervalMs))
-    if (!isCurrent() || !refreshed) return
+    // Without a known local revision, every remote commit would look incoming.
+    if (!isCurrent() || !refreshed || !workspaceStore.svnInfo) return
     const info = await svnRemoteInfo(requestedPath)
     if (!isCurrent()) return
     remoteRevision.value = info.revision

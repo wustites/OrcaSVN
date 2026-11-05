@@ -32,7 +32,7 @@ function harness() {
       refreshStatusAfterMutation: async () => {
         calls.push('refresh')
         await refresh.promise
-        store.svnInfo = { revision: 2 }
+        store.svnInfo = store.revisionUnavailable ? null : { revision: 2 }
         store.statusList = [{ path: 'conflict.txt', status_code: 'conflicted' }]
         return true
       },
@@ -104,4 +104,15 @@ test('completion in a different workspace does not refresh that workspace', asyn
   h.update.resolve()
   await pending
   assert.deepEqual(h.calls, ['update'])
+})
+
+test('an unknown local revision does not treat remote commits as incoming', async () => {
+  const h = harness()
+  h.store.revisionUnavailable = true
+  h.lifecycle.activate()
+  const pending = h.doUpdate()
+  h.update.resolve()
+  h.refresh.resolve()
+  await pending
+  assert.deepEqual(h.calls, ['update', 'refresh'])
 })

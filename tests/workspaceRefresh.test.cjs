@@ -20,18 +20,20 @@ function harness() {
     setLoading(value) { this.isLoading = value },
     setError(value) { this.error = value },
     setGitignorePatterns(value) { this.gitignorePatterns = value },
-    setGitignoreMtime() {}, setGitignoreWorkspacePath() {}, rememberWorkspace() {},
+    setGitignoreMtime() {}, setGitignoreWorkspacePath() {},
+    remembered: [], rememberWorkspace(path) { this.remembered.push(path) },
     lastWorkspacePath: null,
     getLastWorkspacePath() { return this.lastWorkspacePath },
     clearWorkspace() { this.lastWorkspacePath = null; this.resetWorkspaceState() },
     resetWorkspaceState() { this.currentPath = null; this.error = null },
   }
   let filter = async list => list
+  let localRevision = async () => 12
   const mocks = {
     '@/stores/workspace': { useWorkspaceStore: () => store },
     '@/api/svn': {
       svnStatus: (path, force = false) => { const request = { path, force, ...deferred() }; requests.push(request); return request.promise },
-      svnLocalRevision: async () => 12,
+      svnLocalRevision: () => localRevision(),
     },
     '@tauri-apps/plugin-dialog': {},
     '@/composables/useSettings': { useSettings: () => ({ settings: { gitignoreEnabled: false } }) },
@@ -44,7 +46,7 @@ function harness() {
   const context = { exports: {}, require: name => { assert.ok(name in mocks, name); return mocks[name] } }
   const code = ts.transpileModule(fs.readFileSync('src/composables/useWorkspace.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
   vm.runInNewContext(code, context)
-  return { store, requests, snapshots, writes, invalidations, useWorkspace: context.exports.useWorkspace, setFilter: value => { filter = value } }
+  return { store, requests, snapshots, writes, invalidations, useWorkspace: context.exports.useWorkspace, setFilter: value => { filter = value }, setLocalRevision: value => { localRevision = value } }
 }
 
 test('separate consumers share an in-flight refresh and background polls reuse fresh state', async () => {
@@ -274,4 +276,54 @@ test('a successful poll of the fallback workspace keeps the failed launch path e
   h.requests[2].resolve([])
   assert.equal(await poll, true)
   assert.match(h.store.error, /launch failed/)
+})
+
+test('a failed revision read still opens the workspace and reports the error', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  h.store.currentPath = null
+  h.store.lastWorkspacePath = '/last'
+  h.setLocalRevision(async () => { throw new Error('no revision') })
+  const pending = workspace.loadWorkspace('/b')
+  h.requests[0].resolve([{ path: 'fresh.ts' }])
+  assert.equal(await pending, true)
+  assert.equal(h.store.currentPath, '/b')
+  assert.equal(h.store.statusList[0].path, 'fresh.ts')
+  assert.equal(h.store.statusIsStale, false)
+  assert.equal(h.store.svnInfo, null)
+  assert.deepEqual(h.store.remembered, ['/b'])
+  assert.match(h.store.error, /no revision/)
+  assert.equal(h.writes.length, 0)
+})
+
+test('a failed revision read keeps the snapshot revision and new status', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  h.snapshots.set('/b', { statusList: [{ path: 'cached.ts' }], svnInfo: { revision: 11 } })
+  h.setLocalRevision(async () => { throw new Error('no revision') })
+  const pending = workspace.loadWorkspace('/b')
+  h.requests[0].resolve([{ path: 'fresh.ts' }])
+  assert.equal(await pending, true)
+  assert.equal(h.store.statusList[0].path, 'fresh.ts')
+  assert.equal(h.store.svnInfo.revision, 11)
+  assert.match(h.store.error, /no revision/)
+})
+
+test('a refresh with a failed revision read updates status, keeps the revision and retries', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  h.store.svnInfo = { revision: 11 }
+  h.setLocalRevision(async () => { throw new Error('no revision') })
+  const failed = workspace.refreshStatus()
+  h.requests[0].resolve([{ path: 'fresh.ts' }])
+  assert.equal(await failed, false)
+  assert.equal(h.store.statusList[0].path, 'fresh.ts')
+  assert.equal(h.store.statusIsStale, false)
+  assert.equal(h.store.svnInfo.revision, 11)
+  assert.match(h.store.error, /no revision/)
+
+  h.setLocalRevision(async () => 12)
+  const retry = workspace.refreshStatusIfStale(60_000)
+  assert.equal(h.requests.length, 2)
+  h.requests[1].resolve([])
+  assert.equal(await retry, true)
+  assert.equal(h.store.svnInfo.revision, 12)
+  assert.equal(h.store.error, null)
 })

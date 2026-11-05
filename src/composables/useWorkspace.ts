@@ -154,16 +154,22 @@ export function useWorkspace() {
       workspaceStore.setStatusList(status)
 
       const [infoResult] = await Promise.all([infoRequest, gitignoreRequest])
-      if (!infoResult.ok) throw infoResult.error
-      const info = infoResult.info
-      if (!isCurrent() || !info) return false
+      if (!isCurrent() || (infoResult.ok && !infoResult.info)) return false
       const filteredStatus = await filterByGitignoreAsync(status, workspaceStore.gitignorePatterns)
       if (!isCurrent()) return false
       workspaceStore.setStatusList(filteredStatus)
-      workspaceStore.setSvnInfo(info)
       workspaceStore.setStatusIsStale(false)
-      cacheWorkspaceSnapshot(path, filteredStatus, info, useSettings().settings.gitignoreEnabled)
       workspaceStore.rememberWorkspace(path)
+      // The status scan succeeded, so the workspace is usable. Revision and
+      // repository details are informational: report the failure but stay open.
+      if (!infoResult.ok) {
+        reportStatusError(path, String(infoResult.error))
+        return true
+      }
+      if (infoResult.info) {
+        workspaceStore.setSvnInfo(infoResult.info)
+        cacheWorkspaceSnapshot(path, filteredStatus, infoResult.info, useSettings().settings.gitignoreEnabled)
+      }
       return true
     } catch (err) {
       if (!isCurrent()) return false
@@ -225,15 +231,17 @@ export function useWorkspace() {
       if (!isCurrent()) return false
       workspaceStore.setStatusList(status)
       const [infoResult] = await Promise.all([infoRequest, gitignoreRequest])
-      if (!infoResult.ok) throw infoResult.error
-      const info = infoResult.info
-      if (!isCurrent() || !info) return false
+      if (!isCurrent() || (infoResult.ok && !infoResult.info)) return false
       const filteredStatus = await filterByGitignoreAsync(status, workspaceStore.gitignorePatterns)
       if (!isCurrent()) return false
       workspaceStore.setStatusList(filteredStatus)
-      workspaceStore.setSvnInfo(info)
       workspaceStore.setStatusIsStale(false)
-      cacheWorkspaceSnapshot(path, filteredStatus, info, useSettings().settings.gitignoreEnabled)
+      // Keep the status just scanned; the caller learns the revision is not current.
+      if (!infoResult.ok) throw infoResult.error
+      if (infoResult.info) {
+        workspaceStore.setSvnInfo(infoResult.info)
+        cacheWorkspaceSnapshot(path, filteredStatus, infoResult.info, useSettings().settings.gitignoreEnabled)
+      }
       if (lastStatusError?.path === path) {
         if (workspaceStore.error === lastStatusError.message) workspaceStore.setError(null)
         lastStatusError = null

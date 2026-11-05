@@ -710,10 +710,17 @@ pub async fn info(path: &str) -> Result<SvnInfo, SvnError> {
 pub async fn local_revision(path: &str) -> Result<u64, SvnError> {
     let args = vec!["info", "--show-item", "revision"];
     let output = execute_svn(&args, Some(path)).await?;
+    let output = output.trim();
+    // SVN prints nothing and exits successfully when the node has no base revision,
+    // as for an uncommitted added or copied directory. Do not report 0 for every
+    // such case: `svn info --xml` falls back to the last-changed revision if there
+    // is one, and 0 would make all history look like pending updates.
+    if output.is_empty() {
+        return Ok(info(path).await?.revision);
+    }
     output
-        .trim()
         .parse()
-        .map_err(|_| SvnError::ParseError(format!("无法解析本地工作副本版本：{}", output.trim())))
+        .map_err(|_| SvnError::ParseError(format!("无法解析本地工作副本版本：{output}")))
 }
 
 fn percent_decode(value: &str) -> Option<String> {
@@ -1308,6 +1315,65 @@ mod tests {
         assert!(!patch_output_has_conflicts(
             "U         src/main.rs\n> applied hunk with offset 2"
         ));
+    }
+
+    #[test]
+    fn info_without_a_base_revision_uses_the_last_changed_revision() {
+        let info = super::parse_info_xml(
+            r#"<info><entry kind="dir" path="." revision="Resource is not under version control.">
+<url>file:///repo</url><repository><root>file:///repo</root></repository>
+<commit revision="7"><author>a</author></commit></entry></info>"#,
+        )
+        .unwrap();
+        assert_eq!(info.revision, 7);
+    }
+
+    // Uses an isolated local repository; never touches a user's working copy.
+    #[cfg(unix)]
+    #[test]
+    fn scheduled_added_directory_opens_with_revision_zero() {
+        use super::{info, local_revision};
+        use std::process::Command;
+        if Command::new("svnadmin").arg("--version").output().is_err() {
+            eprintln!("Skipping local repository test: svnadmin is unavailable");
+            return;
+        }
+        let directory = std::env::temp_dir().join(format!(
+            "orcasvn-added-root-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&directory).unwrap();
+        let repository = directory.join("repository");
+        let wc = directory.join("wc");
+        let added = wc.join("added");
+        assert!(Command::new("svnadmin")
+            .arg("create")
+            .arg(&repository)
+            .status()
+            .unwrap()
+            .success());
+        assert!(Command::new("svn")
+            .args(["checkout", "-q"])
+            .arg(format!("file://{}", repository.display()))
+            .arg(&wc)
+            .status()
+            .unwrap()
+            .success());
+        assert!(Command::new("svn")
+            .args(["mkdir", "-q"])
+            .arg(&added)
+            .status()
+            .unwrap()
+            .success());
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let path = added.to_str().unwrap();
+        assert_eq!(runtime.block_on(local_revision(path)).unwrap(), 0);
+        assert_eq!(runtime.block_on(info(path)).unwrap().revision, 0);
+        std::fs::remove_dir_all(&directory).unwrap();
     }
 
     // Uses an isolated local repository; never touches a user's working copy.
