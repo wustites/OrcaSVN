@@ -23,3 +23,10 @@ test('ignores equal, older, prerelease and malformed tags', () => {
   assert.equal(isNewerVersion('v0.7.0-beta.1', '0.6.4'), false)
   assert.equal(isNewerVersion('nightly', '0.6.4'), false)
 })
+
+test('prerelease builds are offered the matching or a newer stable release', () => {
+  assert.equal(isNewerVersion('v0.6.5', '0.6.5-rc.1'), true)
+  assert.equal(isNewerVersion('v0.6.6', '0.6.5-rc.1'), true)
+  assert.equal(isNewerVersion('v0.6.4', '0.6.5-rc.1'), false)
+  assert.equal(isNewerVersion('v0.6.5-rc.2', '0.6.5-rc.1'), false)
+})

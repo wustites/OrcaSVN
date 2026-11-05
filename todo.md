@@ -109,3 +109,13 @@
 - Windows 安装后新开终端执行 `orcasvn`，卸载后 PATH 不残留；Linux deb/rpm 同样验证。
 - macOS 的 `.app`/dmg 无安装脚本，需用户手动 `ln -s /Applications/OrcaSVN.app/Contents/MacOS/OrcaSVN /usr/local/bin/orcasvn`，可考虑在设置页提供“安装命令行工具”。
 - 程序已运行时再次执行 `orcasvn <path>` 会启动第二个实例；如需复用窗口可接入 single-instance 插件。
+
+## P2 - v0.6.5-rc.1 审查遗留问题
+
+状态：待修复。来自 `v0.6.4...main` 的发布前审查，判定不阻塞预发布。
+
+- 更新结果误报（`src/views/UpdateView.vue`，`doUpdate`）：提示依据 `visibleConflicts`，而它在 `statusList` 没有冲突项时为空。更新后的状态刷新失败，或冲突文件被 gitignore 过滤时，有冲突也会显示“更新成功”。应改为依据 `svn update` 实际返回的冲突。
+- 差异行分类错误（`src/utils/diffDocument.ts`，`classify`）：hunk 内以 `---` 或 `+++` 开头的内容行（如删除 `-- note`、新增 `++i`）被当成元信息，样式错误且增删统计偏低。分类应使用 hunk 内状态。
+- 差异视图宽度（`src/components/DiffViewer.vue`，`gutterWidth`）：非紧凑模式为 130，实际列宽为 56+56+34=146，少算 16px，最长行末尾可能被裁掉。
+- 紧凑模式行号（`src/components/DiffViewer.vue`）：列宽 35px、左右内边距各 8px，三位数以上行号会超出内容区。按 CSS 推算（字号约 12px）到五位数才开始重叠，主要影响外观，未实际验证。
+- `svn add` 性能（`src-tauri/src/svn/operations.rs`，`clear_autodetected_binary_mime`）：每次添加都先递归查询整个工作副本的 `svn:auto-props`。应先做范围内的 `svn:mime-type` 查询，确认有误判候选后再查 auto-props。

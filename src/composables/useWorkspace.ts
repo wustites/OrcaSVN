@@ -13,7 +13,7 @@ let workspaceRequestGeneration = 0
 let pendingRequest: { path: string; generation: number; force: boolean; background: boolean; promise: Promise<boolean> } | null = null
 // The status failure last reported to the user, so that background polls report
 // it once and clear it on recovery without touching errors from other operations.
-let lastStatusError: string | null = null
+let lastStatusError: { path: string; message: string } | null = null
 let lastRefresh: { path: string; generation: number; timestamp: number } | null = null
 
 function trackRequest(path: string, operation: () => Promise<boolean>, force = false, background = false): Promise<boolean> {
@@ -114,8 +114,8 @@ export function useWorkspace() {
     workspaceStore.setError(null)
   }
 
-  function reportStatusError(message: string) {
-    lastStatusError = message
+  function reportStatusError(path: string, message: string) {
+    lastStatusError = { path, message }
     workspaceStore.setError(message)
   }
 
@@ -172,7 +172,7 @@ export function useWorkspace() {
         workspaceStore.setStatusList(snapshot.statusList)
         workspaceStore.setSvnInfo(snapshot.svnInfo)
         workspaceStore.setStatusIsStale(true)
-        reportStatusError(String(err))
+        reportStatusError(path, String(err))
         return false
       }
       if (previousPath) workspaceStore.setCurrentPath(previousPath, false)
@@ -180,7 +180,7 @@ export function useWorkspace() {
       workspaceStore.setStatusList(previousStatusList)
       workspaceStore.setSvnInfo(previousSvnInfo)
       workspaceStore.setStatusIsStale(previousStatusIsStale)
-      reportStatusError(String(err))
+      reportStatusError(path, String(err))
       return false
     } finally {
       if (isCurrentGeneration()) workspaceStore.setLoading(false)
@@ -234,15 +234,15 @@ export function useWorkspace() {
       workspaceStore.setSvnInfo(info)
       workspaceStore.setStatusIsStale(false)
       cacheWorkspaceSnapshot(path, filteredStatus, info, useSettings().settings.gitignoreEnabled)
-      if (lastStatusError !== null) {
-        if (workspaceStore.error === lastStatusError) workspaceStore.setError(null)
+      if (lastStatusError?.path === path) {
+        if (workspaceStore.error === lastStatusError.message) workspaceStore.setError(null)
         lastStatusError = null
       }
       return true
     } catch (err) {
       if (!isCurrent()) return false
       const message = String(err)
-      if (!background || message !== lastStatusError) reportStatusError(message)
+      if (!background || message !== lastStatusError?.message) reportStatusError(path, message)
       return false
     } finally {
       if (isCurrent()) workspaceStore.setLoading(false)
@@ -287,7 +287,7 @@ export function useWorkspace() {
     if (launchPath && await loadWorkspace(launchPath)) return
     const launchError = launchPath ? workspaceStore.error : null
     await restoreLastWorkspace()
-    if (launchError && !workspaceStore.error) reportStatusError(launchError)
+    if (launchPath && launchError && !workspaceStore.error) reportStatusError(launchPath, launchError)
   }
 
   return { loadWorkspace, openWorkspace, restoreLastWorkspace, openStartupWorkspace, refreshStatus, refreshStatusAfterMutation, refreshStatusIfStale }

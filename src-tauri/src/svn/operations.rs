@@ -350,7 +350,10 @@ pub async fn commit_with_options(
         }
     }
 
-    delete_missing(path, &missing).await?;
+    // `svn delete` may have scheduled earlier targets before failing on a later one.
+    if let Err(error) = delete_missing(path, &missing).await {
+        return restore_missing(path, &missing, error).await;
+    }
     // Deleting a file that was only scheduled for addition cancels the add, so
     // it is no longer versioned and cannot be a commit target.
     let scheduled = match status(path).await {

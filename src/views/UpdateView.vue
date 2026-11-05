@@ -181,14 +181,10 @@ const applyCachedState = (path: string) => {
   return true
 }
 
-// Polls report a failure once and clear it on recovery, so a dismissed error stays dismissed.
-let lastUpdateError: string | null = null
-
-const reportUpdateError = (err: unknown, background = false) => {
-  const message = String(err)
-  if (!background || message !== lastUpdateError) workspaceStore.setError(message)
-  lastUpdateError = message
-}
+// Polls report a failure once and clear it on recovery, so a dismissed error stays
+// dismissed. Failures of `svn update` itself are not tracked here: a later poll
+// succeeding says nothing about them, so only the user can dismiss those.
+let lastPollError: string | null = null
 
 const loadUpdateState = async (force = false, background = false) => {
   // A completed update must refresh shared workspace state even after navigation.
@@ -220,13 +216,15 @@ const loadUpdateState = async (force = false, background = false) => {
         changed_paths: [...(entry.changed_paths || [])],
       })),
     })
-    if (lastUpdateError !== null) {
-      if (workspaceStore.error === lastUpdateError) workspaceStore.setError(null)
-      lastUpdateError = null
+    if (lastPollError !== null) {
+      if (workspaceStore.error === lastPollError) workspaceStore.setError(null)
+      lastPollError = null
     }
   } catch (err) {
     if (!isCurrent()) return
-    reportUpdateError(err, background)
+    const message = String(err)
+    if (!background || message !== lastPollError) workspaceStore.setError(message)
+    lastPollError = message
   } finally {
     if (generation === updateRequestGeneration) loading.value = false
   }
@@ -251,7 +249,7 @@ const doUpdate = async () => {
     }
   } catch (err) {
     if (workspaceStore.currentPath !== requestedPath) return
-    reportUpdateError(err)
+    workspaceStore.setError(String(err))
   } finally {
     updating.value = false
   }

@@ -55,12 +55,16 @@ fn launch_workspace_arg(args: impl Iterator<Item = PathBuf>, cwd: &Path) -> Opti
     if !path.is_dir() {
         return None;
     }
-    let path = path.to_string_lossy().into_owned();
-    Some(
-        path.strip_prefix(r"\\?\")
-            .map(str::to_string)
-            .unwrap_or(path),
-    )
+    Some(strip_verbatim_prefix(&path.to_string_lossy()))
+}
+
+/// Windows `canonicalize` returns verbatim paths, which SVN does not accept.
+fn strip_verbatim_prefix(path: &str) -> String {
+    if let Some(unc) = path.strip_prefix(r"\\?\UNC\") {
+        format!(r"\\{unc}")
+    } else {
+        path.strip_prefix(r"\\?\").unwrap_or(path).to_string()
+    }
 }
 
 #[tauri::command]
@@ -830,8 +834,18 @@ mod unversioned_stash_tests {
 
 #[cfg(test)]
 mod launch_arg_tests {
-    use super::launch_workspace_arg;
+    use super::{launch_workspace_arg, strip_verbatim_prefix};
     use std::path::PathBuf;
+
+    #[test]
+    fn strips_verbatim_prefixes_and_keeps_unc_roots() {
+        assert_eq!(strip_verbatim_prefix(r"\\?\C:\wc"), r"C:\wc");
+        assert_eq!(
+            strip_verbatim_prefix(r"\\?\UNC\server\share\wc"),
+            r"\\server\share\wc"
+        );
+        assert_eq!(strip_verbatim_prefix("/home/wc"), "/home/wc");
+    }
 
     #[test]
     fn resolves_first_directory_argument_and_skips_flags() {

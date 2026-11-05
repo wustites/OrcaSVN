@@ -260,3 +260,18 @@ test('a failed launch path stays reported after falling back to the last workspa
   assert.equal(h.store.currentPath, '/last')
   assert.match(h.store.error, /launch failed/)
 })
+
+test('a successful poll of the fallback workspace keeps the failed launch path error', async () => {
+  const h = harness(), workspace = h.useWorkspace()
+  h.store.currentPath = null
+  h.store.lastWorkspacePath = '/last'
+  const pending = workspace.openStartupWorkspace('/launch')
+  h.requests[0].reject(new Error('launch failed'))
+  for (let i = 0; i < 20 && h.requests.length < 2; i++) await new Promise(resolve => setImmediate(resolve))
+  h.requests[1].resolve([])
+  await pending
+  const poll = workspace.refreshStatusIfStale(0)
+  h.requests[2].resolve([])
+  assert.equal(await poll, true)
+  assert.match(h.store.error, /launch failed/)
+})
