@@ -9,4 +9,4 @@ mod status_watch;
 
 pub use executor::configure_svn_executable;
 pub use operations::*;
-pub use status_cache::cached_status;
+pub use status_cache::{cached_latest_modified, cached_status};

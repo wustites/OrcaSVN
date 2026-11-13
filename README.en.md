@@ -6,7 +6,7 @@ OrcaSVN is a cross-platform SVN desktop client built with Tauri, Rust, and Vue 3
 
 ![OrcaSVN application interface](docs/images/orcasvn-workspace.png)
 
-Development UI captured before the 0.6.3 release on 2026-10-02 with example workspace data. [Dark theme](docs/images/orcasvn-workspace-dark.png).
+Multi-project workspace, changelist groups, and diff preview with entirely fictional demo data. No local projects or sensitive information are shown. [Dark theme](docs/images/orcasvn-workspace-dark.png) · [Demo data and screenshot generation](docs/screenshot-demo.md).
 
 Current stable version: **0.6.3**. See the [release notes](docs/releases/v0.6.3.md), [release workflow](docs/releasing.md), and [performance comparison with v0.6.2](docs/workspace-startup-benchmark.md).
 

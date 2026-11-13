@@ -53,10 +53,16 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 ## 发布构建
 
 ```bash
-npm run tauri build
+npm run release
 ```
 
-安装包和二进制产物位于 `src-tauri/target/release/`。推送 `vX.Y.Z` 标签（例如 `v0.6.3`）时，正式发布流水线校验全部版本文件、运行三平台检查并打包，全部成功后公开 Release 并标记为 Latest，详见[发布流程](docs/releasing.md)。预发布标签（例如 `v0.6.3-rc.1`）由独立流水线处理，详见[预发布说明](docs/prerelease.md)。
+Windows 完整构建成功后，最新程序、安装包和免安装 ZIP 会自动汇总到项目根目录 `release/`，同时生成包含构建时间、产物路径和 SHA-256 的 `release-manifest.json`。原来的 `npm run tauri -- build` 同样会自动汇总；仅运行 `npm run build` 只编译前端，不生成桌面发布包。直接调用 `cargo build` 或 `npx tauri build` 不经过本项目的发布汇总脚本。
+
+`release/` 只更新清单记录的自动生成文件，用户另行放入的文件会保留。同名的非托管文件会阻止覆盖并提示处理。构建失败不会替换已有发布文件；先生成完整暂存包，再更新最新目录。旧版本正在运行导致文件占用时，旧目录可能保留为 `.release-previous-*`，退出旧程序后可自行删除。
+
+建议从 `release/OrcaSVN.exe` 运行程序，避免锁住 Cargo 编译目标。若旧程序仍从 `src-tauri/target/release/` 运行，请先退出，或设置 `CARGO_TARGET_DIR` 到另一个构建缓存目录后再构建；相对目录以 `src-tauri/` 为基准。`--no-bundle` 只汇总程序及免安装包；调试构建、自定义 profile 和非 Windows 平台保留 Tauri 默认输出，不更新根目录 `release/`。
+
+推送 `vX.Y.Z` 标签（例如 `v0.6.3`）时，正式发布流水线校验全部版本文件、运行三平台检查并打包，全部成功后公开 Release 并标记为 Latest，详见[发布流程](docs/releasing.md)。预发布标签（例如 `v0.6.3-rc.1`）由独立流水线处理，详见[预发布说明](docs/prerelease.md)。
 
 ## 排查问题
 

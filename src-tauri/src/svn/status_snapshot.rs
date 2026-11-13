@@ -10,8 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
-// Older snapshots did not track administration outside the selected directory.
-const VERSION: u32 = 6;
+// 旧快照没有保存 changelist，升级版本后重新读取 SVN 分组信息。
+const VERSION: u32 = 7;
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_FILES: usize = 500_000;
 
@@ -55,6 +55,37 @@ impl Inventory {
         let mut inventory = self.clone();
         inventory.journal = None;
         inventory
+    }
+
+    /// 复用状态扫描中的文件时间，排除目录占位和 SVN 管理数据。
+    pub fn latest_modified_ms(&self) -> Option<u64> {
+        self.latest_modified_ms_with_overrides(&BTreeMap::new())
+    }
+
+    /// 通知路径只覆盖展示用的时间，不修改状态校验所依赖的完整基线。
+    pub fn latest_modified_ms_with_overrides(
+        &self,
+        overrides: &BTreeMap<String, Option<u128>>,
+    ) -> Option<u64> {
+        let is_workspace_file = |path: &str| {
+            !path
+                .split('/')
+                .any(|part| part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn"))
+        };
+        self.files
+            .iter()
+            .filter(|(path, stamp)| stamp.kind != 0 && is_workspace_file(path))
+            .filter_map(|(path, stamp)| {
+                overrides.get(path).copied().unwrap_or(Some(stamp.modified))
+            })
+            .chain(
+                overrides
+                    .iter()
+                    .filter(|(path, _)| is_workspace_file(path))
+                    .filter_map(|(_, modified)| *modified),
+            )
+            .max()
+            .and_then(|nanos| u64::try_from(nanos / 1_000_000).ok())
     }
 
     #[cfg(test)]
@@ -464,11 +495,17 @@ pub(super) struct Scan {
 /// configuration or administration outside a selected subtree, so check those
 /// explicitly. Directory/administration changes retain the full-scan fallback.
 #[cfg(windows)]
+pub(super) struct WatchChanges {
+    pub paths: Vec<String>,
+    pub modified: BTreeMap<String, Option<u128>>,
+}
+
+#[cfg(windows)]
 pub(super) fn watch_changes(
     root: &Path,
     previous: &Inventory,
     paths: Vec<String>,
-) -> io::Result<Vec<String>> {
+) -> io::Result<WatchChanges> {
     if configuration()? != previous.configuration
         || ancestor_administration(root)? != previous.administration
     {
@@ -476,6 +513,7 @@ pub(super) fn watch_changes(
             "SVN configuration or ancestor administration changed",
         ));
     }
+    let mut modified = BTreeMap::new();
     for path in &paths {
         let before_directory = previous
             .files
@@ -493,12 +531,19 @@ pub(super) fn watch_changes(
             Ok(metadata) if metadata.is_dir() || metadata.file_type().is_symlink() => {
                 return Err(io::Error::other("directory or link requires metadata scan"));
             }
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+            Ok(metadata) => {
+                modified.insert(
+                    path.clone(),
+                    Some(file_stamp(&metadata, &root.join(path))?.modified),
+                );
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                modified.insert(path.clone(), None);
+            }
             Err(error) => return Err(error),
         }
     }
-    Ok(paths)
+    Ok(WatchChanges { paths, modified })
 }
 
 /// Whether an entry changed at or after `since`. A scan running alongside SVN
@@ -912,6 +957,60 @@ mod tests {
             journal: None,
         }
     }
+
+    #[test]
+    fn latest_modified_uses_file_milliseconds_and_excludes_svn_administration() {
+        let mut snapshot = inventory(2);
+        snapshot.files[0].1.modified = 1_700_000_000_123_456_789;
+        snapshot.files[1].1.modified = 1_700_000_001_987_654_321;
+        let mut administrative = snapshot.files[1].1.clone();
+        administrative.modified = 1_800_000_000_000_000_000;
+        snapshot
+            .files
+            .push((".svn/wc.db".into(), administrative.clone()));
+        snapshot
+            .files
+            .push(("nested/_svn/entries".into(), administrative.clone()));
+        snapshot
+            .administration
+            .insert(PathBuf::from("outside/.svn/wc.db"), administrative.clone());
+        administrative.kind = 0;
+        snapshot.files.push(("directory".into(), administrative));
+
+        assert_eq!(snapshot.latest_modified_ms(), Some(1_700_000_001_987));
+        snapshot.files.drain(..2);
+        assert_eq!(snapshot.latest_modified_ms(), None);
+        assert_eq!(inventory(0).latest_modified_ms(), None);
+    }
+
+    #[test]
+    fn latest_modified_overlay_handles_changes_and_deletions_without_changing_baseline() {
+        let mut snapshot = inventory(2);
+        snapshot.files[0].1.modified = 10_000_000;
+        snapshot.files[1].1.modified = 20_000_000;
+        let baseline = snapshot.clone();
+        let mut overrides = BTreeMap::from([("file-000".into(), Some(30_000_000))]);
+        assert_eq!(
+            snapshot.latest_modified_ms_with_overrides(&overrides),
+            Some(30)
+        );
+        overrides.insert("file-000".into(), None);
+        assert_eq!(
+            snapshot.latest_modified_ms_with_overrides(&overrides),
+            Some(20)
+        );
+        overrides.insert("new-file".into(), Some(40_000_000));
+        assert_eq!(
+            snapshot.latest_modified_ms_with_overrides(&overrides),
+            Some(40)
+        );
+        overrides.insert("new-file".into(), None);
+        overrides.insert("file-001".into(), None);
+        overrides.insert(".svn/wc.db".into(), Some(50_000_000));
+        assert_eq!(snapshot.latest_modified_ms_with_overrides(&overrides), None);
+        assert_eq!(snapshot, baseline);
+    }
+
     #[test]
     fn parallel_query_certification_rejects_entries_changed_during_the_window() {
         use std::time::Duration;
@@ -1063,6 +1162,7 @@ mod tests {
                         locked: false,
                         history: false,
                         switched: false,
+                        changelist: None,
                     }];
                     write(&directory, &root, files, entries).unwrap();
                 })

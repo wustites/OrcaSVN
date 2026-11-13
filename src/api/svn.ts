@@ -32,6 +32,10 @@ export async function svnStatus(path: string, force = false): Promise<SvnStatus[
   return invoke<SvnStatus[]>('svn_status', { path, force })
 }
 
+export async function workspaceLatestModified(path: string): Promise<number | null> {
+  return invoke<number | null>('workspace_latest_modified', { path })
+}
+
 export async function svnLog(
   path: string,
   limit?: number,
@@ -153,13 +157,14 @@ export async function svnMerge(
   return invoke<CommandResult>('svn_merge', { path, source, revStart, revEnd })
 }
 
-export type OpenWorkspaceTarget = 'explorer' | 'vscode' | 'terminal'
+export type OpenWorkspaceTarget = 'explorer' | 'android-studio' | 'idea' | 'vscode' | 'custom' | 'terminal'
 
 export async function openWorkspaceTarget(
   path: string,
-  target: OpenWorkspaceTarget
+  target: OpenWorkspaceTarget,
+  executablePath?: string
 ): Promise<void> {
-  return invoke<void>('open_workspace_target', { path, target })
+  return invoke<void>('open_workspace_target', { path, target, executablePath: executablePath?.trim() || null })
 }
 
 export async function revealWorkspaceFile(path: string, file: string): Promise<void> {
