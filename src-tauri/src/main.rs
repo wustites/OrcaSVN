@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod svn;
+#[cfg(target_os = "windows")]
+mod windows_editor_launch;
+mod workspace_opener;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
 use serde::{Deserialize, Serialize};
@@ -35,6 +38,10 @@ fn success_output(output: String) -> CommandResult {
 enum OpenTarget {
     Explorer,
     Vscode,
+    #[serde(rename = "android-studio")]
+    AndroidStudio,
+    Idea,
+    Custom,
     Terminal,
 }
 
@@ -75,35 +82,34 @@ async fn configure_svn_executable(executable: Option<String>) -> Result<String, 
 }
 
 #[tauri::command]
-async fn open_workspace_target(path: String, target: OpenTarget) -> Result<(), String> {
+async fn open_workspace_target(
+    path: String,
+    target: OpenTarget,
+    executable_path: Option<String>,
+) -> Result<(), String> {
+    let path = workspace_opener::workspace_directory(&path)?;
     match target {
         OpenTarget::Explorer => open_file_manager(&path),
-        OpenTarget::Vscode => {
-            let mut code_command = Command::new("code");
-            code_command.arg(&path);
-            if spawn_command(code_command).is_ok() {
-                return Ok(());
-            }
-
-            for executable in vscode_candidates() {
-                let mut command = Command::new(executable);
-                command.arg(&path);
-                if spawn_command(command).is_ok() {
-                    return Ok(());
-                }
-            }
-
-            #[cfg(target_os = "macos")]
-            {
-                let mut command = Command::new("open");
-                command.args(["-a", "Visual Studio Code", &path]);
-                if spawn_command(command).is_ok() {
-                    return Ok(());
-                }
-            }
-
-            Err("failed to open workspace: VS Code executable was not found".to_string())
-        }
+        OpenTarget::Vscode => workspace_opener::open_editor(
+            &path,
+            workspace_opener::EditorTarget::Vscode,
+            executable_path.as_deref(),
+        ),
+        OpenTarget::AndroidStudio => workspace_opener::open_editor(
+            &path,
+            workspace_opener::EditorTarget::AndroidStudio,
+            executable_path.as_deref(),
+        ),
+        OpenTarget::Idea => workspace_opener::open_editor(
+            &path,
+            workspace_opener::EditorTarget::Idea,
+            executable_path.as_deref(),
+        ),
+        OpenTarget::Custom => workspace_opener::open_editor(
+            &path,
+            workspace_opener::EditorTarget::Custom,
+            executable_path.as_deref(),
+        ),
         OpenTarget::Terminal => open_terminal(&path),
     }
 }
@@ -169,7 +175,7 @@ fn spawn_command(mut command: Command) -> Result<(), String> {
     command
         .spawn()
         .map(|_| ())
-        .map_err(|e| format!("failed to open workspace: {e}"))
+        .map_err(|e| format!("打开工作区失败：{e}"))
 }
 
 #[tauri::command]
@@ -402,36 +408,6 @@ async fn read_gitignore(path: String) -> Result<Option<GitignoreData>, String> {
     Ok(Some(GitignoreData { content, mtime }))
 }
 
-fn vscode_candidates() -> Vec<PathBuf> {
-    let mut candidates = Vec::new();
-
-    if let Ok(local_app_data) = env::var("LOCALAPPDATA") {
-        candidates
-            .push(PathBuf::from(&local_app_data).join("Programs\\Microsoft VS Code\\Code.exe"));
-        candidates.push(
-            PathBuf::from(&local_app_data)
-                .join("Programs\\Microsoft VS Code Insiders\\Code - Insiders.exe"),
-        );
-    }
-
-    if let Ok(program_files) = env::var("ProgramFiles") {
-        candidates.push(PathBuf::from(&program_files).join("Microsoft VS Code\\Code.exe"));
-        candidates.push(
-            PathBuf::from(&program_files).join("Microsoft VS Code Insiders\\Code - Insiders.exe"),
-        );
-    }
-
-    if let Ok(program_files_x86) = env::var("ProgramFiles(x86)") {
-        candidates.push(PathBuf::from(&program_files_x86).join("Microsoft VS Code\\Code.exe"));
-        candidates.push(
-            PathBuf::from(&program_files_x86)
-                .join("Microsoft VS Code Insiders\\Code - Insiders.exe"),
-        );
-    }
-
-    candidates
-}
-
 #[cfg(target_os = "windows")]
 fn open_terminal(path: &str) -> Result<(), String> {
     let workspace = PathBuf::from(path);
@@ -505,6 +481,8 @@ pub struct SvnStatus {
     pub locked: bool,
     pub history: bool,
     pub switched: bool,
+    #[serde(default)]
+    pub changelist: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -608,6 +586,13 @@ async fn svn_status(
     )
     .await
     .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn workspace_latest_modified(path: String) -> Result<Option<u64>, String> {
+    svn::cached_latest_modified(&path)
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -876,6 +861,7 @@ fn main() {
             svn_update,
             svn_commit,
             svn_status,
+            workspace_latest_modified,
             svn_log,
             svn_incoming_log,
             svn_current_user,

@@ -34,7 +34,7 @@
     </div>
 
     <!-- 工作区主界面 -->
-    <div v-else class="workspace-layout">
+    <div v-else ref="splitContainer" class="workspace-layout" :class="{ 'is-stacked': splitStacked, 'is-resizing': resizingPanels }" :style="{ '--status-panel-width': `${statusPanelWidth}px` }">
       <!-- 左侧面板：工作区信息 -->
       <aside class="left-panel">
         <div class="repository-name">
@@ -122,55 +122,62 @@
             <el-skeleton :rows="6" />
           </div>
           <VirtualViewport v-else-if="filteredFiles.length" ref="fileViewport" class="workspace-files"
-            :item-count="filteredFiles.length" :row-height="fileRowHeight"
+            :item-count="groupedFiles.rows.length" :row-height="fileRowHeight"
             :reset-key="`${workspaceStore.currentPath}|${filter}`" role="list" :aria-label="$t('diff.fileList')">
             <template #default="{ start, end }">
-              <div
-                v-for="(file, index) in filteredFiles.slice(start, end)"
-                :key="file.path"
-                class="file-item"
-                :data-index="start + index"
-                role="listitem"
-                :aria-posinset="start + index + 1"
-                :aria-setsize="filteredFiles.length"
-                :style="{ height: `${fileRowHeight}px` }"
-                :class="{ selected: selectedFile === file.path }"
-                @click="selectFile(file)"
-                @contextmenu.prevent.stop="openFileContextMenu($event, file)"
-              >
-                <span class="file-status" :class="getStatusClass(file.status_code)">
-                  {{ getStatusLabel(file.status_code) }}
-                </span>
-                <button
-                  type="button"
-                  class="file-path"
-                  :title="file.path"
-                  :aria-label="`${file.path}, ${getStatusLabel(file.status_code)}`"
-                  :aria-pressed="selectedFile === file.path"
-                  @click.stop="selectFile(file)"
-                  @keydown.down.prevent="focusFile(start + index + 1)"
-                  @keydown.up.prevent="focusFile(start + index - 1)"
-                  @keydown.home.prevent="focusFile(0)"
-                  @keydown.end.prevent="focusFile(filteredFiles.length - 1)"
-                >{{ file.path }}</button>
-                <div class="file-actions">
-                  <el-tooltip :content="$t('common.diff')" placement="top" :show-after="150">
-                    <span class="file-action-trigger" :title="$t('common.diff')" @click.stop>
-                      <el-button text size="small" :aria-label="$t('common.diff')" @click="viewDiff(file.path)">
-                        <el-icon><Connection /></el-icon>
-                      </el-button>
-                    </span>
-                  </el-tooltip>
-                  <el-tooltip :content="fileActionLabel(file)" placement="top" :show-after="150">
-                    <span class="file-action-trigger" :title="fileActionLabel(file)" @click.stop>
-                      <el-button text size="small" type="danger" :aria-label="fileActionLabel(file)"
-                        :disabled="pendingFileAction !== null || workspaceStore.statusIsStale" @click="handleFileAction(file)">
-                        <el-icon><Delete v-if="file.status_code === 'unversioned'" /><RefreshLeft v-else /></el-icon>
-                      </el-button>
-                    </span>
-                  </el-tooltip>
+              <template v-for="row in groupedFiles.rows.slice(start, end)" :key="row.key">
+                <div v-if="row.kind === 'group'" class="changelist-header" role="presentation" :style="{ height: `${fileRowHeight}px` }">
+                  <span class="changelist-name" role="heading" aria-level="3" :title="row.name ?? t('workspace.ungrouped')">
+                    <el-icon><FolderOpened /></el-icon>{{ row.name ?? t('workspace.ungrouped') }}
+                  </span>
+                  <span class="changelist-count" :aria-label="t('workspace.changelistCount', { count: row.count })">{{ row.count }}</span>
                 </div>
-              </div>
+                <div
+                  v-else
+                  class="file-item"
+                  :data-index="row.fileIndex"
+                  role="listitem"
+                  :aria-posinset="row.fileIndex + 1"
+                  :aria-setsize="filteredFiles.length"
+                  :style="{ height: `${fileRowHeight}px` }"
+                  :class="{ selected: selectedFile === row.file.path }"
+                  @click="selectFile(row.file)"
+                  @contextmenu.prevent.stop="openFileContextMenu($event, row.file)"
+                >
+                  <span class="file-status" :class="getStatusClass(row.file.status_code)">
+                    {{ getStatusLabel(row.file.status_code) }}
+                  </span>
+                  <button
+                    type="button"
+                    class="file-path"
+                    :title="row.file.path"
+                    :aria-label="`${row.file.path}, ${getStatusLabel(row.file.status_code)}`"
+                    :aria-pressed="selectedFile === row.file.path"
+                    @click.stop="selectFile(row.file)"
+                    @keydown.down.prevent="focusFile(row.fileIndex + 1)"
+                    @keydown.up.prevent="focusFile(row.fileIndex - 1)"
+                    @keydown.home.prevent="focusFile(0)"
+                    @keydown.end.prevent="focusFile(filteredFiles.length - 1)"
+                  >{{ row.file.path }}</button>
+                  <div class="file-actions">
+                    <el-tooltip :content="$t('common.diff')" placement="top" :show-after="150">
+                      <span class="file-action-trigger" :title="$t('common.diff')" @click.stop>
+                        <el-button text size="small" :aria-label="$t('common.diff')" @click="viewDiff(row.file.path)">
+                          <el-icon><Connection /></el-icon>
+                        </el-button>
+                      </span>
+                    </el-tooltip>
+                    <el-tooltip :content="fileActionLabel(row.file)" placement="top" :show-after="150">
+                      <span class="file-action-trigger" :title="fileActionLabel(row.file)" @click.stop>
+                        <el-button text size="small" type="danger" :aria-label="fileActionLabel(row.file)"
+                          :disabled="pendingFileAction !== null || workspaceStore.statusIsStale" @click="handleFileAction(row.file)">
+                          <el-icon><Delete v-if="row.file.status_code === 'unversioned'" /><RefreshLeft v-else /></el-icon>
+                        </el-button>
+                      </span>
+                    </el-tooltip>
+                  </div>
+                </div>
+              </template>
             </template>
           </VirtualViewport>
           <div v-if="!workspaceStore.isLoading && filteredFiles.length === 0" class="empty-files">
@@ -199,6 +206,26 @@
           </button>
         </div>
       </main>
+
+      <div
+        v-show="!splitStacked"
+        class="status-splitter"
+        role="separator"
+        tabindex="0"
+        aria-orientation="vertical"
+        :aria-label="t('workspace.resizePanels')"
+        :title="t('workspace.resizePanels')"
+        :aria-valuemin="200"
+        :aria-valuemax="Math.max(200, splitAvailableWidth - 220)"
+        :aria-valuenow="Math.round(statusPanelWidth)"
+        @pointerdown="startPanelResize"
+        @pointermove="movePanelResize"
+        @pointerup="finishPanelResize"
+        @pointercancel="finishPanelResize"
+        @lostpointercapture="finishPanelResize"
+        @dblclick="resetPanelSplit"
+        @keydown="resizePanelsWithKeyboard"
+      ></div>
 
       <!-- 右侧面板：差异预览 -->
       <aside class="right-panel">
@@ -238,7 +265,7 @@
 </template>
 
 <script setup lang="ts">
-import { h, ref, computed, nextTick, onBeforeUnmount, onMounted, reactive, watch } from 'vue'
+import { h, ref, computed, nextTick, onBeforeUnmount, onMounted, onActivated, onDeactivated, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { deleteUnversioned, revealWorkspaceFile, svnCleanup, svnRevert, svnDiff } from '@/api/svn'
@@ -252,12 +279,103 @@ import DiffViewer from '@/components/DiffViewer.vue'
 import GlassLoading from '@/components/GlassLoading.vue'
 import { writeClipboardText } from '@/utils/clipboard'
 import { retainedSelection } from '@/utils/statusSelection'
+import { groupChangelistFiles } from '@/utils/changelistGroups'
 import type { SvnStatus, DiffResult } from '@/types'
 
 const { t } = useI18n()
 const router = useRouter()
 const workspaceStore = useWorkspaceStore()
 const { openWorkspace: openWorkspaceDialog, refreshStatus, refreshStatusAfterMutation } = useWorkspace()
+
+const SPLIT_RATIO_KEY = 'orcasvn-file-status-split-ratio'
+const splitContainer = ref<HTMLElement | null>(null)
+const splitContainerWidth = ref(0)
+const resizingPanels = ref(false)
+const splitRatio = ref(readSplitRatio())
+const splitStacked = computed(() => splitContainerWidth.value < 480)
+const splitAvailableWidth = computed(() => Math.max(0, splitContainerWidth.value - 6))
+const statusPanelWidth = computed(() => clampPanelWidth(splitAvailableWidth.value * splitRatio.value))
+let splitObserver: ResizeObserver | null = null
+let splitDrag: { element: HTMLElement; pointerId: number; x: number; width: number } | null = null
+
+function readSplitRatio() {
+  try {
+    const saved = localStorage.getItem(SPLIT_RATIO_KEY)
+    const ratio = saved === null ? NaN : Number(saved)
+    if (Number.isFinite(ratio) && ratio > 0 && ratio < 1) return ratio
+  } catch { /* 无法读取布局设置时使用默认比例。 */ }
+  return 0.42
+}
+
+function clampPanelWidth(width: number) {
+  return Math.max(200, Math.min(width, splitAvailableWidth.value - 220))
+}
+
+function saveSplitRatio() {
+  try { localStorage.setItem(SPLIT_RATIO_KEY, String(splitRatio.value)) }
+  catch { /* 保存布局失败不影响本次拖动。 */ }
+}
+
+function startPanelResize(event: PointerEvent) {
+  if (event.button !== 0 || splitStacked.value || splitDrag) return
+  const element = event.currentTarget as HTMLElement
+  element.setPointerCapture(event.pointerId)
+  splitDrag = { element, pointerId: event.pointerId, x: event.clientX, width: statusPanelWidth.value }
+  resizingPanels.value = true
+  event.preventDefault()
+}
+
+function movePanelResize(event: PointerEvent) {
+  if (!splitDrag || splitDrag.pointerId !== event.pointerId || splitStacked.value) return
+  splitRatio.value = clampPanelWidth(splitDrag.width + event.clientX - splitDrag.x) / splitAvailableWidth.value
+}
+
+function finishPanelResize() {
+  if (!splitDrag) return
+  const drag = splitDrag
+  splitDrag = null
+  resizingPanels.value = false
+  if (drag.element.hasPointerCapture(drag.pointerId)) drag.element.releasePointerCapture(drag.pointerId)
+  saveSplitRatio()
+}
+
+function resetPanelSplit() {
+  finishPanelResize()
+  splitRatio.value = 0.42
+  saveSplitRatio()
+}
+
+function resizePanelsWithKeyboard(event: KeyboardEvent) {
+  if (splitStacked.value) return
+  let width = statusPanelWidth.value
+  if (event.key === 'ArrowLeft') width -= 24
+  else if (event.key === 'ArrowRight') width += 24
+  else if (event.key === 'Home') width = 200
+  else if (event.key === 'End') width = splitAvailableWidth.value - 220
+  else return
+  event.preventDefault()
+  splitRatio.value = clampPanelWidth(width) / splitAvailableWidth.value
+  saveSplitRatio()
+}
+
+function observeSplitContainer() {
+  splitObserver?.disconnect()
+  const element = splitContainer.value
+  if (!element) return
+  const measure = () => {
+    const width = element.clientWidth
+    if (width > 0) splitContainerWidth.value = width
+    if (splitStacked.value) finishPanelResize()
+  }
+  measure()
+  splitObserver = new ResizeObserver(measure)
+  splitObserver.observe(element)
+}
+
+watch(splitContainer, observeSplitContainer, { flush: 'post' })
+onActivated(() => { void nextTick(observeSplitContainer) })
+onDeactivated(() => { finishPanelResize(); splitObserver?.disconnect() })
+onBeforeUnmount(() => { finishPanelResize(); splitObserver?.disconnect() })
 
 const filter = ref<'all' | 'modified' | 'added' | 'conflicted' | 'missing'>('all')
 const selectedFile = ref<string | null>(null)
@@ -292,11 +410,13 @@ const filteredFiles = computed(() => {
   })
 })
 
+const groupedFiles = computed(() => groupChangelistFiles(filteredFiles.value))
+
 const focusFile = async (index: number) => {
-  const file = filteredFiles.value[index]
-  if (!file) return
-  void selectFile(file)
-  fileViewport.value?.scrollToIndex(index)
+  const entry = groupedFiles.value.files[index]
+  if (!entry) return
+  void selectFile(entry.file)
+  fileViewport.value?.scrollToIndex(entry.rowIndex)
   await nextTick()
   fileViewport.value?.element?.querySelector<HTMLButtonElement>(`.file-item[data-index="${index}"] .file-path`)?.focus()
 }
@@ -334,7 +454,13 @@ const getStatusLabel = (code: string) => {
   return t(getStatusLabelKey(code))
 }
 
-const openWorkspace = () => openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
+const openWorkspace = async () => {
+  try {
+    await openWorkspaceDialog(t('dialog.selectSVNWorkspaceDirectory'))
+  } catch (error) {
+    ElMessage.error(String(error))
+  }
+}
 
 const closeWorkspace = () => {
   diffRequestGeneration += 1
@@ -996,6 +1122,28 @@ const handleFileAction = async (file: SvnStatus) => {
     display: flex;
   }
 }
+.changelist-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  color: var(--md-sys-color-on-surface-variant);
+  background: var(--md-sys-color-surface-container-low);
+  font-size: var(--app-font-size-label);
+  font-weight: 600;
+}
+.changelist-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.changelist-name .el-icon { margin-right: 6px; vertical-align: middle; }
+.changelist-count { flex-shrink: 0; font-variant-numeric: tabular-nums; }
 </style>
 
 <style scoped>
@@ -1210,8 +1358,8 @@ const handleFileAction = async (file: SvnStatus) => {
 }
 
 .center-panel {
-  flex: 0 0 42%;
-  width: 42%;
+  flex: 0 0 var(--status-panel-width, 42%);
+  width: var(--status-panel-width, 42%);
   min-width: 0;
   border-right: 1px solid var(--md-sys-color-outline-variant);
 }
@@ -1441,22 +1589,6 @@ const handleFileAction = async (file: SvnStatus) => {
   .welcome-sidebar {
     display: none;
   }
-  .workspace-layout {
-    flex-direction: column;
-    overflow-y: auto;
-  }
-  .center-panel {
-    flex: 0 0 300px;
-    min-height: 300px;
-    width: 100%;
-    border-right: 0;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
-  }
-  .right-panel {
-    flex: 1 0 320px;
-    min-height: 320px;
-    width: 100%;
-  }
 }
 
 @media (max-width: 650px) {
@@ -1465,4 +1597,42 @@ const handleFileAction = async (file: SvnStatus) => {
     padding: var(--app-spacing-lg);
   }
 }
+
+.status-splitter {
+  flex: 0 0 6px;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+  background: var(--md-sys-color-surface-container-low);
+  border-inline: 1px solid var(--md-sys-color-outline-variant);
+  box-sizing: border-box;
+}
+.status-splitter:hover,
+.status-splitter:focus-visible,
+.is-resizing > .status-splitter {
+  background: var(--md-sys-color-primary);
+  outline: none;
+}
+.workspace-layout.is-resizing,
+.workspace-layout.is-resizing * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+.workspace-layout.is-stacked {
+  flex-direction: column;
+  overflow-y: auto;
+}
+.is-stacked > .center-panel {
+  flex: 0 0 300px;
+  min-height: 300px;
+  width: 100%;
+  border-right: 0;
+  border-bottom: 1px solid var(--md-sys-color-outline-variant);
+}
+.is-stacked > .right-panel {
+  flex: 1 0 320px;
+  min-height: 320px;
+  width: 100%;
+}
+
 </style>

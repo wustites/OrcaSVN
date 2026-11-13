@@ -77,9 +77,24 @@ pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
     let mut locked = false;
     let mut switched = false;
     let mut history = false;
+    let mut changelist: Option<String> = None;
 
     loop {
         match reader.read_event_into(&mut buf) {
+            Ok(Event::Start(ref e)) if e.name().as_ref() == b"changelist" => {
+                changelist = None;
+                for attr in e.attributes().flatten() {
+                    if attr.key.as_ref() == b"name" {
+                        let name = attr
+                            .unescape_value()
+                            .map_err(|error| SvnError::ParseError(error.to_string()))?
+                            .into_owned();
+                        if !name.trim().is_empty() {
+                            changelist = Some(name);
+                        }
+                    }
+                }
+            }
             Ok(Event::Start(ref e)) | Ok(Event::Empty(ref e)) => match e.name().as_ref() {
                 b"entry" => {
                     in_entry = true;
@@ -144,6 +159,7 @@ pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
                         locked,
                         switched,
                         history,
+                        changelist: changelist.clone(),
                     });
                     in_entry = false;
                     current_path.clear();
@@ -152,6 +168,9 @@ pub fn parse_status_xml(xml: &str) -> Result<Vec<SvnStatus>, SvnError> {
                     locked = false;
                     switched = false;
                     history = false;
+                } else if e.name().as_ref() == b"changelist" {
+                    // 分组只作用于容器内的文件，后续普通文件不继承上一个分组。
+                    changelist = None;
                 }
             }
             Ok(Event::Eof) => break,
@@ -391,6 +410,42 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn status_changelists_decode_names_and_do_not_leak_to_ungrouped_files() {
+        let xml = r#"<status>
+<target path="."><entry path="plain.txt"><wc-status item="modified" props="none"/></entry></target>
+<changelist name="临时代码&amp;修复">
+<entry path="src/a.rs"><wc-status item="modified" props="none"/></entry>
+<entry path="src/b.rs"><wc-status item="added" props="none"/></entry>
+</changelist>
+<changelist name="next"><entry path="src/c.rs"><wc-status item="missing" props="none"/></entry></changelist>
+<target path="."><entry path="after.txt"><wc-status item="unversioned" props="none"/></entry></target>
+</status>"#;
+        let entries = parse_status_xml(xml).unwrap();
+        assert_eq!(entries.len(), 5);
+        assert_eq!(entries[0].changelist, None);
+        assert_eq!(entries[1].changelist.as_deref(), Some("临时代码&修复"));
+        assert_eq!(entries[2].changelist.as_deref(), Some("临时代码&修复"));
+        assert_eq!(entries[3].changelist.as_deref(), Some("next"));
+        assert_eq!(entries[4].changelist, None);
+    }
+
+    #[test]
+    fn status_changelists_ignore_empty_groups_and_empty_names() {
+        let xml = r#"<status>
+<changelist name="empty"/>
+<target path="."><entry path="plain.txt"><wc-status item="modified" props="none"/></entry></target>
+<changelist name=""></changelist>
+<changelist name=" "><entry path="unnamed.txt"><wc-status item="modified" props="none"/></entry></changelist>
+</status>"#;
+        let entries = parse_status_xml(xml).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|entry| entry.changelist.is_none()));
+        let previous = r#"{"path":"old.txt","status":"modified","status_code":"modified","prop_status":"none","locked":false,"history":false,"switched":false}"#;
+        let entry: SvnStatus = serde_json::from_str(previous).unwrap();
+        assert!(entry.changelist.is_none());
+    }
 
     #[test]
     fn test_parse_status_xml_single_file() {

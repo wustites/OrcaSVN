@@ -6,7 +6,7 @@ OrcaSVN은 Tauri, Rust, Vue 3로 만든 크로스 플랫폼 SVN 데스크톱 클
 
 ![OrcaSVN 애플리케이션 화면](docs/images/orcasvn-workspace.png)
 
-0.6.3 출시 전 개발 화면으로, 2026-10-02에 예제 작업 사본 데이터로 촬영했습니다. [다크 테마](docs/images/orcasvn-workspace-dark.png).
+여러 프로젝트, Changelist 그룹 및 코드 차이를 가상의 데모 데이터로 보여 줍니다. 실제 로컬 프로젝트나 민감한 정보는 포함하지 않습니다. [다크 테마](docs/images/orcasvn-workspace-dark.png) · [데모 데이터 및 스크린샷 생성](docs/screenshot-demo.md).
 
 현재 정식 버전은 **0.6.3**입니다. [릴리스 노트](docs/releases/v0.6.3.md)를 확인하세요.
 
