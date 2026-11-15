@@ -138,7 +138,7 @@ async fn reveal_workspace_file(path: String, file: String) -> Result<(), String>
         } else {
             command.arg(reveal_target);
         }
-        return spawn_command(command);
+        spawn_command(command)
     }
 
     #[cfg(target_os = "macos")]
@@ -149,7 +149,7 @@ async fn reveal_workspace_file(path: String, file: String) -> Result<(), String>
         } else {
             command.arg(target.parent().unwrap_or(&workspace));
         }
-        return spawn_command(command);
+        spawn_command(command)
     }
 
     #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]

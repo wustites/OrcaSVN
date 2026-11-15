@@ -774,11 +774,11 @@ fn valid_directory_index(inventory: &Inventory) -> bool {
     }
     for (parent, directory) in &inventory.directories {
         if !parent.is_empty()
-            && !inventory
+            && inventory
                 .files
                 .binary_search_by(|(path, _)| path.cmp(parent))
                 .ok()
-                .is_some_and(|index| inventory.files[index].1.kind == 0)
+                .is_none_or(|index| inventory.files[index].1.kind != 0)
         {
             return false;
         }

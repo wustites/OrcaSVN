@@ -748,6 +748,8 @@ mod tests {
     struct Fixture {
         root: PathBuf,
         wc: PathBuf,
+        // Concurrent fixtures otherwise evict each other from the three-entry cache.
+        _cache_guard: Option<std::sync::MutexGuard<'static, ()>>,
     }
     impl Drop for Fixture {
         fn drop(&mut self) {
@@ -756,6 +758,10 @@ mod tests {
     }
     impl Fixture {
         fn new() -> Option<Self> {
+            static CACHE_TEST_LOCK: Mutex<()> = Mutex::new(());
+            let cache_guard = CACHE_TEST_LOCK
+                .lock()
+                .unwrap_or_else(|error| error.into_inner());
             if Command::new("svnadmin").arg("--version").output().is_err() {
                 eprintln!("Skipping real SVN fixture: svnadmin not available");
                 return None;
@@ -780,6 +786,7 @@ mod tests {
             let fixture = Self {
                 wc: root.join("wc"),
                 root,
+                _cache_guard: Some(cache_guard),
             };
             let url = format!(
                 "file:///{}",
@@ -1013,6 +1020,7 @@ mod tests {
             .expect("set ORCASVN_BENCH_WORKSPACE to a real SVN working copy");
         let root = fs::canonicalize(&path).unwrap();
         let temporary = Fixture {
+            _cache_guard: None,
             wc: root.clone(),
             root: std::env::temp_dir().join(format!(
                 "orcasvn-startup-bench-{}-{}",
