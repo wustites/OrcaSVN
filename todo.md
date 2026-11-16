@@ -109,3 +109,51 @@
 - Windows 安装后新开终端执行 `orcasvn`，卸载后 PATH 不残留；Linux deb/rpm 同样验证。
 - macOS 的 `.app`/dmg 无安装脚本，需用户手动 `ln -s /Applications/OrcaSVN.app/Contents/MacOS/OrcaSVN /usr/local/bin/orcasvn`，可考虑在设置页提供“安装命令行工具”。
 - 程序已运行时再次执行 `orcasvn <path>` 会启动第二个实例；如需复用窗口可接入 single-instance 插件。
+
+
+## P2 - PR #13 后续：工作区加载请求失效处理
+
+状态：待修复；2026-11-16 审查在源码隔离模拟中复现。
+
+- 复现：开始加载工作区 A，完成前移除 A，然后立即重新添加并打开 A。
+- 当前行为：移除操作清空 currentPath，但未使 useWorkspace 中的 pendingRequest 和请求代次失效；第二次打开复用旧 Promise，最终两次均返回 false，A 留在列表中但没有打开。
+- 修复：关闭或移除工作区时使相关请求失效；复用加载请求前确认对应工作区仍有效，避免旧任务清理新任务状态。
+- 验收：用可控延迟测试“加载中移除后立即重加”，确认新加载独立完成、currentPath 指向 A、旧结果不能覆盖新状态。
+
+相关文件：`src/composables/useWorkspace.ts`、`src/stores/workspace.ts`；来源：[PR #13](https://github.com/wustites/OrcaSVN/pull/13)，审查提交 `5588629`。
+
+## P2 - PR #13 后续：Windows 发布汇总使用最终配置
+
+状态：待修复；2026-11-16 包装脚本隔离模拟已确认参数与汇总配置不一致。
+
+- `scripts/tauri.cjs` 向 Tauri 传递 `--config`，汇总时却只读取原始 `src-tauri/tauri.conf.json`。
+- 复现：使用 `--config '{"version":"9.9.9"}'` 覆盖版本时，汇总函数仍收到原版本 `0.6.5-rc.3`。
+- 影响：ZIP、使用说明及清单版本错误，按覆盖版本命名的安装包无法通过文件名前缀筛选。
+- 修复：汇总使用与 Tauri 一致的最终配置（包括命令行及平台配置覆盖）；无法可靠解析时明确报错或跳过汇总，不能静默使用旧版本。
+- 验收：覆盖版本后，安装包、ZIP、说明及清单版本一致，预期安装包全部入清单；覆盖配置文件和内联 JSON 均需覆盖。
+
+相关文件：`scripts/tauri.cjs`、`scripts/collect-release.cjs`；来源：[PR #13](https://github.com/wustites/OrcaSVN/pull/13)。
+
+## P2 - PR #13 后续：发布产物完整性与失败保留
+
+状态：待修复；2026-11-16 使用临时文件及压缩桩验证了静默遗漏行为，尚未做 Windows 原生构建复现。
+
+- 汇总脚本遇到安装包目录缺失、文件名不匹配或 mtime 早于 `startedAt - 2000` 时直接跳过，未校验请求的 bundle 格式是否齐全。
+- 隔离复现：安装包存在但时间较旧时，脚本仍报告成功并替换 release，旧清单管理的安装包被移除，最终没有安装包。
+- 修复：根据本次实际请求的 bundle 格式校验预期产物；缺失时停止替换并保留旧 release，`--no-bundle` 作为明确例外。
+- 验收：覆盖正常 NSIS/MSI、指定单一格式、无 bundle、旧时间戳、非托管同名文件、文件占用、发布失败与回滚；校验清单文件大小和 SHA-256。
+
+相关文件：`scripts/collect-release.cjs`、`scripts/tauri.cjs`、`SETUP.md`。
+
+## P2 - PR #13 后续：并行测试隔离与 Windows 原生验收
+
+状态：待验证。2026-11-16 PR 提交 `5588629` 的 [Linux CI #79](https://github.com/wustites/OrcaSVN/actions/runs/43408401597) 已通过；一次通过不代表已解决 PR 描述中的缓存测试干扰。
+
+- 排查 Rust 测试共享的 WORKSPACES 缓存与三项容量淘汰造成的用例间干扰，优先注入独立缓存；必要时对所有访问共享缓存的测试统一串行保护。
+- 连续运行默认并行 Rust 测试，记录环境、次数与结果；串行通过不能替代隔离验证。
+- CI 显式安装并校验 svn、svnadmin，避免真实 SVN fixture 因缺工具而提前返回却被计为通过。
+- Windows 原生验证：编辑器自动发现及自定义路径、中文/空格路径、UAC 接受/取消、工作区与 Changelist 拖动、文件变更后状态和最新修改时间刷新。
+- 核对 `dragDropEnabled: false` 对原生文件拖放的影响，并记录预期行为。
+- Windows 发布验证按上项完整性矩阵执行；文档保留旧文件、锁定目录及失败回滚的承诺应与实际结果一致。
+- 截图生成工具固定 Playwright 版本并记录生成环境，提高文档截图可复现性。
+- Windows SVN 非 ASCII 参数问题继续由 [Issue #11](https://github.com/wustites/OrcaSVN/issues/11) 跟踪，避免重复认定已解决。
