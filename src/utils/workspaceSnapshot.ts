@@ -1,6 +1,6 @@
 import type { SvnInfo, SvnStatus } from '@/types'
 
-const KEY = 'orcasvn-workspace-snapshots-v1'
+const KEY = 'orcasvn-workspace-snapshots-v2'
 const TTL_MS = 24 * 60 * 60 * 1000
 const MAX_WORKSPACES = 5
 const MAX_FILES = 1000
@@ -31,7 +31,8 @@ function readSnapshots(): WorkspaceSnapshot[] {
         && Number.isFinite(info.revision)
         && entry.statusList.every((file: SvnStatus) => file
           && ['path', 'status', 'status_code', 'prop_status'].every(key => typeof file[key as keyof SvnStatus] === 'string')
-          && ['locked', 'history', 'switched'].every(key => typeof file[key as keyof SvnStatus] === 'boolean'))
+          && ['locked', 'history', 'switched'].every(key => typeof file[key as keyof SvnStatus] === 'boolean')
+          && (file.changelist == null || typeof file.changelist === 'string'))
     }).slice(0, MAX_WORKSPACES)
   } catch { return [] }
 }

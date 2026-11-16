@@ -1,0 +1,567 @@
+{
+  "description": "完全虚构的本地截图数据，不对应真实目录或仓库。",
+  "seed": 20261113,
+  "workspaces": [
+    {
+      "name": "aurora-app",
+      "path": "C:\\Demo\\Workspaces\\aurora-app",
+      "note": "界面微调",
+      "favorite": true,
+      "revision": 247,
+      "latestModified": 1781660640000,
+      "files": [
+        {
+          "path": "app/src/main/MainActivity.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "app/src/main/res/layout/home.xml",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "app/src/main/res/values/strings.xml",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Theme.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Palette.kt",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/legacy/old_theme.xml",
+          "status": "missing",
+          "status_code": "missing",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "orbit-notes",
+      "path": "C:\\Demo\\Workspaces\\orbit-notes",
+      "note": "功能草稿",
+      "favorite": false,
+      "revision": 282,
+      "latestModified": 1781655600000,
+      "files": [
+        {
+          "path": "app/src/main/MainActivity.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "app/src/main/res/layout/home.xml",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/legacy/old_theme.xml",
+          "status": "missing",
+          "status_code": "missing",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "nimbus-ui",
+      "path": "C:\\Demo\\Workspaces\\nimbus-ui",
+      "note": "功能草稿",
+      "favorite": true,
+      "revision": 270,
+      "latestModified": 1781635440000,
+      "files": [
+        {
+          "path": "app/src/main/MainActivity.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "app/src/main/res/layout/home.xml",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "app/src/main/res/values/strings.xml",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Theme.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "lumen-player",
+      "path": "C:\\Demo\\Workspaces\\lumen-player",
+      "note": "组件整理",
+      "favorite": false,
+      "revision": 314,
+      "latestModified": 1781661900000,
+      "files": [
+        {
+          "path": "app/src/main/MainActivity.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "app/src/main/res/layout/home.xml",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "app/src/main/res/values/strings.xml",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Palette.kt",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/legacy/old_theme.xml",
+          "status": "missing",
+          "status_code": "missing",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "comet-tasks",
+      "path": "C:\\Demo\\Workspaces\\comet-tasks",
+      "note": "待评审",
+      "favorite": false,
+      "revision": 277,
+      "latestModified": 1781734380000,
+      "files": [
+        {
+          "path": "app/src/main/res/values/strings.xml",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Theme.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Palette.kt",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/legacy/old_theme.xml",
+          "status": "missing",
+          "status_code": "missing",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "meadow-kit",
+      "path": "C:\\Demo\\Workspaces\\meadow-kit",
+      "note": "功能草稿",
+      "favorite": true,
+      "revision": 264,
+      "latestModified": 1781639700000,
+      "files": [
+        {
+          "path": "app/src/main/res/layout/home.xml",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Theme.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Palette.kt",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/legacy/old_theme.xml",
+          "status": "missing",
+          "status_code": "missing",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "atlas-reader",
+      "path": "C:\\Demo\\Workspaces\\atlas-reader",
+      "note": "临时分支",
+      "favorite": false,
+      "revision": 302,
+      "latestModified": 1781615400000,
+      "files": [
+        {
+          "path": "app/src/main/res/layout/home.xml",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Palette.kt",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "pebble-clock",
+      "path": "C:\\Demo\\Workspaces\\pebble-clock",
+      "note": "功能草稿",
+      "favorite": false,
+      "revision": 265,
+      "latestModified": 1781657760000,
+      "files": [
+        {
+          "path": "app/src/main/res/values/strings.xml",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Theme.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Palette.kt",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/legacy/old_theme.xml",
+          "status": "missing",
+          "status_code": "missing",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "prism-gallery",
+      "path": "C:\\Demo\\Workspaces\\prism-gallery",
+      "note": "待评审",
+      "favorite": false,
+      "revision": 249,
+      "latestModified": 1781600340000,
+      "files": [
+        {
+          "path": "app/src/main/res/layout/home.xml",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Theme.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Palette.kt",
+          "status": "added",
+          "status_code": "added",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    },
+    {
+      "name": "breeze-utils",
+      "path": "C:\\Demo\\Workspaces\\breeze-utils",
+      "note": "组件整理",
+      "favorite": false,
+      "revision": 254,
+      "latestModified": 1781602560000,
+      "files": [
+        {
+          "path": "app/src/main/MainActivity.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "界面优化",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/theme/Theme.kt",
+          "status": "modified",
+          "status_code": "modified",
+          "changelist": "主题调整",
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "ui/legacy/old_theme.xml",
+          "status": "missing",
+          "status_code": "missing",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        },
+        {
+          "path": "notes/review.md",
+          "status": "unversioned",
+          "status_code": "unversioned",
+          "changelist": null,
+          "prop_status": "none",
+          "locked": false,
+          "history": false,
+          "switched": false
+        }
+      ]
+    }
+  ],
+  "diff": "Index: app/src/main/MainActivity.kt\n===================================================================\n--- app/src/main/MainActivity.kt\t(revision 247)\n+++ app/src/main/MainActivity.kt\t(working copy)\n@@ -1,11 +1,15 @@\n package demo.aurora\n \n import android.os.Bundle\n import androidx.activity.ComponentActivity\n \n class MainActivity : ComponentActivity() {\n     override fun onCreate(state: Bundle?) {\n         super.onCreate(state)\n-        setContent { WelcomeScreen() }\n+        setContent {\n+            DemoTheme {\n+                HomeScreen(title = \"Aurora Demo\")\n+            }\n+        }\n     }\n }\n"
+}

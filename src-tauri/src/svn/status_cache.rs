@@ -2,7 +2,7 @@ use super::executor::SvnError;
 use super::operations::{status, status_for_paths};
 use super::status_snapshot::{self, Inventory};
 use crate::SvnStatus;
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -29,6 +29,7 @@ enum QueryMode {
 struct WorkspaceStatus {
     entries: Option<Vec<SvnStatus>>,
     inventory: Option<Arc<Inventory>>,
+    latest_modified_overrides: BTreeMap<String, Option<u128>>,
     last_full_check: Option<Instant>,
     pending_save: Option<tokio::task::JoinHandle<()>>,
     #[cfg(windows)]
@@ -44,6 +45,7 @@ impl WorkspaceStatus {
         Self {
             entries: None,
             inventory: None,
+            latest_modified_overrides: BTreeMap::new(),
             last_full_check: None,
             pending_save: None,
             #[cfg(windows)]
@@ -73,6 +75,51 @@ fn get_workspace(root: &Path) -> Result<Workspace, SvnError> {
         workspaces.pop_front();
     }
     Ok(workspace)
+}
+
+/// 读取最近一次成功状态查询的时间摘要，不建立缓存、不扫描文件，也不改变缓存淘汰顺序。
+pub async fn cached_latest_modified(path: &str) -> Result<Option<u64>, SvnError> {
+    let Some(workspaces) = WORKSPACES.get() else {
+        return Ok(None);
+    };
+    let owned_path = path.to_owned();
+    let root = tokio::task::spawn_blocking(move || std::fs::canonicalize(owned_path))
+        .await
+        .map_err(|error| SvnError::CommandFailed(format!("读取工作区路径失败：{error}")))?;
+    let Ok(root) = root else {
+        return Ok(None);
+    };
+    let workspace = {
+        let workspaces = workspaces
+            .lock()
+            .map_err(|_| SvnError::CommandFailed("文件状态缓存锁已损坏".into()))?;
+        workspaces
+            .iter()
+            .find(|(path, _)| path == &root)
+            .map(|(_, workspace)| workspace.clone())
+    };
+    let Some(workspace) = workspace else {
+        return Ok(None);
+    };
+    let (inventory, overrides) = {
+        let workspace = workspace.lock().await;
+        (
+            workspace.inventory.clone(),
+            workspace.latest_modified_overrides.clone(),
+        )
+    };
+    let Some(inventory) = inventory else {
+        return Ok(None);
+    };
+    tokio::task::spawn_blocking(move || {
+        if overrides.is_empty() {
+            inventory.latest_modified_ms()
+        } else {
+            inventory.latest_modified_ms_with_overrides(&overrides)
+        }
+    })
+    .await
+    .map_err(|error| SvnError::CommandFailed(format!("读取工作区修改时间失败：{error}")))
 }
 
 fn merge_status(previous: &[SvnStatus], fresh: Vec<SvnStatus>, paths: &[String]) -> Vec<SvnStatus> {
@@ -150,7 +197,10 @@ async fn start_watcher(workspace: &mut WorkspaceStatus, root: &Path) {
 }
 
 #[cfg(windows)]
-async fn watch_paths(workspace: &mut WorkspaceStatus, root: &Path) -> Option<Vec<String>> {
+async fn watch_paths(
+    workspace: &mut WorkspaceStatus,
+    root: &Path,
+) -> Option<status_snapshot::WatchChanges> {
     let mut watcher = workspace.watcher.take()?;
     let inventory = workspace.inventory.clone()?;
     let watch_root = root.to_path_buf();
@@ -215,7 +265,8 @@ pub async fn cached_status(
                 && workspace.entries.is_some()
                 && workspace.inventory.is_some()
             {
-                if let Some(paths) = watch_paths(&mut workspace, &root).await {
+                if let Some(changes) = watch_paths(&mut workspace, &root).await {
+                    let paths = changes.paths;
                     let result = if paths.is_empty() {
                         Ok(workspace.entries.clone().unwrap_or_default())
                     } else {
@@ -236,6 +287,8 @@ pub async fn cached_status(
                                 "directory notification status query"
                             );
                             workspace.entries = Some(entries.clone());
+                            // 时间摘要单独覆盖，避免通知快路径继续显示旧基线中的时间。
+                            workspace.latest_modified_overrides.extend(changes.modified);
                             // The metadata inventory remains the last full
                             // baseline. Do not pair it with newer disk statuses.
                             #[cfg(test)]
@@ -280,6 +333,7 @@ pub async fn cached_status(
             tracing::debug!(workspace = %root.display(), "disk status baseline restored");
             workspace.entries = Some(snapshot.entries);
             workspace.inventory = Some(Arc::new(snapshot.inventory));
+            workspace.latest_modified_overrides.clear();
             workspace.last_full_check = Some(Instant::now());
         }
     }
@@ -345,7 +399,7 @@ pub async fn cached_status(
         workspace.inventory = current.clone();
         let quiet = watch_paths(&mut workspace, &root)
             .await
-            .is_some_and(|paths| paths.is_empty());
+            .is_some_and(|changes| changes.paths.is_empty());
         let settled = current.as_deref().is_some_and(|inventory| {
             let now = std::time::SystemTime::now();
             !status_snapshot::modified_between(
@@ -390,6 +444,7 @@ pub async fn cached_status(
             }
         }
         workspace.inventory = current;
+        workspace.latest_modified_overrides.clear();
         #[cfg(windows)]
         {
             workspace.watcher_ready = workspace.watcher.is_some() && workspace.inventory.is_some();
@@ -423,6 +478,7 @@ pub async fn cached_status(
             // Keep the pre-query inventory: any edit during SVN execution will
             // differ on the next poll and be checked again.
             workspace.inventory = current.clone();
+            workspace.latest_modified_overrides.clear();
             #[cfg(windows)]
             {
                 workspace.watcher_ready = workspace.watcher.is_some() && current.is_some();
@@ -446,6 +502,7 @@ pub async fn cached_status(
         Err(error) => {
             // Failed queries must not promote a new filesystem baseline.
             workspace.inventory = None;
+            workspace.latest_modified_overrides.clear();
             #[cfg(windows)]
             {
                 workspace.watcher_ready = false;
@@ -476,6 +533,7 @@ mod tests {
             locked: false,
             history: false,
             switched: false,
+            changelist: None,
         }
     }
 
@@ -598,6 +656,31 @@ mod tests {
             loop {
                 let current = cached_status(path, false).await.unwrap();
                 if statuses(&current) == expected {
+                    break;
+                }
+                assert!(started.elapsed() < Duration::from_secs(3));
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            assert_query_mode(&fixture.wc, QueryMode::Scoped(1)).await;
+            assert!(Arc::ptr_eq(
+                workspace.lock().await.inventory.as_ref().unwrap(),
+                &inventory,
+            ));
+
+            // 通知只校正展示时间，完整基线仍用于后续一致性检查。
+            let latest = cached_latest_modified(path).await.unwrap().unwrap() + 60_000;
+            fs::File::options()
+                .write(true)
+                .open(&file)
+                .unwrap()
+                .set_times(
+                    fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_millis(latest)),
+                )
+                .unwrap();
+            let started = Instant::now();
+            loop {
+                cached_status(path, false).await.unwrap();
+                if cached_latest_modified(path).await.unwrap() == Some(latest) {
                     break;
                 }
                 assert!(started.elapsed() < Duration::from_secs(3));

@@ -6,7 +6,7 @@ OrcaSVN は、Tauri、Rust、Vue 3 で構築されたクロスプラットフォ
 
 ![OrcaSVN アプリケーション画面](docs/images/orcasvn-workspace.png)
 
-0.6.3 リリース前の開発画面です。2026-10-02 にサンプルデータで撮影しました。[ダークテーマ](docs/images/orcasvn-workspace-dark.png)。
+複数プロジェクト、Changelist のグループ、差分プレビューを架空のデモデータで表示しています。実際のローカルプロジェクトや機密情報は含まれていません。[ダークテーマ](docs/images/orcasvn-workspace-dark.png) · [デモデータとスクリーンショット生成](docs/screenshot-demo.md)。
 
 現在の安定版は **0.6.3** です。[リリースノート](docs/releases/v0.6.3.md)をご覧ください。
 

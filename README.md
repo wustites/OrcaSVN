@@ -6,7 +6,11 @@ OrcaSVN 是一个基于 Tauri、Rust 和 Vue 3 的跨平台 SVN 桌面客户端�
 
 ![OrcaSVN 软件界面](docs/images/orcasvn-workspace.png)
 
-0.6.3 发布前开发界面，2026-10-02 截取；使用示例工作区数据。[深色主题](docs/images/orcasvn-workspace-dark.png)。
+多项目工作区、Changelist 分组及代码差异预览。所有项目名、目录、备注和代码均为本地随机生成的虚构数据，不包含本机工作区或敏感信息。[深色主题](docs/images/orcasvn-workspace-dark.png) · [演示数据与截图生成方式](docs/screenshot-demo.md)。
+
+![收藏工作区](docs/images/orcasvn-workspace-favorites.png)
+
+切换“全部 / 收藏”筛选工作区，列表同时展示备注、变更数、缺失数和最新修改时间。
 
 ## 核心能力
 

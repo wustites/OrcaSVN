@@ -8,7 +8,8 @@
     "check": "npm run build && npm run test:unit && cargo fmt --manifest-path src-tauri/Cargo.toml -- --check && cargo test --manifest-path src-tauri/Cargo.toml",
     "icons": "node src-tauri/icons/generate-icons.js",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "node scripts/tauri.cjs",
+    "release": "node scripts/tauri.cjs build",
     "test:unit": "node --test tests/*.test.cjs"
   },
   "dependencies": {

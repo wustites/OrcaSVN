@@ -13,6 +13,7 @@ export interface SvnStatus {
   locked: boolean
   history: boolean
   switched: boolean
+  changelist?: string | null
 }
 
 export interface SvnLogEntry {

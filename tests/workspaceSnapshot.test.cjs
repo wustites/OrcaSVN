@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const vm = require('node:vm')
 const ts = require('typescript')
-const KEY = 'orcasvn-workspace-snapshots-v1'
+const KEY = 'orcasvn-workspace-snapshots-v2'
 const info = { path: '.', url: 'file:///repo', repository_root: 'file:///repo', revision: 12, node_kind: 'dir', schedule: 'normal' }
 const file = { path: 'changed.ts', status: 'M', status_code: 'modified', prop_status: 'none', locked: false, history: false, switched: false }
 function harness() {

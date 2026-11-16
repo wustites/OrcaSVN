@@ -1,5 +1,5 @@
 import { useWorkspaceStore } from '@/stores/workspace'
-import { svnStatus, svnInfo, svnLocalRevision, readGitignore } from '@/api/svn'
+import { svnStatus, svnInfo, svnLocalRevision, readGitignore, workspaceLatestModified } from '@/api/svn'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useSettings } from '@/composables/useSettings'
 import i18n from '@/i18n'
@@ -7,12 +7,11 @@ import { parseGitignore } from '@/utils/gitignore'
 import { filterByGitignoreAsync } from '@/utils/gitignoreWorker'
 import { cacheSvnInfoMetadata, getCachedSvnInfoMetadata, type SvnInfoMetadata } from '@/utils/svnInfoCache'
 import { cacheWorkspaceSnapshot, getWorkspaceSnapshot, invalidateWorkspaceSnapshot } from '@/utils/workspaceSnapshot'
-import type { SvnInfo } from '@/types'
+import type { SvnInfo, SvnStatus } from '@/types'
 
 let workspaceRequestGeneration = 0
 let pendingRequest: { path: string; generation: number; force: boolean; background: boolean; promise: Promise<boolean> } | null = null
-// The status failure last reported to the user, so that background polls report
-// it once and clear it on recovery without touching errors from other operations.
+// 后台轮询只报告一次相同的状态错误，恢复时不清除其他操作产生的错误。
 let lastStatusError: { path: string; message: string } | null = null
 let lastRefresh: { path: string; generation: number; timestamp: number } | null = null
 
@@ -119,8 +118,15 @@ export function useWorkspace() {
     workspaceStore.setError(message)
   }
 
+  async function updateSummary(path: string, status: SvnStatus[], request: number) {
+    // 复用本次状态扫描的文件时间缓存，不为当前工作区重复执行 SVN 扫描。
+    const modified = await workspaceLatestModified(path).catch(() => null)
+    workspaceStore.setWorkspaceSummary(path, status, modified, request)
+  }
+
   async function performLoadWorkspace(path: string): Promise<boolean> {
     const generation = ++workspaceRequestGeneration
+    const summaryRequest = workspaceStore.beginWorkspaceSummary(path)
     const previousPath = workspaceStore.currentPath
     const previousStatusList = workspaceStore.statusList
     const previousSvnInfo = workspaceStore.svnInfo
@@ -160,8 +166,8 @@ export function useWorkspace() {
       workspaceStore.setStatusList(filteredStatus)
       workspaceStore.setStatusIsStale(false)
       workspaceStore.rememberWorkspace(path)
-      // The status scan succeeded, so the workspace is usable. Revision and
-      // repository details are informational: report the failure but stay open.
+      void updateSummary(path, filteredStatus, summaryRequest)
+      // 状态扫描成功即可使用工作区；版本和仓库信息读取失败只提示，不关闭工作区。
       if (!infoResult.ok) {
         reportStatusError(path, String(infoResult.error))
         return true
@@ -173,6 +179,7 @@ export function useWorkspace() {
       return true
     } catch (err) {
       if (!isCurrent()) return false
+      workspaceStore.setWorkspaceSummaryError(path, `读取工作区失败：${String(err)}`, summaryRequest)
 
       if (snapshot) {
         workspaceStore.setStatusList(snapshot.statusList)
@@ -181,11 +188,15 @@ export function useWorkspace() {
         reportStatusError(path, String(err))
         return false
       }
-      if (previousPath) workspaceStore.setCurrentPath(previousPath, false)
-      else workspaceStore.resetWorkspaceState()
-      workspaceStore.setStatusList(previousStatusList)
-      workspaceStore.setSvnInfo(previousSvnInfo)
-      workspaceStore.setStatusIsStale(previousStatusIsStale)
+      // 切换期间被移除的旧工作区不能因目标加载失败而重新出现。
+      if (previousPath && workspaceStore.recentWorkspaces.includes(previousPath)) {
+        workspaceStore.setCurrentPath(previousPath, false)
+        workspaceStore.setStatusList(previousStatusList)
+        workspaceStore.setSvnInfo(previousSvnInfo)
+        workspaceStore.setStatusIsStale(previousStatusIsStale)
+      } else {
+        workspaceStore.resetWorkspaceState()
+      }
       reportStatusError(path, String(err))
       return false
     } finally {
@@ -196,14 +207,17 @@ export function useWorkspace() {
   async function openWorkspace(selectDialogTitle: string): Promise<boolean> {
     const selected = await open({
       directory: true,
-      multiple: false,
+      multiple: true,
       title: selectDialogTitle,
     })
 
     if (!selected) return false
 
-    const path = Array.isArray(selected) ? selected[0] : selected
-    return loadWorkspace(path)
+    const paths = workspaceStore.registerWorkspaces(Array.isArray(selected) ? selected : [selected])
+    if (!paths.length) return false
+    // 一次加入全部目录，后台串行读取摘要；已有工作区保持不变。
+    if (workspaceStore.currentPath) return true
+    return loadWorkspace(paths[0])
   }
 
   async function restoreLastWorkspace(): Promise<boolean> {
@@ -217,12 +231,14 @@ export function useWorkspace() {
 
     const generation = ++workspaceRequestGeneration
     const path = workspaceStore.currentPath
+    const summaryRequest = workspaceStore.beginWorkspaceSummary(path)
     const isCurrent = () => (
       generation === workspaceRequestGeneration && workspaceStore.currentPath === path
     )
 
     workspaceStore.setLoading(true)
     if (!background) clearStatusError()
+    let statusVerified = false
     try {
       const statusRequest = svnStatus(path, force)
       const infoRequest = requestWorkspaceInfo(path, isCurrent)
@@ -236,7 +252,9 @@ export function useWorkspace() {
       if (!isCurrent()) return false
       workspaceStore.setStatusList(filteredStatus)
       workspaceStore.setStatusIsStale(false)
-      // Keep the status just scanned; the caller learns the revision is not current.
+      statusVerified = true
+      void updateSummary(path, filteredStatus, summaryRequest)
+      // 保留刚扫描的状态和摘要，同时向调用方报告版本信息未刷新。
       if (!infoResult.ok) throw infoResult.error
       if (infoResult.info) {
         workspaceStore.setSvnInfo(infoResult.info)
@@ -250,6 +268,7 @@ export function useWorkspace() {
     } catch (err) {
       if (!isCurrent()) return false
       const message = String(err)
+      if (!statusVerified) workspaceStore.setWorkspaceSummaryError(path, `读取工作区失败：${message}`, summaryRequest)
       if (!background || message !== lastStatusError?.message) reportStatusError(path, message)
       return false
     } finally {
@@ -258,6 +277,8 @@ export function useWorkspace() {
   }
 
   function loadWorkspace(path: string): Promise<boolean> {
+    // 沿用已有记录的路径写法，确保选中状态、摘要和去重请求使用同一个键。
+    path = workspaceStore.resolveWorkspacePath(path)
     if (pendingRequest?.path === path && !pendingRequest.background && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
     return trackRequest(path, () => performLoadWorkspace(path))
   }

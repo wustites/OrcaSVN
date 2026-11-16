@@ -10,9 +10,10 @@ function deferred() {
   return { promise, resolve, reject }
 }
 function harness() {
-  const requests = [], snapshots = new Map(), writes = [], invalidations = []
+  const requests = [], snapshots = new Map(), writes = [], invalidations = [], summaries = [], summaryErrors = []
   const store = {
-    currentPath: '/a', statusList: [], svnInfo: null, gitignorePatterns: [],
+    currentPath: '/a', recentWorkspaces: ['/a', '/b'], statusList: [], svnInfo: null, gitignorePatterns: [],
+    resolveWorkspacePath(path) { return path },
     setCurrentPath(path) { this.currentPath = path },
     setStatusList(list) { this.statusList = list },
     setSvnInfo(info) { this.svnInfo = info },
@@ -25,7 +26,10 @@ function harness() {
     lastWorkspacePath: null,
     getLastWorkspacePath() { return this.lastWorkspacePath },
     clearWorkspace() { this.lastWorkspacePath = null; this.resetWorkspaceState() },
-    resetWorkspaceState() { this.currentPath = null; this.error = null },
+    resetWorkspaceState() { this.currentPath = null; this.statusList = []; this.svnInfo = null; this.statusIsStale = false; this.isLoading = false; this.error = null },
+    beginWorkspaceSummary() { return 1 },
+    setWorkspaceSummary(...args) { summaries.push(args) },
+    setWorkspaceSummaryError(...args) { summaryErrors.push(args) },
   }
   let filter = async list => list
   let localRevision = async () => 12
@@ -34,6 +38,7 @@ function harness() {
     '@/api/svn': {
       svnStatus: (path, force = false) => { const request = { path, force, ...deferred() }; requests.push(request); return request.promise },
       svnLocalRevision: () => localRevision(),
+      workspaceLatestModified: async () => null,
     },
     '@tauri-apps/plugin-dialog': {},
     '@/composables/useSettings': { useSettings: () => ({ settings: { gitignoreEnabled: false } }) },
@@ -46,7 +51,7 @@ function harness() {
   const context = { exports: {}, require: name => { assert.ok(name in mocks, name); return mocks[name] } }
   const code = ts.transpileModule(fs.readFileSync('src/composables/useWorkspace.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText
   vm.runInNewContext(code, context)
-  return { store, requests, snapshots, writes, invalidations, useWorkspace: context.exports.useWorkspace, setFilter: value => { filter = value }, setLocalRevision: value => { localRevision = value } }
+  return { store, requests, snapshots, writes, invalidations, summaries, summaryErrors, useWorkspace: context.exports.useWorkspace, setFilter: value => { filter = value }, setLocalRevision: value => { localRevision = value } }
 }
 
 test('separate consumers share an in-flight refresh and background polls reuse fresh state', async () => {
@@ -293,6 +298,9 @@ test('a failed revision read still opens the workspace and reports the error', a
   assert.deepEqual(h.store.remembered, ['/b'])
   assert.match(h.store.error, /no revision/)
   assert.equal(h.writes.length, 0)
+  assert.equal(h.summaries[0][0], '/b')
+  assert.equal(h.summaries[0][1][0].path, 'fresh.ts')
+  assert.equal(h.summaryErrors.length, 0)
 })
 
 test('a failed revision read keeps the snapshot revision and new status', async () => {
@@ -305,6 +313,9 @@ test('a failed revision read keeps the snapshot revision and new status', async 
   assert.equal(h.store.statusList[0].path, 'fresh.ts')
   assert.equal(h.store.svnInfo.revision, 11)
   assert.match(h.store.error, /no revision/)
+  assert.equal(h.summaries[0][0], '/b')
+  assert.equal(h.summaries[0][1][0].path, 'fresh.ts')
+  assert.equal(h.summaryErrors.length, 0)
 })
 
 test('a refresh with a failed revision read updates status, keeps the revision and retries', async () => {
@@ -318,6 +329,9 @@ test('a refresh with a failed revision read updates status, keeps the revision a
   assert.equal(h.store.statusIsStale, false)
   assert.equal(h.store.svnInfo.revision, 11)
   assert.match(h.store.error, /no revision/)
+  assert.equal(h.summaries[0][0], '/a')
+  assert.equal(h.summaries[0][1][0].path, 'fresh.ts')
+  assert.equal(h.summaryErrors.length, 0)
 
   h.setLocalRevision(async () => 12)
   const retry = workspace.refreshStatusIfStale(60_000)
@@ -326,4 +340,18 @@ test('a refresh with a failed revision read updates status, keeps the revision a
   assert.equal(await retry, true)
   assert.equal(h.store.svnInfo.revision, 12)
   assert.equal(h.store.error, null)
+})
+
+test('切换期间移除旧工作区后，目标加载失败不会恢复已移除的路径和文件', async () => {
+  const h = harness()
+  h.store.statusList = [{ path: 'old.ts' }]
+  h.store.svnInfo = { revision: 11 }
+  const pending = h.useWorkspace().loadWorkspace('/b')
+  h.store.recentWorkspaces = ['/b']
+  h.requests[0].reject(new Error('目标工作区不可访问'))
+  assert.equal(await pending, false)
+  assert.equal(h.store.currentPath, null)
+  assert.equal(h.store.statusList.length, 0)
+  assert.equal(h.store.svnInfo, null)
+  assert.equal(h.store.isLoading, false)
 })

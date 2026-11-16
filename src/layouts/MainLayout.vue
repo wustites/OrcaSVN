@@ -28,80 +28,8 @@
           <el-icon><Refresh /></el-icon>
           <span>{{ $t('menu.refresh') }}</span>
         </button>
-        <el-dropdown
-          trigger="click"
-          popper-class="toolbar-dropdown"
-          :disabled="!workspaceStore.currentPath"
-          @command="openCurrentWorkspaceIn"
-        >
-          <button
-            class="open-in-trigger"
-            :disabled="!workspaceStore.currentPath"
-            :aria-label="$t('menu.openIn')"
-            :title="$t('menu.openIn')"
-          >
-            <span class="open-in-icons">
-              <el-icon class="open-in-app-icon"><component :is="selectedOpenTargetIcon" /></el-icon>
-              <el-icon class="open-in-chevron"><ArrowDown /></el-icon>
-            </span>
-            <span class="open-in-label">{{ $t('menu.openIn') }}</span>
-          </button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item command="explorer" :class="{ 'is-current-target': selectedOpenTarget === 'explorer' }">
-                <el-icon><component :is="openTargetIcons.explorer" /></el-icon>
-                {{ $t('openIn.explorer') }}
-              </el-dropdown-item>
-              <el-dropdown-item command="vscode" :class="{ 'is-current-target': selectedOpenTarget === 'vscode' }">
-                <el-icon><component :is="openTargetIcons.vscode" /></el-icon>
-                {{ $t('openIn.vscode') }}
-              </el-dropdown-item>
-              <el-dropdown-item command="terminal" :class="{ 'is-current-target': selectedOpenTarget === 'terminal' }">
-                <el-icon><component :is="openTargetIcons.terminal" /></el-icon>
-                {{ $t('openIn.terminal') }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <WorkspaceOpenMenu :path="workspaceStore.currentPath" />
       </div>
-
-      <el-dropdown class="workspace-switcher" trigger="click" popper-class="workspace-switcher-dropdown" @command="handleWorkspaceCommand">
-        <button class="repository-title" :title="`${repositoryName} · ${repositoryRevision}\n${$t('workspace.switchWorkspace')}`" :aria-label="`${$t('workspace.switchWorkspace')}: ${repositoryName} · ${repositoryRevision}`">
-          <strong>{{ repositoryName }}</strong>
-          <span class="repository-revision">
-            {{ repositoryRevision }}
-          </span>
-          <el-icon class="repository-chevron"><ArrowDown /></el-icon>
-        </button>
-        <template #dropdown>
-          <el-dropdown-menu>
-            <el-dropdown-item
-              v-for="path in workspaceStore.recentWorkspaces"
-              :key="path"
-              :command="path"
-              :class="{ 'is-current-workspace': path === workspaceStore.currentPath }"
-            >
-              <span class="workspace-option">
-                <span class="workspace-option-copy">
-                  <strong>{{ workspaceNameFromPath(path) }}</strong>
-                  <small>{{ path }}</small>
-                </span>
-                <button
-                  type="button"
-                  class="workspace-remove"
-                  :title="$t('workspace.removeWorkspace')"
-                  :aria-label="$t('workspace.removeWorkspace')"
-                  @click.stop="removeWorkspace(path)"
-                ><el-icon><Close /></el-icon></button>
-              </span>
-            </el-dropdown-item>
-            <el-dropdown-item divided command="__open__">
-              <el-icon><FolderOpened /></el-icon>
-              {{ $t('workspace.addWorkspace') }}
-            </el-dropdown-item>
-          </el-dropdown-menu>
-        </template>
-      </el-dropdown>
 
       <div class="toolbar-group toolbar-group-right">
         <button class="tool-button" :class="{ active: routeName === 'commit' }" @click="navigateTo('commit')">
@@ -121,7 +49,8 @@
       </div>
     </header>
 
-    <main class="fork-content">
+    <main class="fork-content" :style="{ '--workspace-rail-width': workspaceStore.workspaceListCollapsed ? '44px' : '280px' }">
+      <WorkspaceSidebar class="workspace-rail" @open="handleWorkspaceCommand('__open__')" @select="handleWorkspaceCommand" />
       <aside class="shell-sidebar">
         <div class="shell-repository">
           <span class="repository-icon"><el-icon><Folder /></el-icon></span>
@@ -217,6 +146,7 @@
         <span v-else>v{{ appVersion }}</span>
       </div>
     </footer>
+    <OpenInSettingsDialog />
   </div>
 </template>
 
@@ -225,19 +155,17 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { ElMessage } from 'element-plus/es/components/message/index'
-import { launchWorkspacePath, openWorkspaceTarget, type OpenWorkspaceTarget } from '@/api/svn'
+import { launchWorkspacePath } from '@/api/svn'
 import { useWorkspaceStore } from '@/stores/workspace'
 import { useStashStore } from '@/stores/stash'
 import { useWorkspace } from '@/composables/useWorkspace'
 import { useWorkspaceErrorToast } from '@/composables/useWorkspaceErrorToast'
 import { useUpdateCheck } from '@/composables/useUpdateCheck'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
-import {
-  Archive,
-  Code,
-  FolderOpened as FolderOpenedIcon,
-  Terminal,
-} from '@/components/icons/materialIcons'
+import WorkspaceSidebar from '@/components/WorkspaceSidebar.vue'
+import { Archive } from '@/components/icons/materialIcons'
+import WorkspaceOpenMenu from '@/components/WorkspaceOpenMenu.vue'
+import OpenInSettingsDialog from '@/components/OpenInSettingsDialog.vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -255,15 +183,7 @@ const {
 const cachedViews = ref(['WorkspaceView', 'LogView', 'UpdateView'])
 const statusRefreshIntervalMs = 60_000
 let statusRefreshTimer: number | undefined
-const selectedOpenTarget = ref<OpenWorkspaceTarget>('explorer')
 useWorkspaceErrorToast()
-
-const openTargetIcons = {
-  explorer: FolderOpenedIcon,
-  vscode: Code,
-  terminal: Terminal,
-} satisfies Record<OpenWorkspaceTarget, typeof FolderOpenedIcon>
-const selectedOpenTargetIcon = computed(() => openTargetIcons[selectedOpenTarget.value])
 const stashCount = computed(() => stashStore.currentEntries(workspaceStore.currentPath).length)
 
 const repositoryName = computed(() => {
@@ -271,10 +191,6 @@ const repositoryName = computed(() => {
   if (!path) return t('workspace.welcomeRepository')
   return path.split(/[\\/]/).filter(Boolean).pop() || path
 })
-
-const workspaceNameFromPath = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() || path
-
-const repositoryRevision = computed(() => workspaceStore.svnInfo ? `r${workspaceStore.svnInfo.revision}` : 'OrcaSVN')
 
 const routeName = computed(() => String(route.name || 'workspace'))
 const currentRouteTitle = computed(() => {
@@ -285,24 +201,15 @@ const currentRouteTitle = computed(() => {
 const navigateTo = (name: string) => router.push({ name })
 
 const handleWorkspaceCommand = async (command: string) => {
-  if (command === '__open__') {
-    await openWorkspace(t('workspace.selectWorkspaceTitle'))
-  } else if (command !== workspaceStore.currentPath) {
-    await loadWorkspace(command)
-  }
-  await router.push({ name: 'workspace' })
-}
-
-const removeWorkspace = (path: string) => workspaceStore.removeRecentWorkspace(path)
-
-const openCurrentWorkspaceIn = async (target: OpenWorkspaceTarget) => {
-  if (!workspaceStore.currentPath) return
-
   try {
-    await openWorkspaceTarget(workspaceStore.currentPath, target)
-    selectedOpenTarget.value = target
-  } catch (err) {
-    ElMessage.error(`${t('common.error')}：${err}`)
+    if (command === '__open__') {
+      await openWorkspace(t('workspace.selectWorkspaceTitle'))
+    } else if (command !== workspaceStore.currentPath) {
+      await loadWorkspace(command)
+    }
+    await router.push({ name: 'workspace' })
+  } catch (error) {
+    ElMessage.error(String(error))
   }
 }
 
@@ -603,163 +510,21 @@ onUnmounted(() => {
   }
 }
 
-.workspace-switcher {
-  position: absolute;
-  top: 13px;
-  left: 50%;
-  transform: translateX(-50%);
-}
-
-.repository-title {
-  position: relative;
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  justify-content: center;
-  width: 220px;
-  min-width: 0;
-  min-height: var(--app-size-control);
-  gap: 8px;
-  padding: 5px 42px 5px 14px;
-  border: 1px solid var(--md-sys-color-outline-variant);
-  border-radius: var(--app-radius-sm);
-  background: var(--md-sys-color-surface-container-low);
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: var(--app-font-size-sm);
-  line-height: 1.5;
-  cursor: pointer;
-  transition:
-    border-color var(--app-transition-fast),
-    background-color var(--app-transition-fast),
-    color var(--app-transition-fast);
-}
-
-.repository-title:hover {
-  border-color: var(--md-sys-color-outline);
-  background: var(--md-sys-color-surface-container-high);
-}
-
-.repository-title strong {
-  display: block;
-  min-width: 0;
-  max-width: 150px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--md-sys-color-on-surface);
-  font-size: var(--app-font-size-label);
-  line-height: 1.5;
-  padding-block: 2px;
-}
-
-.repository-revision {
-  flex: 0 1 auto;
-  min-width: 0;
-  max-width: 45%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  line-height: 1.5;
-  padding-block: 2px;
-}
-
-.repository-chevron {
-  position: absolute;
-  top: 50%;
-  right: 14px;
-  width: 24px;
-  height: 24px;
-  transform: translateY(-50%);
-  border-radius: 50%;
-  color: var(--md-sys-color-on-surface-variant);
-  font-size: 17px;
-  transition: background-color var(--app-transition-fast);
-}
-
-.repository-title:hover .repository-chevron {
-  background: var(--md-sys-color-surface-container-highest);
-}
-
-:global(.workspace-switcher-dropdown .el-dropdown-menu) {
-  min-width: 330px;
-  max-width: min(520px, 90vw);
-}
-
-:global(.workspace-switcher-dropdown .el-dropdown-menu__item) {
-  padding: 7px 12px;
-}
-
-:global(.workspace-switcher-dropdown .el-dropdown-menu__item.is-current-workspace) {
-  color: var(--md-sys-color-on-primary-container);
-  background: var(--md-sys-color-primary-container);
-}
-
-.workspace-option {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  gap: 12px;
-}
-
-.workspace-option-copy {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  line-height: 1.35;
-}
-
-.workspace-option-copy small {
-  overflow: hidden;
-  color: var(--md-sys-color-on-surface-variant);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.workspace-remove {
-  display: grid;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  padding: 0;
-  border: 0;
-  border-radius: var(--app-radius-full);
-  color: inherit;
-  background: transparent;
-  cursor: pointer;
-}
-
-.workspace-remove:hover {
-  background: var(--md-sys-state-hover);
-}
-
-:global(.theme-dark) .repository-title {
-  color: var(--md-sys-color-on-surface-variant);
-}
-
-:global(.theme-dark) .repository-title strong {
-  color: var(--md-sys-color-on-surface);
-}
-
-:global(.theme-dark) .repository-title:hover,
-:global(.dark) .repository-title:hover,
-:global(.theme-dark) .repository-title:focus-visible,
-:global(.dark) .repository-title:focus-visible {
-  color: var(--md-sys-color-on-surface);
-  border-color: var(--md-sys-color-outline);
-  background: var(--md-sys-color-surface-container-high);
-}
-
 .fork-content {
   display: grid;
-  grid-template-columns: var(--app-size-sidebar) minmax(0, 1fr);
+  grid-template-columns: var(--workspace-rail-width, 280px) var(--app-size-sidebar) minmax(0, 1fr);
+  grid-template-areas: "workspaces navigation content";
   min-height: 0;
   overflow: hidden;
   background: var(--md-sys-color-surface);
 }
 
+.workspace-rail {
+  grid-area: workspaces;
+}
+
 .shell-sidebar {
+  grid-area: navigation;
   min-height: 0;
   overflow: auto;
   padding: 14px 10px;
@@ -854,6 +619,7 @@ onUnmounted(() => {
 }
 
 .route-workbench {
+  grid-area: content;
   display: grid;
   grid-template-rows: var(--app-size-page-header) minmax(0, 1fr);
   min-width: 0;
@@ -1043,8 +809,9 @@ onUnmounted(() => {
     min-width: 38px;
   }
   .fork-content {
-    grid-template-columns: minmax(0, 1fr);
+    grid-template-columns: var(--workspace-rail-width, 280px) minmax(0, 1fr);
     grid-template-rows: 44px minmax(0, 1fr);
+    grid-template-areas: "workspaces navigation" "workspaces content";
   }
   .shell-sidebar {
     display: flex;
@@ -1082,32 +849,14 @@ onUnmounted(() => {
 }
 
 @media (max-width: 650px) {
-  .fork-shell {
-    grid-template-rows: var(--app-size-toolbar-stacked) minmax(0, 1fr) var(--app-size-statusbar);
-  }
   .fork-toolbar {
     align-items: flex-start;
     padding-right: 12px;
     padding-left: 12px;
-    padding-bottom: 48px;
   }
   .toolbar-group-right .tool-button,
   .toolbar-group-right .toolbar-divider {
     display: none;
-  }
-  .workspace-switcher {
-    top: 52px;
-    left: 12px;
-    right: 12px;
-    transform: none;
-  }
-  .repository-title {
-    width: 100%;
-    min-height: 38px;
-    padding: 4px 32px;
-  }
-  .repository-title strong {
-    max-width: calc(100vw - 90px);
   }
   .route-repository {
     max-width: 42%;
