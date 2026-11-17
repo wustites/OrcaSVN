@@ -1,0 +1,32 @@
+[package]
+name = "orcasvn-gpui"
+version = "0.8.0-alpha.1"
+description = "OrcaSVN 客户端 (Rust + GPUI，实验分支)"
+license = "MIT"
+edition = "2021"
+
+[dependencies]
+gpui = "0.2.2"
+# zed/gpui 0.2.x is published from the Zed tree and its transitive deps may
+# lag the workspace; keep our own crate on the same edition for consistency.
+rfd = "0.17"
+directories = "6"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "time", "process", "sync", "fs"] }
+thiserror = "2"
+quick-xml = "0.37"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+chrono = "0.4"
+# gpui -> gpui_http_client -> zed-async-tar -> xattr 0.2 still references
+# libc::ENOATTR, which libc removed for Linux in 0.2.190. Keep the pin until
+# gpui ships a fixed xattr dependency.
+libc = "=0.2.189"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Ioctl", "Win32_System_WindowsProgramming"] }
+
+[profile.release]
+lto = true
+strip = true
