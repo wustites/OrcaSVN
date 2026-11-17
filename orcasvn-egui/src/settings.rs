@@ -21,6 +21,8 @@ pub struct Settings {
     pub workspace: Option<String>,
     pub recent: Vec<String>,
     pub zoom: f32,
+    /// Schedule selected missing files for deletion before committing.
+    pub auto_delete_missing: bool,
 }
 
 impl Default for Settings {
@@ -33,6 +35,7 @@ impl Default for Settings {
             workspace: None,
             recent: Vec::new(),
             zoom: 1.0,
+            auto_delete_missing: false,
         }
     }
 }

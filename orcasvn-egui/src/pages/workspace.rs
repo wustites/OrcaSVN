@@ -98,7 +98,19 @@ impl WorkspacePage {
         if let Some(result) = self.op_task.poll() {
             match result {
                 Ok(output) => {
+                    let conflicts = if self.op_label == "update" {
+                        svn::parse_update_conflicts(&output)
+                    } else {
+                        Vec::new()
+                    };
                     shared.done(&self.op_label, &output);
+                    if !conflicts.is_empty() {
+                        shared.warn(format!(
+                            "{}: {}",
+                            t("更新完成，但存在冲突", "Update finished with conflicts"),
+                            conflicts.join(", ")
+                        ));
+                    }
                     if self.op_label == "commit" {
                         self.message.clear();
                         self.checked.clear();
@@ -391,13 +403,14 @@ impl WorkspacePage {
                     .cloned()
                     .collect();
                 let (ws, message) = (workspace.to_string(), self.message.trim().to_string());
+                let auto_delete_missing = shared.settings.auto_delete_missing;
                 self.run_op(ctx, "commit", async move {
                     if !unversioned.is_empty() {
                         svn::add(&ws, &unversioned)
                             .await
                             .map_err(|e| e.to_string())?;
                     }
-                    svn::commit(&ws, &message, Some(&files))
+                    svn::commit_with_options(&ws, &message, Some(&files), auto_delete_missing)
                         .await
                         .map_err(|e| e.to_string())
                 });

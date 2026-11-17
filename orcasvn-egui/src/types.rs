@@ -9,6 +9,8 @@ pub struct SvnStatus {
     pub locked: bool,
     pub history: bool,
     pub switched: bool,
+    #[serde(default)]
+    pub changelist: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

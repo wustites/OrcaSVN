@@ -1,5 +1,5 @@
 use crate::i18n::{self, t};
-use crate::pages::{self, Page, Shared};
+use crate::pages::{self, NoticeLevel, Page, Shared};
 use crate::settings::{Settings, Theme};
 use crate::svn;
 use crate::system;
@@ -168,13 +168,13 @@ impl OrcaApp {
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            if let Some((ok, message)) = &self.shared.notice {
-                let color = if *ok {
-                    Color32::from_rgb(40, 160, 90)
-                } else {
-                    Color32::from_rgb(220, 70, 70)
+            if let Some((level, message)) = &self.shared.notice {
+                let (symbol, color) = match level {
+                    NoticeLevel::Ok => ("✔", Color32::from_rgb(40, 160, 90)),
+                    NoticeLevel::Warn => ("⚠", Color32::from_rgb(220, 150, 40)),
+                    NoticeLevel::Error => ("✖", Color32::from_rgb(220, 70, 70)),
                 };
-                ui.label(RichText::new(if *ok { "✔" } else { "✖" }).color(color));
+                ui.label(RichText::new(symbol).color(color));
                 ui.label(message.lines().next().unwrap_or_default())
                     .on_hover_text(message.as_str());
             }

@@ -53,12 +53,19 @@ impl Page {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoticeLevel {
+    Ok,
+    Warn,
+    Error,
+}
+
 /// State shared between pages and the application shell.
 pub struct Shared {
     pub settings: Settings,
     pub workspace: Option<String>,
     pub info: Option<SvnInfo>,
-    pub notice: Option<(bool, String)>,
+    pub notice: Option<(NoticeLevel, String)>,
     pub output: Vec<String>,
     pub show_output: bool,
     pub open_workspace: Option<String>,
@@ -86,13 +93,17 @@ impl Shared {
     }
 
     pub fn ok(&mut self, message: impl Into<String>) {
-        self.notice = Some((true, message.into()));
+        self.notice = Some((NoticeLevel::Ok, message.into()));
+    }
+
+    pub fn warn(&mut self, message: impl Into<String>) {
+        self.notice = Some((NoticeLevel::Warn, message.into()));
     }
 
     pub fn err(&mut self, message: impl Into<String>) {
         let message = message.into();
         self.output.push(message.clone());
-        self.notice = Some((false, message));
+        self.notice = Some((NoticeLevel::Error, message));
     }
 
     /// Record raw SVN output and surface a short success notice.

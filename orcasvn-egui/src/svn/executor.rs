@@ -102,7 +102,24 @@ async fn execute_svn_inner(
         cmd.creation_flags(CREATE_NO_WINDOW);
     }
 
-    collect_command_output(&mut cmd, SVN_TIMEOUT).await
+    let output = collect_command_output(&mut cmd, SVN_TIMEOUT).await?;
+    if output.trim().is_empty() && always_prints_output(&args_vec) {
+        return Err(SvnError::CommandFailed(format!(
+            "SVN 命令成功退出但没有任何输出：svn {}\n{} 的输出未能送达 OrcaSVN，可能是透明加密或数据防泄漏软件的进程策略所致。请联系管理员，将 OrcaSVN 及其启动的 SVN 程序加入策略。",
+            args_vec.join(" "),
+            executable.display()
+        )));
+    }
+    Ok(output)
+}
+
+/// Commands whose successful output is never empty. With some transparent
+/// encryption agents, `svn.exe` started by an unlisted parent exits with 0 without
+/// delivering any stdout. The XML parsers accept empty input, so this would
+/// otherwise look like a clean working copy. Report it rather than work around it:
+/// the agent's policy is the owner's to change.
+fn always_prints_output(args: &[String]) -> bool {
+    args.iter().any(|arg| arg == "--xml" || arg == "--version")
 }
 
 async fn collect_command_output(cmd: &mut Command, deadline: Duration) -> Result<String, SvnError> {
@@ -129,6 +146,39 @@ async fn collect_command_output(cmd: &mut Command, deadline: Duration) -> Result
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[test]
+    fn empty_output_is_only_an_error_for_commands_that_always_print() {
+        let args = |list: &[&str]| list.iter().map(|arg| arg.to_string()).collect::<Vec<_>>();
+        assert!(always_prints_output(&args(&["status", "--xml"])));
+        assert!(always_prints_output(&args(&["info", "--xml"])));
+        assert!(always_prints_output(&args(&["--version", "--quiet"])));
+        assert!(!always_prints_output(&args(&["diff"])));
+        assert!(!always_prints_output(&args(&[
+            "info",
+            "--show-item",
+            "revision"
+        ])));
+    }
+
+    // A stand-in for the affected Windows behaviour: exit 0 with no stdout.
+    #[cfg(unix)]
+    #[test]
+    fn silent_svn_is_reported_instead_of_parsed_as_a_clean_working_copy() {
+        use std::os::unix::fs::PermissionsExt;
+        let directory =
+            std::env::temp_dir().join(format!("orcasvn-silent-svn-{}", std::process::id()));
+        std::fs::create_dir_all(&directory).unwrap();
+        let fake = directory.join("svn");
+        std::fs::write(&fake, "#!/bin/sh\nexit 0\n").unwrap();
+        std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let status = runtime.block_on(execute_svn_inner(fake.clone(), &["status", "--xml"], None));
+        assert!(status.unwrap_err().to_string().contains("没有任何输出"));
+        let diff = runtime.block_on(execute_svn_inner(fake, &["diff"], None));
+        assert_eq!(diff.unwrap(), "");
+        std::fs::remove_dir_all(&directory).unwrap();
+    }
 
     #[cfg(unix)]
     #[test]

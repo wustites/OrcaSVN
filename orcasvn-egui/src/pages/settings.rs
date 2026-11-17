@@ -86,6 +86,14 @@ impl SettingsPage {
                 ui.add(egui::DragValue::new(&mut settings.log_limit).range(10..=2000));
                 ui.end_row();
 
+                ui.label(t("提交时自动删除缺失文件", "Auto-delete missing files"))
+                    .on_hover_text(t(
+                        "默认关闭；开启后，提交已选中的缺失文件时会先执行 svn delete --force",
+                        "Off by default. When enabled, selected missing files are scheduled with svn delete --force before commit.",
+                    ));
+                ui.checkbox(&mut settings.auto_delete_missing, t("开启", "Enabled"));
+                ui.end_row();
+
                 ui.label(t("SVN 可执行文件", "SVN executable"));
                 ui.horizontal(|ui| {
                     ui.add(
@@ -139,7 +147,8 @@ impl SettingsPage {
         let changed = before.lang != settings.lang
             || before.theme != settings.theme
             || before.zoom != settings.zoom
-            || before.log_limit != settings.log_limit;
+            || before.log_limit != settings.log_limit
+            || before.auto_delete_missing != settings.auto_delete_missing;
         if changed {
             apply_appearance(&ctx, settings);
             settings.save();

@@ -10,8 +10,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 static NEXT_TEMP_FILE: AtomicU64 = AtomicU64::new(0);
 
-// Older snapshots did not track administration outside the selected directory.
-const VERSION: u32 = 6;
+// 旧快照没有保存 changelist，升级版本后重新读取 SVN 分组信息。
+const VERSION: u32 = 7;
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_FILES: usize = 500_000;
 
@@ -50,6 +50,44 @@ pub(super) struct Inventory {
     journal: Option<super::status_usn::Journal>,
 }
 impl Inventory {
+    #[cfg(all(windows, test))]
+    pub fn without_journal(&self) -> Self {
+        let mut inventory = self.clone();
+        inventory.journal = None;
+        inventory
+    }
+
+    /// 复用状态扫描中的文件时间，排除目录占位和 SVN 管理数据。
+    pub fn latest_modified_ms(&self) -> Option<u64> {
+        self.latest_modified_ms_with_overrides(&BTreeMap::new())
+    }
+
+    /// 通知路径只覆盖展示用的时间，不修改状态校验所依赖的完整基线。
+    pub fn latest_modified_ms_with_overrides(
+        &self,
+        overrides: &BTreeMap<String, Option<u128>>,
+    ) -> Option<u64> {
+        let is_workspace_file = |path: &str| {
+            !path
+                .split('/')
+                .any(|part| part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn"))
+        };
+        self.files
+            .iter()
+            .filter(|(path, stamp)| stamp.kind != 0 && is_workspace_file(path))
+            .filter_map(|(path, stamp)| {
+                overrides.get(path).copied().unwrap_or(Some(stamp.modified))
+            })
+            .chain(
+                overrides
+                    .iter()
+                    .filter(|(path, _)| is_workspace_file(path))
+                    .filter_map(|(_, modified)| *modified),
+            )
+            .max()
+            .and_then(|nanos| u64::try_from(nanos / 1_000_000).ok())
+    }
+
     #[cfg(test)]
     pub fn journal_available(&self) -> bool {
         self.journal.is_some()
@@ -60,7 +98,7 @@ impl Inventory {
         self.files.len()
     }
 }
-fn configuration() -> io::Result<BTreeMap<String, u64>> {
+pub(super) fn configuration_directories() -> Vec<PathBuf> {
     let mut directories = vec![PathBuf::from("/etc/subversion")];
     for variable in ["HOME", "USERPROFILE", "APPDATA"] {
         if let Some(home) = std::env::var_os(variable) {
@@ -71,6 +109,11 @@ fn configuration() -> io::Result<BTreeMap<String, u64>> {
             }));
         }
     }
+    directories
+}
+
+fn configuration() -> io::Result<BTreeMap<String, u64>> {
+    let directories = configuration_directories();
     let mut result = BTreeMap::new();
     let executable = super::executor::current_svn_executable().map_err(io::Error::other)?;
     result.insert(format!("executable:{}", executable.display()), 0);
@@ -243,7 +286,16 @@ pub(super) fn capture_incremental(
     previous: Option<&Inventory>,
 ) -> io::Result<Inventory> {
     #[cfg(windows)]
-    let journal_start = super::status_usn::begin(root).ok();
+    let journal_start = match super::status_usn::begin(root) {
+        Ok(session) => Some(session),
+        Err(error) => {
+            tracing::debug!(
+                %error,
+                "USN unavailable; using directory notifications or metadata scans"
+            );
+            None
+        }
+    };
     let (inventory, stats) = capture_measured(root, previous)?;
     #[cfg(windows)]
     let inventory = {
@@ -437,6 +489,94 @@ pub(super) struct Scan {
     pub inventory: Inventory,
     pub paths: Option<Vec<String>>,
     pub force_full: bool,
+}
+
+/// Notifications are candidates, not SVN statuses. A listener cannot observe
+/// configuration or administration outside a selected subtree, so check those
+/// explicitly. Directory/administration changes retain the full-scan fallback.
+#[cfg(windows)]
+pub(super) struct WatchChanges {
+    pub paths: Vec<String>,
+    pub modified: BTreeMap<String, Option<u128>>,
+}
+
+#[cfg(windows)]
+pub(super) fn watch_changes(
+    root: &Path,
+    previous: &Inventory,
+    paths: Vec<String>,
+) -> io::Result<WatchChanges> {
+    if configuration()? != previous.configuration
+        || ancestor_administration(root)? != previous.administration
+    {
+        return Err(io::Error::other(
+            "SVN configuration or ancestor administration changed",
+        ));
+    }
+    let mut modified = BTreeMap::new();
+    for path in &paths {
+        let before_directory = previous
+            .files
+            .binary_search_by(|(name, _)| name.cmp(path))
+            .ok()
+            .is_some_and(|index| previous.files[index].1.kind == 0);
+        if before_directory
+            || path
+                .split('/')
+                .any(|part| part.eq_ignore_ascii_case(".svn") || part.eq_ignore_ascii_case("_svn"))
+        {
+            return Err(io::Error::other("directory or SVN administration changed"));
+        }
+        match fs::symlink_metadata(root.join(path)) {
+            Ok(metadata) if metadata.is_dir() || metadata.file_type().is_symlink() => {
+                return Err(io::Error::other("directory or link requires metadata scan"));
+            }
+            Ok(metadata) => {
+                modified.insert(
+                    path.clone(),
+                    Some(file_stamp(&metadata, &root.join(path))?.modified),
+                );
+            }
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                modified.insert(path.clone(), None);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(WatchChanges { paths, modified })
+}
+
+/// Whether an entry changed at or after `since`. A scan running alongside SVN
+/// may have recorded metadata from after SVN read that path, so such an entry
+/// cannot be paired with the query's status. Dates further ahead than `until`
+/// are ignored: they predate the query but would otherwise never settle.
+#[cfg(any(windows, test))]
+pub(super) fn modified_between(
+    inventory: &Inventory,
+    since: SystemTime,
+    until: SystemTime,
+) -> bool {
+    let nanos = |time: SystemTime| {
+        time.duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_nanos())
+    };
+    let (since, until) = (nanos(since), nanos(until));
+    inventory
+        .files
+        .iter()
+        .map(|(_, stamp)| stamp.modified)
+        .chain(
+            inventory
+                .directories
+                .values()
+                .map(|directory| directory.stamp.modified),
+        )
+        .any(|modified| (since..=until).contains(&modified))
+}
+
+#[cfg(windows)]
+pub(super) fn has_journal(inventory: &Inventory) -> bool {
+    inventory.journal.is_some()
 }
 
 pub(super) fn scan(root: &Path, previous: Option<&Inventory>) -> io::Result<Scan> {
@@ -679,11 +819,11 @@ fn valid_directory_index(inventory: &Inventory) -> bool {
     }
     for (parent, directory) in &inventory.directories {
         if !parent.is_empty()
-            && !inventory
+            && inventory
                 .files
                 .binary_search_by(|(path, _)| path.cmp(parent))
                 .ok()
-                .is_some_and(|index| inventory.files[index].1.kind == 0)
+                .is_none_or(|index| inventory.files[index].1.kind != 0)
         {
             return false;
         }
@@ -817,6 +957,87 @@ mod tests {
             journal: None,
         }
     }
+
+    #[test]
+    fn latest_modified_uses_file_milliseconds_and_excludes_svn_administration() {
+        let mut snapshot = inventory(2);
+        snapshot.files[0].1.modified = 1_700_000_000_123_456_789;
+        snapshot.files[1].1.modified = 1_700_000_001_987_654_321;
+        let mut administrative = snapshot.files[1].1.clone();
+        administrative.modified = 1_800_000_000_000_000_000;
+        snapshot
+            .files
+            .push((".svn/wc.db".into(), administrative.clone()));
+        snapshot
+            .files
+            .push(("nested/_svn/entries".into(), administrative.clone()));
+        snapshot
+            .administration
+            .insert(PathBuf::from("outside/.svn/wc.db"), administrative.clone());
+        administrative.kind = 0;
+        snapshot.files.push(("directory".into(), administrative));
+
+        assert_eq!(snapshot.latest_modified_ms(), Some(1_700_000_001_987));
+        snapshot.files.drain(..2);
+        assert_eq!(snapshot.latest_modified_ms(), None);
+        assert_eq!(inventory(0).latest_modified_ms(), None);
+    }
+
+    #[test]
+    fn latest_modified_overlay_handles_changes_and_deletions_without_changing_baseline() {
+        let mut snapshot = inventory(2);
+        snapshot.files[0].1.modified = 10_000_000;
+        snapshot.files[1].1.modified = 20_000_000;
+        let baseline = snapshot.clone();
+        let mut overrides = BTreeMap::from([("file-000".into(), Some(30_000_000))]);
+        assert_eq!(
+            snapshot.latest_modified_ms_with_overrides(&overrides),
+            Some(30)
+        );
+        overrides.insert("file-000".into(), None);
+        assert_eq!(
+            snapshot.latest_modified_ms_with_overrides(&overrides),
+            Some(20)
+        );
+        overrides.insert("new-file".into(), Some(40_000_000));
+        assert_eq!(
+            snapshot.latest_modified_ms_with_overrides(&overrides),
+            Some(40)
+        );
+        overrides.insert("new-file".into(), None);
+        overrides.insert("file-001".into(), None);
+        overrides.insert(".svn/wc.db".into(), Some(50_000_000));
+        assert_eq!(snapshot.latest_modified_ms_with_overrides(&overrides), None);
+        assert_eq!(snapshot, baseline);
+    }
+
+    #[test]
+    fn parallel_query_certification_rejects_entries_changed_during_the_window() {
+        use std::time::Duration;
+        // Windows SystemTime has 100 ns resolution.
+        let at = |nanos| UNIX_EPOCH + Duration::from_nanos(nanos);
+        let mut files = inventory(1);
+        files.files[0].1.modified = 1000;
+        assert!(modified_between(&files, at(1000), at(1000)));
+        assert!(!modified_between(&files, at(1100), at(2000)));
+        assert!(!modified_between(&files, at(100), at(900)));
+
+        let mut directories = inventory(0);
+        directories.directories.insert(
+            "src".into(),
+            Directory {
+                stamp: DirectoryStamp {
+                    modified: 1000,
+                    changed: 0,
+                    device: 0,
+                    inode: 0,
+                },
+                children: Vec::new(),
+            },
+        );
+        assert!(modified_between(&directories, at(500), at(2000)));
+    }
+
     #[test]
     fn directory_reuse_detects_edits_deletions_moves_and_nested_structure() {
         let root = std::env::temp_dir().join(format!(
@@ -842,6 +1063,9 @@ mod tests {
         #[cfg(unix)]
         assert_eq!(stats.enumerated_directories, 0);
         assert_eq!(stats.checked_files, 3);
+        // Windows file times tick about every 15 ms, and this edit keeps the size.
+        #[cfg(windows)]
+        std::thread::sleep(std::time::Duration::from_millis(50));
         fs::write(root.join("a/edit"), "edit").unwrap();
         let (edited, _stats) = capture_measured(&root, Some(&unchanged)).unwrap();
         assert_eq!(edited, capture_measured(&root, None).unwrap().0);
@@ -938,6 +1162,7 @@ mod tests {
                         locked: false,
                         history: false,
                         switched: false,
+                        changelist: None,
                     }];
                     write(&directory, &root, files, entries).unwrap();
                 })
