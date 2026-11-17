@@ -15,7 +15,7 @@ cargo run --release -- /path/to/working-copy   # 路径可选
 
 依赖：
 
-- Rust 1.90+（`gpui 0.2.2` 使用 edition 2024；本次验证使用 rustc 1.97）。
+- Rust 1.85+（`gpui 0.2.2` 使用 edition 2024；本次验证使用 rustc 1.97）。
 - 系统 `svn` 命令行（也可在“设置”中指定可执行文件路径）。
 - Linux：需要 `libxkbcommon-x11`、Wayland/X11、fontconfig/freetype 开发库和可用的 Vulkan 驱动；文件对话框走 xdg-desktop-portal（`rfd`）。
 - `gpui` 依赖的 `gpui_http_client -> zed-async-tar -> xattr 0.2` 仍在引用 `libc::ENOATTR`，而 `libc 0.2.190+` 已移除该常量，因此 `Cargo.toml` 暂时固定 `libc = "=0.2.189"`。
@@ -39,7 +39,7 @@ cargo run --release -- /path/to/working-copy   # 路径可选
 - **没有 IME / 输入法支持**：文本框直接读键盘字符，中文（以及任何需要输入法的文字）无法通过键盘输入，提交信息等只能输入 ASCII。GPUI 需要自行实现 `EntityInputHandler`（官方 `examples/input.rs` 约 700 行）才能支持 IME，属于后续工作。
 - 没有右键菜单（差异 / 追溯 / 在文件管理器中显示 / 解决冲突目前通过按钮完成，解决冲突尚未接入）。
 - 面板不可拖拽改宽（左侧列表、日志列表固定宽度）。
-- 主题跟随设置而不是系统外观：`跟随系统` 只读取窗口外观，不监听系统主题变化。
+- GPUI 没有全局主题层：颜色来自 `ui::palette`，`跟随系统` 直接读窗口外观；系统切换深浅色后会随下一次重绘生效。
 - 没有窗口图标、菜单栏和键盘快捷键。
 - `gpui 0.2.2` 是 crates.io 上的发布版本，API 与 Zed 主分支的 GPUI 有差异，升级时需要重新适配。
 
