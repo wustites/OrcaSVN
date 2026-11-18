@@ -1,0 +1,168 @@
+name: GPUI Pre-release
+
+on:
+  push:
+    tags:
+      - "gpui-v*-*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpui-prerelease-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  RUST_BACKTRACE: 1
+
+jobs:
+  prepare:
+    name: Validate version and prepare draft
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      release-id: ${{ steps.release.outputs.id }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag and crate version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^gpui-v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(alpha|beta|rc)\.(0|[1-9][0-9]*)$ ]]; then
+            echo "::error::Tag must look like gpui-vX.Y.Z-alpha.N, -beta.N or -rc.N"
+            exit 1
+          fi
+          crate_version=$(sed -n 's/^version = "\(.*\)"$/\1/p' orcasvn-gpui/Cargo.toml | head -1)
+          lock_version=$(grep -A1 '^name = "orcasvn-gpui"$' orcasvn-gpui/Cargo.lock | sed -n 's/^version = "\(.*\)"$/\1/p')
+          if [ "gpui-v$crate_version" != "$RELEASE_TAG" ] || [ "gpui-v$lock_version" != "$RELEASE_TAG" ]; then
+            echo "::error::orcasvn-gpui version ($crate_version / lock $lock_version) does not match $RELEASE_TAG"
+            exit 1
+          fi
+
+      - name: Create or reuse prerelease draft
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --json id >/dev/null 2>&1; then
+            if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq '.isDraft')" != "true" ]; then
+              echo "::error::This prerelease is already published. Use a new tag for another release."
+              exit 1
+            fi
+            gh release edit "$RELEASE_TAG" --prerelease --latest=false
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --draft --prerelease --latest=false --generate-notes --title "OrcaSVN GPUI $RELEASE_TAG"
+          fi
+          # A newly created draft can take a moment to appear in the REST list.
+          release_id=""
+          for attempt in 1 2 3 4 5; do
+            release_id=$(gh api "repos/$GITHUB_REPOSITORY/releases" --paginate --jq ".[] | select(.tag_name == \"$RELEASE_TAG\") | .id")
+            if [[ "$release_id" =~ ^[0-9]+$ ]]; then break; fi
+            sleep 2
+          done
+          if [[ ! "$release_id" =~ ^[0-9]+$ ]]; then
+            echo "::error::Could not resolve a unique numeric release ID."
+            exit 1
+          fi
+          echo "id=$release_id" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Test and build GPUI client (${{ matrix.platform }})
+    needs: prepare
+    runs-on: ${{ matrix.platform }}
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: ubuntu-22.04
+            asset: linux-x86_64
+          - platform: windows-latest
+            asset: windows-x86_64
+          - platform: macos-latest
+            asset: macos-aarch64
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./orcasvn-gpui -> target"
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config subversion \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libfontconfig1-dev libfreetype-dev
+
+      - name: Install SVN on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install sliksvn --version=1.14.5 --no-progress -y --package-parameters="/InstallDir=C:\Tools\SlikSvn"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          'C:\Tools\SlikSvn\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Install SVN on macOS
+        if: runner.os == 'macOS'
+        run: brew install subversion
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path orcasvn-gpui/Cargo.toml -- --check
+
+      - name: Test
+        run: cargo test --manifest-path orcasvn-gpui/Cargo.toml
+
+      - name: Build release binary
+        run: cargo build --release --manifest-path orcasvn-gpui/Cargo.toml
+
+      - name: Package and upload to draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          name="OrcaSVN-gpui-${RELEASE_TAG}-${{ matrix.asset }}"
+          mkdir -p "dist/$name"
+          cp orcasvn-gpui/README.md LICENSE "dist/$name/"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp orcasvn-gpui/target/release/orcasvn-gpui.exe "dist/$name/OrcaSVN-gpui.exe"
+            (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null)
+            asset="dist/$name.zip"
+          else
+            cp orcasvn-gpui/target/release/orcasvn-gpui "dist/$name/OrcaSVN-gpui"
+            tar -C dist -czf "dist/$name.tar.gz" "$name"
+            asset="dist/$name.tar.gz"
+          fi
+          gh release upload "$RELEASE_TAG" "$asset" --clobber
+
+  publish:
+    name: Publish complete prerelease
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish after all platforms succeed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false

@@ -1,0 +1,87 @@
+name: GPUI CI
+
+on:
+  push:
+    branches:
+      - gpui
+    paths:
+      - "orcasvn-gpui/**"
+      - ".github/workflows/gpui-ci.yml"
+  pull_request:
+    paths:
+      - "orcasvn-gpui/**"
+      - ".github/workflows/gpui-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gpui-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  test:
+    name: Test (Linux)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./orcasvn-gpui -> target"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config subversion \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libfontconfig1-dev libfreetype-dev
+
+      - name: Check formatting
+        run: cargo fmt --manifest-path orcasvn-gpui/Cargo.toml -- --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path orcasvn-gpui/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path orcasvn-gpui/Cargo.toml
+
+  check:
+    name: Check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - windows-latest
+          - macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./orcasvn-gpui -> target"
+
+      - name: Check
+        run: cargo check --manifest-path orcasvn-gpui/Cargo.toml

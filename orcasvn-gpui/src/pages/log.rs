@@ -429,7 +429,6 @@ impl LogPage {
                     _ => "modified",
                 };
                 let path = changed.path.clone();
-                let revision = revision;
                 let entity = cx.entity();
                 div()
                     .flex()

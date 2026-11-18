@@ -79,9 +79,19 @@ src/
 - 贮藏列表的“应用”与“弹出”行为与 `egui` 版本一致：弹出会应用补丁并删除该贮藏。
 - 状态缓存与 `egui` 分支共用，外部修改工作副本后偶尔需要手动点“刷新”。
 
+## CI 与预发布
+
+- `.github/workflows/gpui-ci.yml`：`gpui` 分支和涉及 `orcasvn-gpui/**` 的 PR 会跑格式检查、Clippy（`-D warnings`）、单元测试（Linux），并在 Windows / macOS 上做 `cargo check`。
+- `.github/workflows/gpui-prerelease.yml`：推送 `gpui-vX.Y.Z-alpha.N`（也支持 `-beta.N` / `-rc.N`）标签时，校验标签与 `Cargo.toml` / `Cargo.lock` 版本一致，先建 draft prerelease，再在 Linux / Windows / macOS 打包并上传，全部成功后自动发布。
+
+```bash
+git tag gpui-v0.8.0-alpha.1
+git push origin gpui-v0.8.0-alpha.1
+```
+
 ## 后续工作
 
 1. 分栏升级为 kit 的 `Dock`（标签页、拖拽停靠、布局持久化），状态列表接入列排序。
 2. 窗口图标、菜单栏、可自定义快捷键。
-3. 为 GPUI 版本添加 CI（`cargo check` / `cargo test` + Linux 依赖）和打包脚本。
+3. macOS Intel（x86_64）与 Linux aarch64 的发布产物。
 4. 与 `egui` 分支共享的分层：把 `svn/`、`settings.rs`、`i18n.rs` 抽成 workspace crate，避免两份拷贝漂移。
