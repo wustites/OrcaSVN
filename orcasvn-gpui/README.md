@@ -15,7 +15,7 @@ cargo run --release -- /path/to/working-copy   # 路径可选
 
 依赖：
 
-- Rust 1.85+（edition 2024；本次验证使用 rustc 1.97）。
+- Rust 1.88+（edition 2024，`slice::as_chunks`；本次验证使用 rustc 1.97 / CI stable 1.100）。
 - 系统 `svn` 命令行（也可在“设置”中指定可执行文件路径）。
 - Linux：需要 `libxkbcommon-x11`、Wayland/X11、fontconfig/freetype 开发库和可用的 Vulkan 驱动；文件对话框走 xdg-desktop-portal（`rfd`）。
 - `gpui-kit 0.10` 会带入它固定的 GPUI 快照（crates.io 上的 `gpui-pre 0.3.12`），因此只依赖一个 UI crate，不再直接依赖 `gpui`。
