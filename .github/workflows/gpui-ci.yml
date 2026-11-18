@@ -97,6 +97,52 @@ jobs:
       - name: Check
         run: cargo check --manifest-path src-tauri/Cargo.toml
 
+  package:
+    name: Linux installers
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./orcasvn-gpui -> target"
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            pkg-config subversion \
+            libxkbcommon-dev libxkbcommon-x11-dev \
+            libwayland-dev libx11-xcb-dev \
+            libxcb1-dev libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libfontconfig1-dev libfreetype-dev
+
+      - name: Build release binary
+        run: cargo build --release --manifest-path orcasvn-gpui/Cargo.toml
+
+      - name: Build deb and AppImage
+        env:
+          RELEASE_TAG: ci
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' orcasvn-gpui/Cargo.toml | head -1)
+          RELEASE_TAG="v$version" scripts/package-linux-installers.sh
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: orcasvn-gpui-linux-installers
+          path: |
+            dist/*.deb
+            dist/*.AppImage
+          if-no-files-found: error
+
   check:
     name: Check (${{ matrix.os }})
     runs-on: ${{ matrix.os }}

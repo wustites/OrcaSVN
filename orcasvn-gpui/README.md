@@ -88,6 +88,12 @@ orcasvn-gpui/src/
 
 - `.github/workflows/gpui-ci.yml`：`gpui` 分支与相关 PR 跑 core/gpui 的格式检查、Clippy（`-D warnings`）、单元测试，检查 Tauri 后端，并在 Windows / macOS 上做 `cargo check`。
 - `.github/workflows/gpui-prerelease.yml`：推送 `gpui-vX.Y.Z-alpha.N`（也支持 `-beta.N` / `-rc.N`）校验版本、创建 draft、三平台打包上传并自动发布。
+- 发布产物同时包含安装包与压缩包：
+  - Linux：`.deb`、`.AppImage`、`.tar.gz`
+  - Windows：NSIS 安装程序（`-setup.exe`）、`.zip`
+  - macOS：`.dmg`、`.app.zip`、`.tar.gz`
+- CI 的 `Linux installers` job 会构建 `.deb` / `.AppImage` 并作为 workflow artifact 上传，PR 也能下载验证。
+- 安装包未签名：macOS 首次打开需右键“打开”或在“隐私与安全性”中允许，Windows 可能触发 SmartScreen 提示。
 
 ```bash
 git tag gpui-v0.8.0-alpha.1

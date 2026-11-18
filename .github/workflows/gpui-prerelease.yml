@@ -135,9 +135,8 @@ jobs:
       - name: Build release binary
         run: cargo build --release --manifest-path orcasvn-gpui/Cargo.toml
 
-      - name: Package and upload to draft
+      - name: Package archive
         env:
-          GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
@@ -147,13 +146,120 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             cp orcasvn-gpui/target/release/orcasvn-gpui.exe "dist/$name/OrcaSVN-gpui.exe"
             (cd dist && 7z a -tzip "$name.zip" "$name" >/dev/null)
-            asset="dist/$name.zip"
           else
             cp orcasvn-gpui/target/release/orcasvn-gpui "dist/$name/OrcaSVN-gpui"
             tar -C dist -czf "dist/$name.tar.gz" "$name"
-            asset="dist/$name.tar.gz"
           fi
-          gh release upload "$RELEASE_TAG" "$asset" --clobber
+
+      - name: Build Linux installers (deb, AppImage)
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          scripts/package-linux-installers.sh
+
+      - name: Build Windows installer (NSIS)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          choco install nsis --no-progress -y
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $tag = $env:RELEASE_TAG
+          $nsi = @'
+          Unicode true
+          !include "MUI2.nsh"
+          !define MUI_ICON "src-tauri\icons\icon.ico"
+          !define MUI_UNICON "src-tauri\icons\icon.ico"
+          !insertmacro MUI_PAGE_WELCOME
+          !insertmacro MUI_PAGE_DIRECTORY
+          !insertmacro MUI_PAGE_INSTFILES
+          !insertmacro MUI_UNPAGE_CONFIRM
+          !insertmacro MUI_UNPAGE_INSTFILES
+          !insertmacro MUI_LANGUAGE "English"
+
+          Name "OrcaSVN GPUI"
+          OutFile "dist\OrcaSVN-__TAG__-windows-x86_64-setup.exe"
+          InstallDir "$LOCALAPPDATA\OrcaSVN GPUI"
+          RequestExecutionLevel user
+
+          Section "Install"
+            SetOutPath "$INSTDIR"
+            File "orcasvn-gpui\target\release\orcasvn-gpui.exe"
+            WriteUninstaller "$INSTDIR\uninstall.exe"
+            CreateDirectory "$SMPROGRAMS\OrcaSVN GPUI"
+            CreateShortcut "$SMPROGRAMS\OrcaSVN GPUI\OrcaSVN GPUI.lnk" "$INSTDIR\orcasvn-gpui.exe"
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OrcaSVN GPUI" "DisplayName" "OrcaSVN GPUI"
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OrcaSVN GPUI" "DisplayVersion" "__VERSION__"
+            WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OrcaSVN GPUI" "UninstallString" "$INSTDIR\uninstall.exe"
+          SectionEnd
+
+          Section "Uninstall"
+            Delete "$INSTDIR\orcasvn-gpui.exe"
+            Delete "$INSTDIR\uninstall.exe"
+            Delete "$SMPROGRAMS\OrcaSVN GPUI\OrcaSVN GPUI.lnk"
+            RMDir "$SMPROGRAMS\OrcaSVN GPUI"
+            RMDir "$INSTDIR"
+            DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\OrcaSVN GPUI"
+          SectionEnd
+          '@
+          $version = (Select-String -Path orcasvn-gpui/Cargo.toml -Pattern '^version = "(.*)"').Matches.Groups[1].Value
+          $nsi = $nsi.Replace('__TAG__', $tag).Replace('__VERSION__', $version)
+          Set-Content -Path installer.nsi -Value $nsi -Encoding UTF8
+          makensis installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build macOS app and dmg
+        if: runner.os == 'macOS'
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="$RELEASE_TAG"
+          app="dist/OrcaSVN GPUI.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp orcasvn-gpui/target/release/orcasvn-gpui "$app/Contents/MacOS/OrcaSVN-gpui"
+          cp src-tauri/icons/icon.icns "$app/Contents/Resources/AppIcon.icns"
+          version="${tag#gpui-v}"
+          cat > "$app/Contents/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key><string>OrcaSVN</string>
+            <key>CFBundleDisplayName</key><string>OrcaSVN GPUI</string>
+            <key>CFBundleIdentifier</key><string>com.orcasvn.gpui</string>
+            <key>CFBundleVersion</key><string>$version</string>
+            <key>CFBundleShortVersionString</key><string>$version</string>
+            <key>CFBundleExecutable</key><string>OrcaSVN-gpui</string>
+            <key>CFBundleIconFile</key><string>AppIcon</string>
+            <key>CFBundlePackageType</key><string>APPL</string>
+            <key>LSMinimumSystemVersion</key><string>11.0</string>
+          </dict>
+          </plist>
+          EOF
+          chmod +x "$app/Contents/MacOS/OrcaSVN-gpui"
+          codesign --force --deep --sign - "$app"
+          hdiutil create -volname "OrcaSVN GPUI $tag" -srcfolder "$app" -ov -format UDZO \
+            "dist/OrcaSVN-${tag}-macos-aarch64.dmg"
+          (cd dist && ditto -c -k --sequesterRsrc --keepParent "OrcaSVN GPUI.app" \
+            "OrcaSVN-${tag}-macos-aarch64-app.zip")
+
+      - name: Upload to draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          assets=(dist/*.tar.gz dist/*.zip dist/*.deb dist/*.AppImage dist/*setup.exe dist/*.dmg)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "::error::No release assets were produced."
+            exit 1
+          fi
+          gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
 
   publish:
     name: Publish complete prerelease

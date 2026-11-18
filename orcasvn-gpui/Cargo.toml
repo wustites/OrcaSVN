@@ -1,6 +1,6 @@
 [package]
 name = "orcasvn-gpui"
-version = "0.8.0-alpha.1"
+version = "0.8.1-alpha.1"
 description = "OrcaSVN 客户端 (Rust + GPUI，实验分支)"
 license = "MIT"
 edition = "2021"
