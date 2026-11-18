@@ -36,6 +36,8 @@ pub struct WorkspacePage {
     op_label: String,
     confirm: Option<Confirm>,
     update_rev: String,
+    pub refresh_requested: bool,
+    pub focus_filter_requested: bool,
 }
 
 impl WorkspacePage {
@@ -142,6 +144,10 @@ impl WorkspacePage {
             .map(|e| e.status_code.as_str())
     }
 
+    pub fn entries_len(&self) -> usize {
+        self.entries.len()
+    }
+
     pub fn show(&mut self, ui: &mut Ui, shared: &mut Shared) {
         let ctx = ui.ctx().clone();
         let Some(workspace) = shared.workspace.clone() else {
@@ -156,6 +162,10 @@ impl WorkspacePage {
             self.refresh(&ctx, &workspace, false);
         }
         self.poll(&ctx, shared, &workspace);
+        if self.refresh_requested {
+            self.refresh_requested = false;
+            self.refresh(&ctx, &workspace, true);
+        }
 
         let focused = ctx.input(|i| i.viewport().focused.unwrap_or(true));
         if focused
@@ -244,11 +254,15 @@ impl WorkspacePage {
         workspace: &str,
     ) {
         ui.horizontal(|ui| {
-            ui.add(
+            let response = ui.add(
                 egui::TextEdit::singleline(&mut self.filter)
                     .hint_text(t("过滤文件…", "Filter files…"))
                     .desired_width(ui.available_width() - 120.0),
             );
+            if self.focus_filter_requested {
+                self.focus_filter_requested = false;
+                response.request_focus();
+            }
             ui.checkbox(&mut self.hide_unversioned, t("隐藏未版本", "Hide '?'"));
         });
 
@@ -322,6 +336,8 @@ impl WorkspacePage {
                         response.context_menu(|ui| {
                             for (label, action) in [
                                 (t("查看差异", "Show diff"), "diff"),
+                                (t("提交此文件", "Commit this file"), "commit-file"),
+                                (t("提交此目录", "Commit this directory"), "commit-dir"),
                                 (t("追溯", "Blame"), "blame"),
                                 (t("在文件管理器中显示", "Reveal in file manager"), "reveal"),
                                 (t("标记冲突已解决", "Mark resolved"), "resolve"),
@@ -343,6 +359,18 @@ impl WorkspacePage {
             Some(("blame", path)) => {
                 shared.blame_file = Some(path);
                 shared.goto = Some(Page::Blame);
+            }
+            Some(("commit-file", path)) => {
+                shared.commit_file = Some(path);
+                shared.goto = Some(Page::Commit);
+            }
+            Some(("commit-dir", path)) => {
+                shared.commit_scope = Some(
+                    path.rsplit_once('/')
+                        .map(|(dir, _)| dir.to_string())
+                        .unwrap_or_default(),
+                );
+                shared.goto = Some(Page::Commit);
             }
             Some(("reveal", path)) => {
                 if let Err(error) = system::reveal_workspace_file(workspace.to_string(), path) {

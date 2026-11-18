@@ -10,6 +10,7 @@ pub struct SettingsPage {
     svn_path: String,
     svn_task: Task<String>,
     svn_version: Option<String>,
+    note_edit: Option<(String, String)>,
 }
 
 impl SettingsPage {
@@ -18,6 +19,7 @@ impl SettingsPage {
             svn_path: settings.svn_path.clone(),
             svn_task: Task::default(),
             svn_version: None,
+            note_edit: None,
         }
     }
 
@@ -133,6 +135,97 @@ impl SettingsPage {
                 };
                 ui.end_row();
             });
+
+        ui.add_space(16.0);
+        ui.separator();
+        ui.heading(t("多项目工作区", "Workspaces"));
+        let mut collapsed = settings.workspace_list_collapsed;
+        if ui
+            .checkbox(&mut collapsed, t("折叠多项目栏", "Collapse workspace rail"))
+            .changed()
+        {
+            settings.workspace_list_collapsed = collapsed;
+            settings.save();
+        }
+
+        ui.label(RichText::new(format!("★ {}", t("收藏", "Favorites"))).weak());
+        let favorites = settings.favorites.clone();
+        let mut remove_favorite = None;
+        for path in &favorites {
+            ui.horizontal(|ui| {
+                ui.label(path);
+                if ui.small_button(t("移除", "Remove")).clicked() {
+                    remove_favorite = Some(path.clone());
+                }
+            });
+        }
+        if favorites.is_empty() {
+            ui.label(RichText::new(t("还没有收藏的工作区", "No favorite workspaces yet")).weak());
+        }
+        if let Some(path) = remove_favorite {
+            settings.favorites.retain(|item| item != &path);
+            settings.save();
+        }
+
+        ui.label(RichText::new(format!("✎ {}", t("备注", "Notes"))).weak());
+        let notes: Vec<(String, String)> = settings
+            .workspace_notes
+            .iter()
+            .map(|(path, note)| (path.clone(), note.clone()))
+            .collect();
+        let mut clear_note = None;
+        for (path, note) in &notes {
+            ui.horizontal(|ui| {
+                ui.label(path);
+                ui.label(RichText::new(note).weak());
+                if ui.small_button(t("编辑", "Edit")).clicked() {
+                    self.note_edit = Some((path.clone(), note.clone()));
+                }
+                if ui.small_button(t("清除", "Clear")).clicked() {
+                    clear_note = Some(path.clone());
+                }
+            });
+        }
+        if notes.is_empty() {
+            ui.label(RichText::new(t("还没有工作区备注", "No workspace notes yet")).weak());
+        }
+        if let Some(path) = clear_note {
+            settings.workspace_notes.remove(&path);
+            settings.save();
+        }
+
+        if let Some((path, note)) = &mut self.note_edit {
+            let mut close = false;
+            let mut save = false;
+            egui::Window::new(t("编辑备注", "Edit note"))
+                .collapsible(false)
+                .resizable(false)
+                .show(ui.ctx(), |ui| {
+                    ui.label(path.as_str());
+                    ui.text_edit_multiline(note);
+                    ui.horizontal(|ui| {
+                        if ui.button(t("保存", "Save")).clicked() {
+                            save = true;
+                        }
+                        if ui.button(t("取消", "Cancel")).clicked() {
+                            close = true;
+                        }
+                    });
+                });
+            if save {
+                let trimmed = note.trim().to_string();
+                if trimmed.is_empty() {
+                    settings.workspace_notes.remove(path);
+                } else {
+                    settings.workspace_notes.insert(path.clone(), trimmed);
+                }
+                settings.save();
+                close = true;
+            }
+            if close {
+                self.note_edit = None;
+            }
+        }
 
         ui.add_space(16.0);
         ui.separator();

@@ -1,4 +1,5 @@
 use crate::i18n::{self, t};
+use crate::pages::sidebar::Sidebar;
 use crate::pages::{self, NoticeLevel, Page, Shared};
 use crate::settings::{Settings, Theme};
 use crate::svn;
@@ -17,6 +18,10 @@ pub struct OrcaApp {
     stash: pages::stash::StashPage,
     checkout: pages::checkout::CheckoutPage,
     settings: pages::settings::SettingsPage,
+    sidebar: Sidebar,
+    commit: pages::commit::CommitPage,
+    update: pages::update::UpdatePage,
+    diff_page: pages::diff_page::DiffPage,
 }
 
 /// egui's bundled fonts have no CJK glyphs; borrow one from the system.
@@ -90,6 +95,10 @@ impl OrcaApp {
             blame: Default::default(),
             stash: Default::default(),
             checkout: Default::default(),
+            sidebar: Sidebar::new(),
+            commit: Default::default(),
+            update: Default::default(),
+            diff_page: Default::default(),
         }
     }
 
@@ -105,6 +114,9 @@ impl OrcaApp {
         self.log = Default::default();
         self.blame = Default::default();
         self.stash = Default::default();
+        self.commit = Default::default();
+        self.update = Default::default();
+        self.diff_page = Default::default();
         self.info_task = Task::spawn(ctx, async move {
             svn::info(&path).await.map_err(|e| e.to_string())
         });
@@ -153,15 +165,52 @@ impl OrcaApp {
     }
 
     fn nav(&mut self, ui: &mut egui::Ui) {
+        let repo = self
+            .shared
+            .workspace
+            .as_deref()
+            .map(pages::sidebar::workspace_name)
+            .unwrap_or_else(|| t("未打开工作副本", "No working copy").to_string());
         ui.add_space(6.0);
-        for page in Page::ALL {
-            let label = format!("{}  {}", page.icon(), page.title());
-            let response = ui.add_sized(
-                [ui.available_width(), 30.0],
-                egui::Button::selectable(self.page == page, label),
-            );
-            if response.clicked() {
-                self.page = page;
+        ui.horizontal(|ui| {
+            ui.label("📁");
+            ui.strong(repo);
+            if let Some(info) = &self.shared.info {
+                ui.label(RichText::new(format!("r{}", info.revision)).weak().small());
+            }
+        });
+        let groups: [(&str, &[Page]); 3] = [
+            (t("工作副本", "Working copy"), &[Page::Workspace, Page::Log]),
+            (
+                t("仓库", "Repository"),
+                &[
+                    Page::Commit,
+                    Page::Update,
+                    Page::Diff,
+                    Page::Stash,
+                    Page::Blame,
+                ],
+            ),
+            (t("应用", "Application"), &[Page::Checkout, Page::Settings]),
+        ];
+        let count = self.workspace.entries_len();
+        for (heading, pages) in groups {
+            ui.add_space(6.0);
+            ui.label(RichText::new(heading).weak().small());
+            for &page in pages {
+                let label = format!("{}  {}", page.icon(), page.title());
+                let text = if page == Page::Workspace && count > 0 {
+                    format!("{label}  ({count})")
+                } else {
+                    label
+                };
+                let response = ui.add_sized(
+                    [ui.available_width(), 28.0],
+                    egui::Button::selectable(self.page == page, text),
+                );
+                if response.clicked() {
+                    self.page = page;
+                }
             }
         }
     }
@@ -177,9 +226,24 @@ impl OrcaApp {
                 ui.label(RichText::new(symbol).color(color));
                 ui.label(message.lines().next().unwrap_or_default())
                     .on_hover_text(message.as_str());
+            } else {
+                ui.label(
+                    RichText::new(
+                        self.shared
+                            .workspace
+                            .clone()
+                            .unwrap_or_else(|| t("未打开工作副本", "No working copy").to_string()),
+                    )
+                    .weak()
+                    .small(),
+                );
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(RichText::new(format!("v{}", env!("CARGO_PKG_VERSION"))).weak());
+                ui.label(
+                    RichText::new(format!("v{}", env!("CARGO_PKG_VERSION")))
+                        .weak()
+                        .small(),
+                );
                 let label = if self.shared.show_output {
                     t("隐藏输出", "Hide output")
                 } else {
@@ -188,14 +252,73 @@ impl OrcaApp {
                 if ui.small_button(label).clicked() {
                     self.shared.show_output = !self.shared.show_output;
                 }
+                if let Some(info) = &self.shared.info {
+                    ui.label(RichText::new(format!("r{}", info.revision)).weak().small());
+                }
+                let count = self.workspace.entries_len();
+                if count > 0 {
+                    ui.label(
+                        RichText::new(format!("{} {count}", t("变更", "changes")))
+                            .weak()
+                            .small(),
+                    );
+                }
             });
         });
+    }
+
+    fn handle_shortcuts(&mut self, ctx: &egui::Context) {
+        let mut open = false;
+        let mut refresh = false;
+        let mut focus_filter = false;
+        let mut switch = None;
+        ctx.input_mut(|input| {
+            use egui::{Key, Modifiers};
+            open |= input.consume_key(Modifiers::COMMAND, Key::O);
+            refresh |= input.consume_key(Modifiers::COMMAND, Key::R);
+            refresh |= input.consume_key(Modifiers::NONE, Key::F5);
+            focus_filter |= input.consume_key(Modifiers::COMMAND, Key::F);
+            if input.consume_key(Modifiers::COMMAND, Key::Enter) {
+                switch = Some(2usize);
+            }
+            let keys = [
+                Key::Num1,
+                Key::Num2,
+                Key::Num3,
+                Key::Num4,
+                Key::Num5,
+                Key::Num6,
+                Key::Num7,
+                Key::Num8,
+                Key::Num9,
+            ];
+            for (index, key) in keys.into_iter().enumerate() {
+                if input.consume_key(Modifiers::COMMAND, key) {
+                    switch = Some(index);
+                }
+            }
+        });
+        if open {
+            self.pick_workspace();
+        }
+        if refresh {
+            self.workspace.refresh_requested = true;
+        }
+        if focus_filter {
+            self.workspace.focus_filter_requested = true;
+        }
+        if let Some(index) = switch {
+            if let Some(page) = Page::ALL.get(index) {
+                self.page = *page;
+            }
+        }
     }
 }
 
 impl eframe::App for OrcaApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
+        self.handle_shortcuts(&ctx);
 
         if let Some(path) = self.shared.open_workspace.take() {
             self.switch_workspace(&ctx, path);
@@ -219,6 +342,15 @@ impl eframe::App for OrcaApp {
         }
         if let Some(file) = self.shared.blame_file.take() {
             self.blame.open(&ctx, &self.shared, file);
+        }
+        if self.page == Page::Commit {
+            if let Some(scope) = self.shared.commit_scope.take() {
+                self.commit
+                    .set_scope(if scope.is_empty() { None } else { Some(scope) });
+            }
+            if let Some(file) = self.shared.commit_file.take() {
+                self.commit.preselect(&ctx, &self.shared, file);
+            }
         }
 
         egui::Panel::top("top").show(ui, |ui| {
@@ -248,12 +380,35 @@ impl eframe::App for OrcaApp {
                         });
                 });
         }
+        let projects_width = if self.shared.settings.workspace_list_collapsed {
+            152.0
+        } else {
+            260.0
+        };
+        egui::Panel::left("projects")
+            .resizable(false)
+            .exact_size(projects_width)
+            .show(ui, |ui| self.sidebar.show(ui, &mut self.shared));
         egui::Panel::left("nav")
             .resizable(false)
-            .exact_size(150.0)
+            .exact_size(168.0)
             .show(ui, |ui| self.nav(ui));
 
         egui::CentralPanel::default().show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(RichText::new("▎").color(ui.visuals().selection.bg_fill));
+                ui.strong(self.page.title());
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if let Some(workspace) = &self.shared.workspace {
+                        ui.label(
+                            RichText::new(pages::sidebar::workspace_name(workspace))
+                                .weak()
+                                .small(),
+                        );
+                    }
+                });
+            });
+            ui.separator();
             let needs_workspace = !matches!(self.page, Page::Checkout | Page::Settings);
             if needs_workspace && self.shared.workspace.is_none() {
                 ui.vertical_centered(|ui| {
@@ -283,6 +438,9 @@ impl eframe::App for OrcaApp {
             }
             match self.page {
                 Page::Workspace => self.workspace.show(ui, &mut self.shared),
+                Page::Commit => self.commit.show(ui, &mut self.shared),
+                Page::Update => self.update.show(ui, &mut self.shared),
+                Page::Diff => self.diff_page.show(ui, &mut self.shared),
                 Page::Log => self.log.show(ui, &mut self.shared),
                 Page::Blame => self.blame.show(ui, &mut self.shared),
                 Page::Stash => self.stash.show(ui, &mut self.shared),

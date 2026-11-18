@@ -15,6 +15,8 @@ pub struct LogPage {
     exhausted: bool,
     keyword: String,
     author: String,
+    date_from: String,
+    date_to: String,
     selected: Option<usize>,
     diff: Option<DiffDocument>,
     diff_task: Task<DiffResult>,
@@ -47,6 +49,8 @@ impl LogPage {
         let limit = shared.settings.log_limit.max(1);
         let keyword = Some(self.keyword.trim().to_string()).filter(|s| !s.is_empty());
         let author = Some(self.author.trim().to_string()).filter(|s| !s.is_empty());
+        let date_from = Some(self.date_from.trim().to_string()).filter(|s| !s.is_empty());
+        let date_to = Some(self.date_to.trim().to_string()).filter(|s| !s.is_empty());
         self.task = Task::spawn(ctx, async move {
             svn::log(
                 &workspace,
@@ -55,8 +59,8 @@ impl LogPage {
                 None,
                 keyword.as_deref(),
                 author.as_deref(),
-                None,
-                None,
+                date_from.as_deref(),
+                date_to.as_deref(),
             )
             .await
             .map_err(|e| e.to_string())
@@ -137,9 +141,22 @@ impl LogPage {
             if ui.button(format!("🔍 {}", t("搜索", "Search"))).clicked() || submit {
                 self.load(&ctx, shared, false);
             }
+            ui.add(
+                egui::TextEdit::singleline(&mut self.date_from)
+                    .hint_text("YYYY-MM-DD")
+                    .desired_width(110.0),
+            );
+            ui.label("→");
+            ui.add(
+                egui::TextEdit::singleline(&mut self.date_to)
+                    .hint_text("YYYY-MM-DD")
+                    .desired_width(110.0),
+            );
             if ui.button(t("重置", "Reset")).clicked() {
                 self.keyword.clear();
                 self.author.clear();
+                self.date_from.clear();
+                self.date_to.clear();
                 self.load(&ctx, shared, false);
             }
             spinner_label(ui, self.task.running(), t("加载中…", "Loading…"));
