@@ -208,7 +208,8 @@ jobs:
           $version = (Select-String -Path orcasvn-gpui/Cargo.toml -Pattern '^version = "(.*)"').Matches.Groups[1].Value
           $nsi = $nsi.Replace('__TAG__', $tag).Replace('__VERSION__', $version)
           Set-Content -Path installer.nsi -Value $nsi -Encoding UTF8
-          makensis installer.nsi
+          $makensis = Join-Path ${env:ProgramFiles(x86)} "NSIS\makensis.exe"
+          & $makensis installer.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build macOS app and dmg
