@@ -16,6 +16,7 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 serde = { version = "1.0", features = ["derive"] }
+orcasvn-core = { path = "../orcasvn-core" }
 tokio = { version = "1", features = ["rt", "time", "process", "sync"] }
 thiserror = "2"
 quick-xml = "0.37"

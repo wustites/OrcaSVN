@@ -18,6 +18,8 @@ pub struct LogPage {
     exhausted: bool,
     keyword: TextField,
     author: TextField,
+    date_from: TextField,
+    date_to: TextField,
     selected: Option<usize>,
     diff: Option<DiffDocument>,
     diff_running: bool,
@@ -33,6 +35,8 @@ impl LogPage {
             t("关键字 / 版本 / 路径", "Keyword / revision / path"),
         );
         let author = TextField::new(cx, window, t("作者", "Author"));
+        let date_from = TextField::new(cx, window, "YYYY-MM-DD");
+        let date_to = TextField::new(cx, window, "YYYY-MM-DD");
         let subs = vec![
             ui::on_enter(cx, keyword.state(), |app, cx| app.log.load(false, cx)),
             ui::on_enter(cx, author.state(), |app, cx| app.log.load(false, cx)),
@@ -45,6 +49,8 @@ impl LogPage {
             exhausted: false,
             keyword,
             author,
+            date_from,
+            date_to,
             selected: None,
             diff: None,
             diff_running: false,
@@ -60,6 +66,8 @@ impl LogPage {
         self.diff = None;
         self.keyword.clear();
         self.author.clear();
+        self.date_from.clear();
+        self.date_to.clear();
         self.task_running = false;
         self.diff_running = false;
         self.exhausted = false;
@@ -92,6 +100,8 @@ impl LogPage {
         let limit = self.limit;
         let keyword = Some(self.keyword.text().trim().to_string()).filter(|s| !s.is_empty());
         let author = Some(self.author.text().trim().to_string()).filter(|s| !s.is_empty());
+        let date_from = Some(self.date_from.text().trim().to_string()).filter(|s| !s.is_empty());
+        let date_to = Some(self.date_to.text().trim().to_string()).filter(|s| !s.is_empty());
         task::spawn(
             cx,
             async move {
@@ -102,8 +112,8 @@ impl LogPage {
                     None,
                     keyword.as_deref(),
                     author.as_deref(),
-                    None,
-                    None,
+                    date_from.as_deref(),
+                    date_to.as_deref(),
                 )
                 .await
                 .map_err(|error| error.to_string());
@@ -217,6 +227,17 @@ impl LogPage {
                     .w(px(140.0))
                     .child(self.author.input(window, cx).w_full()),
             )
+            .child(
+                div()
+                    .w(px(120.0))
+                    .child(self.date_from.input(window, cx).w_full()),
+            )
+            .child(div().text_xs().text_color(rgb(pal.muted)).child("→"))
+            .child(
+                div()
+                    .w(px(120.0))
+                    .child(self.date_to.input(window, cx).w_full()),
+            )
             .child(ui::button(
                 "log-search",
                 format!("🔍 {}", t("搜索", "Search")),
@@ -232,6 +253,8 @@ impl LogPage {
                 cx.listener(|app, _, _, cx| {
                     app.log.keyword.clear();
                     app.log.author.clear();
+                    app.log.date_from.clear();
+                    app.log.date_to.clear();
                     app.log.load(false, cx);
                     cx.notify();
                 }),

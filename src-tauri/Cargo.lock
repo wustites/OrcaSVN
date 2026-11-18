@@ -8,6 +8,7 @@ version = "0.6.5"
 dependencies = [
  "base64 0.22.1",
  "chrono",
+ "orcasvn-core",
  "quick-xml 0.37.5",
  "serde",
  "serde_json",
@@ -2160,6 +2161,20 @@ name = "option-ext"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
+
+[[package]]
+name = "orcasvn-core"
+version = "0.8.0-alpha.1"
+dependencies = [
+ "chrono",
+ "quick-xml 0.37.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "os_pipe"

@@ -28,7 +28,7 @@ pub struct SvnLogPath {
     pub action: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone, Default)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct SvnInfo {
     pub path: String,
     pub url: String,
@@ -44,7 +44,7 @@ pub struct SvnAuthUser {
     pub realm: String,
 }
 
-#[derive(Debug, Serialize, Deserialize, Clone)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DiffResult {
     pub path: String,
     pub diff: String,

@@ -7,6 +7,7 @@ edition = "2021"
 
 [dependencies]
 gpui-kit = "0.10"
+orcasvn-core = { path = "../orcasvn-core" }
 # gpui-kit re-exports GPUI (a pinned 0.3.12 snapshot published as
 # `gpui-pre`) plus the styled component layer, so the application depends on
 # exactly one UI crate.

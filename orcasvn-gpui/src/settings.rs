@@ -23,6 +23,12 @@ pub struct Settings {
     pub zoom: f32,
     /// Schedule selected missing files for deletion before committing.
     pub auto_delete_missing: bool,
+    /// Workspaces pinned to the top of the multi-project rail.
+    pub favorites: Vec<String>,
+    /// Free-form note per workspace path.
+    pub workspace_notes: std::collections::BTreeMap<String, String>,
+    /// Multi-project rail collapsed to an icon strip.
+    pub workspace_list_collapsed: bool,
 }
 
 impl Default for Settings {
@@ -36,6 +42,9 @@ impl Default for Settings {
             recent: Vec::new(),
             zoom: 1.0,
             auto_delete_missing: false,
+            favorites: Vec::new(),
+            workspace_notes: std::collections::BTreeMap::new(),
+            workspace_list_collapsed: false,
         }
     }
 }

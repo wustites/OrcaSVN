@@ -5,11 +5,15 @@ on:
     branches:
       - gpui
     paths:
+      - "orcasvn-core/**"
       - "orcasvn-gpui/**"
+      - "src-tauri/**"
       - ".github/workflows/gpui-ci.yml"
   pull_request:
     paths:
+      - "orcasvn-core/**"
       - "orcasvn-gpui/**"
+      - "src-tauri/**"
       - ".github/workflows/gpui-ci.yml"
 
 permissions:
@@ -53,13 +57,45 @@ jobs:
             libfontconfig1-dev libfreetype-dev
 
       - name: Check formatting
-        run: cargo fmt --manifest-path orcasvn-gpui/Cargo.toml -- --check
+        run: |
+          cargo fmt --manifest-path orcasvn-core/Cargo.toml -- --check
+          cargo fmt --manifest-path orcasvn-gpui/Cargo.toml -- --check
 
       - name: Clippy
-        run: cargo clippy --manifest-path orcasvn-gpui/Cargo.toml --all-targets -- -D warnings
+        run: |
+          cargo clippy --manifest-path orcasvn-core/Cargo.toml --all-targets -- -D warnings
+          cargo clippy --manifest-path orcasvn-gpui/Cargo.toml --all-targets -- -D warnings
 
       - name: Test
-        run: cargo test --manifest-path orcasvn-gpui/Cargo.toml
+        run: |
+          cargo test --manifest-path orcasvn-core/Cargo.toml
+          cargo test --manifest-path orcasvn-gpui/Cargo.toml
+
+  tauri:
+    name: Check Tauri backend
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            ./src-tauri -> target
+            ./orcasvn-core -> target
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libgtk-3-dev libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+
+      - name: Check
+        run: cargo check --manifest-path src-tauri/Cargo.toml
 
   check:
     name: Check (${{ matrix.os }})

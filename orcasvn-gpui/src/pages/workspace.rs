@@ -317,6 +317,10 @@ impl WorkspacePage {
     }
 
     /// Deferred focus requested by the global shortcut handler.
+    pub fn change_count(&self) -> usize {
+        self.entries.len()
+    }
+
     pub fn request_filter_focus(&mut self) {
         self.focus_filter_requested = true;
     }

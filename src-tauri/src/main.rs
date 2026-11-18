@@ -1,11 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod svn;
 #[cfg(target_os = "windows")]
 mod windows_editor_launch;
 mod workspace_opener;
 
 use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use orcasvn_core::svn;
+use orcasvn_core::{DiffResult, SvnAuthUser, SvnInfo, SvnLogEntry, SvnStatus};
 use serde::{Deserialize, Serialize};
 use std::env;
 use std::fs;
@@ -470,58 +471,6 @@ fn open_terminal(path: &str) -> Result<(), String> {
         }
     }
     Err(format!("failed to open terminal: {}", errors.join("; ")))
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SvnStatus {
-    pub path: String,
-    pub status: String,
-    pub status_code: String,
-    pub prop_status: String,
-    pub locked: bool,
-    pub history: bool,
-    pub switched: bool,
-    #[serde(default)]
-    pub changelist: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SvnLogEntry {
-    pub revision: u64,
-    pub author: String,
-    pub date: String,
-    pub message: String,
-    pub changed_paths: Vec<SvnLogPath>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SvnLogPath {
-    pub path: String,
-    pub action: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SvnInfo {
-    pub path: String,
-    pub url: String,
-    pub repository_root: String,
-    pub revision: u64,
-    pub node_kind: String,
-    pub schedule: String,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-pub struct SvnAuthUser {
-    pub username: String,
-    pub realm: String,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct DiffResult {
-    pub path: String,
-    pub diff: String,
-    pub old_revision: u64,
-    pub new_revision: u64,
 }
 
 #[tauri::command]

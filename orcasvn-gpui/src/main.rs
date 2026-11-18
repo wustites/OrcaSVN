@@ -6,13 +6,12 @@ mod diff;
 mod i18n;
 mod pages;
 mod settings;
-mod svn;
 mod system;
 mod task;
-mod types;
 mod ui;
 
-pub use types::*;
+pub use orcasvn_core::svn;
+pub use orcasvn_core::*;
 
 use gpui_kit::component::{Theme as KitTheme, ThemeMode};
 use gpui_kit::{

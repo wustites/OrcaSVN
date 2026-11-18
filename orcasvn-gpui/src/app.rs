@@ -1,4 +1,5 @@
 use crate::i18n::{self, t};
+use crate::pages::sidebar::WorkspaceRail;
 use crate::pages::{self, NoticeLevel, Page, Shared};
 use crate::settings::{Settings, Theme};
 use crate::svn;
@@ -24,6 +25,9 @@ actions!(
         Page4,
         Page5,
         Page6,
+        Page7,
+        Page8,
+        Page9,
     ]
 );
 
@@ -31,11 +35,15 @@ pub struct OrcaApp {
     pub shared: Shared,
     pub page: Page,
     pub workspace: pages::workspace::WorkspacePage,
+    pub commit: pages::commit::CommitPage,
+    pub update: pages::update::UpdatePage,
+    pub diff_page: pages::diff::DiffPage,
     pub log: pages::log::LogPage,
     pub blame: pages::blame::BlamePage,
     pub stash: pages::stash::StashPage,
     pub checkout: pages::checkout::CheckoutPage,
     pub settings_page: pages::settings::SettingsPage,
+    pub rail: WorkspaceRail,
     info_running: bool,
     recent_open: bool,
     output_scroll: ScrollHandle,
@@ -54,9 +62,13 @@ impl OrcaApp {
 
         let mut app = Self {
             settings_page: pages::settings::SettingsPage::new(cx, window, &shared.settings),
+            rail: WorkspaceRail::new(),
             shared,
             page: Page::Workspace,
             workspace: pages::workspace::WorkspacePage::new(cx, window),
+            commit: pages::commit::CommitPage::new(cx, window),
+            update: pages::update::UpdatePage::new(cx, window),
+            diff_page: pages::diff::DiffPage::new(cx, window),
             log: pages::log::LogPage::new(cx, window),
             blame: pages::blame::BlamePage::new(cx, window),
             stash: pages::stash::StashPage::new(cx, window),
@@ -89,6 +101,9 @@ impl OrcaApp {
             KeyBinding::new("ctrl-4", Page4, None),
             KeyBinding::new("ctrl-5", Page5, None),
             KeyBinding::new("ctrl-6", Page6, None),
+            KeyBinding::new("ctrl-7", Page7, None),
+            KeyBinding::new("ctrl-8", Page8, None),
+            KeyBinding::new("ctrl-9", Page9, None),
         ]);
 
         let entity = cx.entity().downgrade();
@@ -148,7 +163,10 @@ impl OrcaApp {
         page_action!(Page3, Page::Blame);
         page_action!(Page4, Page::Stash);
         page_action!(Page5, Page::Checkout);
-        page_action!(Page6, Page::Settings);
+        page_action!(Page6, Page::Stash);
+        page_action!(Page7, Page::Blame);
+        page_action!(Page8, Page::Checkout);
+        page_action!(Page9, Page::Settings);
     }
 
     fn configure_svn(&mut self, cx: &mut Context<Self>) {
@@ -183,6 +201,7 @@ impl OrcaApp {
     }
 
     fn on_tick(&mut self, cx: &mut Context<Self>) {
+        self.rail.maybe_refresh(&self.shared, cx);
         if self.shared.info_dirty {
             self.shared.info_dirty = false;
             self.load_info(cx);
@@ -205,6 +224,9 @@ impl OrcaApp {
         self.shared.info = None;
         self.shared.notice = None;
         self.workspace.reset();
+        self.commit.reset();
+        self.update.reset();
+        self.diff_page.reset();
         self.log.reset();
         self.blame.reset();
         self.stash.reset();
@@ -422,38 +444,121 @@ impl OrcaApp {
     }
 
     fn nav(&mut self, cx: &mut Context<Self>, pal: Palette) -> AnyElement {
+        let workspace_count = self.workspace.change_count();
+        let groups: [(&'static str, &[Page]); 3] = [
+            (t("工作副本", "Working copy"), &[Page::Workspace, Page::Log]),
+            (
+                t("仓库", "Repository"),
+                &[
+                    Page::Commit,
+                    Page::Update,
+                    Page::Diff,
+                    Page::Stash,
+                    Page::Blame,
+                ],
+            ),
+            (t("应用", "Application"), &[Page::Checkout, Page::Settings]),
+        ];
+        let repo = self
+            .shared
+            .workspace
+            .as_deref()
+            .map(pages::sidebar::workspace_name)
+            .unwrap_or_else(|| t("未打开工作副本", "No working copy").to_string());
+        let revision = self
+            .shared
+            .info
+            .as_ref()
+            .map(|info| format!("r{}", info.revision));
+
         div()
-            .w(px(150.0))
+            .w(px(168.0))
             .flex_shrink_0()
             .flex()
             .flex_col()
             .gap_1()
             .p_2()
             .bg(rgb(pal.panel))
-            .children(Page::ALL.iter().enumerate().map(|(index, &page)| {
-                let active = self.page == page;
+            .child(
                 div()
-                    .id(("nav", index))
                     .flex()
                     .flex_row()
                     .items_center()
                     .gap_2()
-                    .px_2()
-                    .py_1()
-                    .rounded_md()
-                    .text_sm()
-                    .when(active, |this| this.bg(rgb(pal.accent_soft)))
-                    .when(!active, |this| {
-                        this.cursor_pointer()
-                            .hover(|style| style.bg(rgb(pal.elevated)))
-                    })
-                    .on_click(cx.listener(move |app, _, _, cx| {
-                        app.page = page;
-                        app.recent_open = false;
-                        cx.notify();
-                    }))
-                    .child(div().w(px(16.0)).flex_shrink_0().child(page.icon()))
-                    .child(page.title())
+                    .px_1()
+                    .pb_1()
+                    .child(div().text_sm().child("📁"))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_sm()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child(repo),
+                    )
+                    .when_some(revision, |this, revision| {
+                        this.child(
+                            div()
+                                .text_xs()
+                                .font_family(ui::mono_font())
+                                .text_color(rgb(pal.muted))
+                                .child(revision),
+                        )
+                    }),
+            )
+            .children(groups.into_iter().flat_map(|(heading, pages)| {
+                let mut items = vec![div()
+                    .px_1()
+                    .pt_2()
+                    .pb_1()
+                    .text_xs()
+                    .text_color(rgb(pal.muted))
+                    .child(heading)
+                    .into_any_element()];
+                items.extend(pages.iter().map(|&page| {
+                    let active = self.page == page;
+                    let badge = match page {
+                        Page::Workspace if workspace_count > 0 => Some(workspace_count.to_string()),
+                        _ => None,
+                    };
+                    div()
+                        .id(("nav", page as usize))
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .px_2()
+                        .py_1()
+                        .rounded_md()
+                        .text_sm()
+                        .when(active, |this| this.bg(rgb(pal.accent_soft)))
+                        .when(!active, |this| {
+                            this.cursor_pointer()
+                                .hover(|style| style.bg(rgb(pal.elevated)))
+                        })
+                        .on_click(cx.listener(move |app, _, _, cx| {
+                            app.page = page;
+                            app.recent_open = false;
+                            cx.notify();
+                        }))
+                        .child(div().w(px(16.0)).flex_shrink_0().child(page.icon()))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .whitespace_nowrap()
+                                .text_ellipsis()
+                                .child(page.title()),
+                        )
+                        .when_some(badge, |this, badge| {
+                            this.child(div().text_xs().text_color(rgb(pal.muted)).child(badge))
+                        })
+                        .into_any_element()
+                }));
+                items
             }))
             .into_any_element()
     }
@@ -471,6 +576,23 @@ impl OrcaApp {
                 message.lines().next().unwrap_or_default().to_string(),
             )
         });
+        let path = self
+            .shared
+            .workspace
+            .clone()
+            .unwrap_or_else(|| t("未打开工作副本", "No working copy").to_string());
+        let count = self
+            .shared
+            .workspace
+            .as_deref()
+            .and_then(|path| self.rail.summaries.get(path))
+            .and_then(|summary| summary.changed)
+            .unwrap_or_else(|| self.workspace.change_count());
+        let revision = self
+            .shared
+            .info
+            .as_ref()
+            .map(|info| format!("r{}", info.revision));
         let output_label = if self.shared.show_output {
             t("隐藏输出", "Hide output")
         } else {
@@ -493,7 +615,8 @@ impl OrcaApp {
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .text_sm()
+                    .text_xs()
+                    .text_color(rgb(pal.muted))
                     .when_some(notice, |this, (symbol, color, message)| {
                         this.child(
                             div()
@@ -503,8 +626,28 @@ impl OrcaApp {
                                 .child(div().text_color(rgb(color)).child(symbol))
                                 .child(div().text_color(rgb(color)).child(message)),
                         )
-                    }),
+                    })
+                    .when(self.shared.notice.is_none(), |this| this.child(path)),
             )
+            .when(count > 0, |this| {
+                this.child(
+                    div()
+                        .flex_shrink_0()
+                        .text_xs()
+                        .text_color(rgb(pal.muted))
+                        .child(t("变更", "changes").to_string() + &format!(" {count}")),
+                )
+            })
+            .when_some(revision, |this, revision| {
+                this.child(
+                    div()
+                        .flex_shrink_0()
+                        .text_xs()
+                        .font_family(ui::mono_font())
+                        .text_color(rgb(pal.muted))
+                        .child(revision),
+                )
+            })
             .child(ui::button(
                 "toggle-output",
                 output_label,
@@ -623,6 +766,38 @@ impl OrcaApp {
             .into_any_element()
     }
 
+    fn route_header(&self, _cx: &mut Context<Self>, pal: Palette) -> AnyElement {
+        let repo = self
+            .shared
+            .workspace
+            .as_deref()
+            .map(pages::sidebar::workspace_name)
+            .unwrap_or_else(|| t("未打开工作副本", "No working copy").to_string());
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .py_2()
+            .child(
+                div()
+                    .w(px(3.0))
+                    .h(px(14.0))
+                    .rounded_sm()
+                    .bg(rgb(pal.accent)),
+            )
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::BOLD)
+                    .child(self.page.title()),
+            )
+            .child(div().flex_1())
+            .child(div().text_xs().text_color(rgb(pal.muted)).child(repo))
+            .into_any_element()
+    }
+
     fn central(&mut self, window: &mut Window, cx: &mut Context<Self>, pal: Palette) -> AnyElement {
         let needs_workspace = !matches!(self.page, Page::Checkout | Page::Settings);
         if needs_workspace && self.shared.workspace.is_none() {
@@ -632,6 +807,9 @@ impl OrcaApp {
             settings_page,
             shared,
             workspace,
+            commit,
+            update,
+            diff_page,
             log,
             blame,
             stash,
@@ -640,6 +818,9 @@ impl OrcaApp {
         } = self;
         match self.page {
             Page::Workspace => workspace.render(shared, window, cx, pal),
+            Page::Commit => commit.render(shared, window, cx, pal),
+            Page::Update => update.render(shared, window, cx, pal),
+            Page::Diff => diff_page.render(shared, window, cx, pal),
             Page::Log => log.render(shared, window, cx, pal),
             Page::Blame => blame.render(shared, window, cx, pal),
             Page::Stash => stash.render(shared, window, cx, pal),
@@ -689,6 +870,8 @@ impl Render for OrcaApp {
                     .flex_row()
                     .flex_1()
                     .min_h_0()
+                    .child(self.rail.render(&self.shared, window, cx, pal))
+                    .child(ui::sep_vertical(pal))
                     .child(self.nav(cx, pal))
                     .child(ui::sep_vertical(pal))
                     .child(
@@ -698,6 +881,8 @@ impl Render for OrcaApp {
                             .min_h_0()
                             .flex()
                             .flex_col()
+                            .child(self.route_header(cx, pal))
+                            .child(ui::sep(pal))
                             .child(self.central(window, cx, pal)),
                     ),
             )

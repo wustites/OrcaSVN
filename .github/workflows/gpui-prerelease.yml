@@ -128,7 +128,9 @@ jobs:
         run: cargo fmt --manifest-path orcasvn-gpui/Cargo.toml -- --check
 
       - name: Test
-        run: cargo test --manifest-path orcasvn-gpui/Cargo.toml
+        run: |
+          cargo test --manifest-path orcasvn-core/Cargo.toml
+          cargo test --manifest-path orcasvn-gpui/Cargo.toml
 
       - name: Build release binary
         run: cargo build --release --manifest-path orcasvn-gpui/Cargo.toml

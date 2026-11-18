@@ -1,10 +1,12 @@
 # OrcaSVN (Rust + GPUI Kit，实验分支)
 
-`gpui` 分支上的实验性迁移：把 `egui` 分支的原生客户端改写成 Rust GUI 实现。界面基于 [GPUI Kit](https://github.com/longbridge/gpui-kit)（[GPUI](https://gpui.rs) + 组件层），目的是验证 GPUI 生态能否承载 SVN 客户端这类密集表格 + 文本界面，并评估迁移成本。
+`gpui` 分支上的实验性迁移：把 **`main` 分支的 Tauri + Vue 客户端**迁移到原生 Rust + GPUI。功能与信息架构以 `main` 为准，`egui` 分支只作为早期脚手架，不再是参考对象。
 
-- SVN 后端（`src/svn/`：状态缓存、快照、Windows USN 日志、目录通知回退）从 `egui` 分支原样复用。
-- 界面层用 GPUI Kit 重写：文本框、按钮基元、主题系统来自 kit；文件列表、差异视图使用 GPUI 的虚拟化列表。
-- 当前定位是**原型**：主流程可用，但没有达到 `egui` 分支的完成度，已知差距见下文。
+- `orcasvn-core/`：从 `main` 的 `src-tauri/src/svn` 抽出的共享 SVN 后端（状态缓存、快照、Windows USN、目录通知回退）。Tauri 客户端和 GPUI 客户端现在共用这一份实现。
+- `orcasvn-gpui/`：GPUI 客户端，界面基于 [GPUI Kit](https://github.com/longbridge/gpui-kit)（GPUI + 组件层）。
+- `src-tauri/`：原有 Tauri 客户端，已改为依赖 `orcasvn-core`。
+
+当前定位是**实验版本**：主流程可用，尚未完全追平 `main` 的细节（见“已知差距”）。
 
 ## 运行
 
@@ -15,26 +17,32 @@ cargo run --release -- /path/to/working-copy   # 路径可选
 
 依赖：
 
-- Rust 1.88+（edition 2024，`slice::as_chunks`；本次验证使用 rustc 1.97 / CI stable 1.100）。
+- Rust 1.88+（edition 2024，`slice::as_chunks`；本次验证 rustc 1.97 / CI stable 1.100）。
 - 系统 `svn` 命令行（也可在“设置”中指定可执行文件路径）。
 - Linux：需要 `libxkbcommon-x11`、Wayland/X11、fontconfig/freetype 开发库和可用的 Vulkan 驱动；文件对话框走 xdg-desktop-portal（`rfd`）。
-- `gpui-kit 0.10` 会带入它固定的 GPUI 快照（crates.io 上的 `gpui-pre 0.3.12`），因此只依赖一个 UI crate，不再直接依赖 `gpui`。
+- `gpui-kit 0.10` 带入固定的 GPUI 快照（crates.io 上的 `gpui-pre 0.3.12`），应用只依赖一个 UI crate。
 
-窗口、设置、贮藏与其他平台一致地保存在系统配置目录（`~/.config/orcasvn/`、`~/.cache/orcasvn/`），与 `egui` 分支共用同一份配置。
+配置保存在 `~/.config/orcasvn/`（与 Tauri 版本共用配置目录）。
 
-## 已迁移的功能
+## 已迁移的功能（对齐 main）
 
 | 页面 | 状态 | 说明 |
 | --- | --- | --- |
-| 工作区 | ✅ | 状态列表（kit `DataTable`：虚拟滚动、列宽可拖、过滤、全选、勾选）、彩色差异、提交（自动 `svn add` 未版本文件、可选自动删除缺失文件）、添加 / 还原 / 删除（kit 对话框确认）、更新到 HEAD 或指定版本（冲突提示）、清理、在文件管理器 / VS Code / 终端中打开、右键菜单（差异 / 追溯 / 显示 / 标记冲突已解决）、每 8 秒自动刷新 |
-| 日志 | ✅ | 分页加载、关键字 / 作者搜索（回车提交）、变更路径列表、单文件或整个版本的差异 |
-| 追溯 | ✅ | 逐行作者与版本，点击版本高亮同版本行，文件浏览器选择 |
-| 贮藏 | ✅ | 补丁粒度贮藏、应用 / 弹出 / 预览 / 删除（带确认弹窗） |
+| 多项目工作区栏 | ✅ | 最近工作副本、变更数、最近修改时间、收藏、备注、折叠、切换/打开 |
+| 工作区 | ✅ | `DataTable` 状态列表（虚拟滚动、列宽拖拽）、过滤/全选、彩色差异、提交（自动 `svn add`、可选自动删除缺失文件）、添加 / 还原 / 删除（kit 对话框）、右键菜单（差异 / 追溯 / 显示 / 标记冲突已解决）、自动刷新 |
+| 提交 | ✅ | 独立页面：勾选文件、提交信息、差异预览、提交 |
+| 更新 | ✅ | 本地/远端版本、目标版本、检查更新（incoming log）、更新并提示冲突 |
+| 差异 | ✅ | 独立页面：按文件查看工作副本或指定版本的差异 |
+| 日志 | ✅ | 关键字 / 作者 / **日期范围**筛选、分页、单文件或整版差异 |
+| 追溯 | ✅ | 逐行作者与版本，点击版本高亮 |
+| 贮藏 | ✅ | 补丁粒度贮藏、应用 / 弹出 / 预览 / 删除（kit 对话框） |
 | 检出 | ✅ | URL、本地目录、可选版本 |
-| 设置 | ✅ | 简体中文 / English、浅色 / 深色 / 跟随系统、界面缩放、日志条数、提交时自动删除缺失文件、SVN 可执行文件检测 |
-| 通用 | ✅ | 命令输出面板、状态栏提示、最近工作副本下拉、启动参数打开工作副本、可拖拽分栏（kit `Resizable`） |
+| 设置 | ✅ | 中英文、深浅色、界面缩放、日志条数、自动删除缺失文件、SVN 可执行文件检测 |
+| 交互 | ✅ | 可拖拽分栏、命令输出面板、路由标题栏、底部路径/变更数/版本栏、全局快捷键 |
 
-快捷键（通过 GPUI actions 全局注册，输入框内也可用）：
+文本输入使用 GPUI Kit 的 `Input` / `Textarea`，支持 IME、选择、撤销/重做和剪贴板。
+
+快捷键（GPUI actions 全局注册，输入框内也可用）：
 
 | 快捷键 | 动作 |
 | --- | --- |
@@ -42,47 +50,45 @@ cargo run --release -- /path/to/working-copy   # 路径可选
 | `Ctrl+R` / `F5` | 刷新状态 |
 | `Ctrl+F` | 聚焦文件过滤框 |
 | `Ctrl+Enter` | 提交已选文件 |
-| `Ctrl+1` … `Ctrl+6` | 工作区 / 日志 / 追溯 / 贮藏 / 检出 / 设置 |
+| `Ctrl+1` … `Ctrl+9` | 工作区 / 日志 / 提交 / 更新 / 差异 / 贮藏 / 追溯 / 检出 / 设置 |
 
-文本输入使用 GPUI Kit 的 `Input` / `Textarea`：支持 IME（中文输入法）、选择、撤销/重做和剪贴板，这是手写输入框无法覆盖的部分。
+## 与 main 的已知差距
 
-以下与 `egui` 分支行为不同或缺失：
-
-- 面板使用 `Resizable` 分栏而不是 `Dock`：没有标签页、拖拽停靠和布局持久化。
-- 没有窗口图标和菜单栏；快捷键目前是固定绑定，未提供自定义。
-- 状态列表的列不可排序（kit `DataTable` 的排序回调尚未接入）。
-- `gpui-kit` 固定了 GPUI 快照版本，升级 kit 时需要跟着适配 API。
+- 提交页尚未提供 `main` 的目录 scope 选择；差异页没有 `main` 的对比模式切换。
+- 多项目栏暂不支持拖拽排序与“按名称/最近变更”排序模式。
+- 设置页未暴露收藏/备注管理（数据已持久化在设置文件里）。
+- 分栏使用 `Resizable` 而不是 `Dock`：没有标签页、拖拽停靠和布局持久化。
+- 视觉使用 GPUI Kit 主题，不复刻 Element Plus 的具体样式。
 
 ## 实现要点
 
 ```
-src/
-├── app.rs            应用外壳：顶栏、导航、状态栏、输出面板、页面切换
-├── diff.rs           统一差异解析（带行号）+ uniform_list 虚拟化渲染
-├── task.rs           tokio 运行时与 GPUI 的桥接
-├── ui.rs             主题色板、按钮、复选框、状态徽标、Input/Textarea 封装
-├── pages/            工作区 / 日志 / 追溯 / 贮藏 / 检出 / 设置
-└── svn/              SVN 后端（复用 egui 分支）
+orcasvn-core/          共享 SVN 后端（自 main/src-tauri 抽取）
+orcasvn-gpui/src/
+├── app.rs             外壳：工具栏、项目栏、分组导航、路由标题、页脚
+├── diff.rs            差异解析 + 虚拟化渲染
+├── task.rs            tokio 与 GPUI 的桥接
+├── ui.rs              主题色板、按钮、复选框、Input/Textarea 封装
+├── pages/
+│   ├── sidebar.rs     多项目工作区栏（收藏/备注/摘要）
+│   ├── workspace.rs   工作区
+│   ├── commit.rs      提交
+│   ├── update.rs      更新
+│   ├── diff.rs        差异
+│   ├── log.rs         日志（含日期范围）
+│   └── blame / stash / checkout / settings
+└── system.rs          文件管理器 / 编辑器 / 终端集成
 ```
 
-- **启动**：`gpui_kit::application()` + `gpui_kit::init` 注册主题、Root、输入法与弹窗基础，再用 `gpui_kit::open_window` 挂载带 Root 的窗口。主题在创建任何输入实体之前根据设置确定（kit 的 `Input` 在构造时固定外观）。
-- **异步桥接**：GPUI 使用 smol 执行器，SVN 后端使用 tokio（子进程、超时、`spawn_blocking`）。`task::spawn` 在 GPUI 的后台线程上 `block_on` tokio future，再通过 `WeakEntity` 回到前台线程更新视图。
-- **输入框**：`ui::TextField` / `ui::TextArea` 包装 kit 的 `InputState` / `TextareaState`，订阅 `InputEvent` 缓存文本、`PressEnter` 触发搜索；程序化赋值延迟到下一帧（`set_value` 需要 window）。
-- **虚拟化**：文件列表使用 kit 的 `DataTable`（自定义 `TableDelegate` 只保存可见行索引，数据仍从应用实体读取，避免两份状态）；差异和追溯使用 `uniform_list`。
-- **对话框**：确认操作改用 kit 的 `WindowExt::open_dialog` + `Button`，不再自绘遮罩层。
-- **快捷键**：`actions!` 定义动作，`cx.bind_keys` 绑定，`App::on_action` 全局处理，避免页面切换丢失焦点后快捷键失效。
-- **主题**：kit 提供全局 `Theme`，`ui::palette_from_theme` 把主题色映射成自绘布局使用的 `Palette`，保证自绘区域与 kit 控件一致；界面缩放通过 `window.set_rem_size` 实现。
-
-## 已知问题
-
-- 在没有合成器的 Xvfb 下，首帧要等一次输入事件才显示（真实桌面环境不受影响）。
-- 贮藏列表的“应用”与“弹出”行为与 `egui` 版本一致：弹出会应用补丁并删除该贮藏。
-- 状态缓存与 `egui` 分支共用，外部修改工作副本后偶尔需要手动点“刷新”。
+- **共享后端**：`orcasvn-core` 提供 `svn/` 模块与数据类型；Tauri 与 GPUI 都依赖它，避免三份拷贝漂移（egui 分支后续也可切换）。
+- **异步桥接**：SVN 后端使用 tokio；GPUI 侧在后台线程 `block_on` 后通过 `WeakEntity` 回到前台更新视图。
+- **项目栏摘要**：每个最近工作副本异步读取 `cached_status` 与 `cached_latest_modified`，60 秒刷新一次。
+- **快捷键**：`actions!` + `cx.bind_keys` + `App::on_action`，页面切换丢失焦点后仍然有效。
 
 ## CI 与预发布
 
-- `.github/workflows/gpui-ci.yml`：`gpui` 分支和涉及 `orcasvn-gpui/**` 的 PR 会跑格式检查、Clippy（`-D warnings`）、单元测试（Linux），并在 Windows / macOS 上做 `cargo check`。
-- `.github/workflows/gpui-prerelease.yml`：推送 `gpui-vX.Y.Z-alpha.N`（也支持 `-beta.N` / `-rc.N`）标签时，校验标签与 `Cargo.toml` / `Cargo.lock` 版本一致，先建 draft prerelease，再在 Linux / Windows / macOS 打包并上传，全部成功后自动发布。
+- `.github/workflows/gpui-ci.yml`：`gpui` 分支与相关 PR 跑 core/gpui 的格式检查、Clippy（`-D warnings`）、单元测试，检查 Tauri 后端，并在 Windows / macOS 上做 `cargo check`。
+- `.github/workflows/gpui-prerelease.yml`：推送 `gpui-vX.Y.Z-alpha.N`（也支持 `-beta.N` / `-rc.N`）校验版本、创建 draft、三平台打包上传并自动发布。
 
 ```bash
 git tag gpui-v0.8.0-alpha.1
@@ -91,7 +97,7 @@ git push origin gpui-v0.8.0-alpha.1
 
 ## 后续工作
 
-1. 分栏升级为 kit 的 `Dock`（标签页、拖拽停靠、布局持久化），状态列表接入列排序。
-2. 窗口图标、菜单栏、可自定义快捷键。
-3. macOS Intel（x86_64）与 Linux aarch64 的发布产物。
-4. 与 `egui` 分支共享的分层：把 `svn/`、`settings.rs`、`i18n.rs` 抽成 workspace crate，避免两份拷贝漂移。
+1. 提交页目录 scope、差异页对比模式，补平 main 的交互细节。
+2. 多项目栏拖拽排序/排序模式；设置页的收藏与备注管理。
+3. 分栏升级为 `Dock`（标签页、停靠、布局持久化），状态列表接入列排序。
+4. 窗口图标、菜单栏、自定义快捷键；macOS Intel 与 Linux aarch64 产物。

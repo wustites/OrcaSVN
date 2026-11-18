@@ -1,8 +1,12 @@
 pub mod blame;
 pub mod checkout;
+pub mod commit;
+pub mod diff;
 pub mod log;
 pub mod settings;
+pub mod sidebar;
 pub mod stash;
+pub mod update;
 pub mod workspace;
 
 use crate::i18n::t;
@@ -13,18 +17,25 @@ use crate::SvnInfo;
 pub enum Page {
     Workspace,
     Log,
-    Blame,
+    Commit,
+    Update,
+    Diff,
     Stash,
+    Blame,
     Checkout,
     Settings,
 }
 
 impl Page {
-    pub const ALL: [Page; 6] = [
+    #[allow(dead_code)]
+    pub const ALL: [Page; 9] = [
         Page::Workspace,
         Page::Log,
-        Page::Blame,
+        Page::Commit,
+        Page::Update,
+        Page::Diff,
         Page::Stash,
+        Page::Blame,
         Page::Checkout,
         Page::Settings,
     ];
@@ -33,6 +44,9 @@ impl Page {
         match self {
             Page::Workspace => t("工作区", "Workspace"),
             Page::Log => t("日志", "Log"),
+            Page::Commit => t("提交", "Commit"),
+            Page::Update => t("更新", "Update"),
+            Page::Diff => t("差异", "Diff"),
             Page::Blame => t("追溯", "Blame"),
             Page::Stash => t("贮藏", "Stash"),
             Page::Checkout => t("检出", "Checkout"),
@@ -44,6 +58,9 @@ impl Page {
         match self {
             Page::Workspace => "▤",
             Page::Log => "🕑",
+            Page::Commit => "⬆",
+            Page::Update => "⟳",
+            Page::Diff => "⇄",
             Page::Blame => "👤",
             Page::Stash => "📦",
             Page::Checkout => "⬇",
