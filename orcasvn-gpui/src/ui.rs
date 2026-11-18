@@ -1,8 +1,12 @@
 //! Small widget helpers shared by all pages: palette, buttons, badges and a
 //! minimal single-line/multi-line text field (GPUI ships no text input).
 
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
+use gpui_kit::component::Theme as KitTheme;
+use gpui_kit::prelude::*;
+use gpui_kit::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::OnceLock;
 
 static MONO: OnceLock<SharedString> = OnceLock::new();
@@ -92,6 +96,36 @@ pub fn palette(dark: bool) -> Palette {
             err: 0xdc4646,
             conflict: 0xc828a0,
         }
+    }
+}
+
+fn color_u32(color: Hsla) -> u32 {
+    let rgba = color.to_rgb();
+    let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u32;
+    (channel(rgba.r) << 16) | (channel(rgba.g) << 8) | channel(rgba.b)
+}
+
+/// Derive the application palette from the GPUI Kit theme so the hand-drawn
+/// layout and the kit controls share one set of colors.
+pub fn palette_from_theme(theme: &KitTheme) -> Palette {
+    let colors = &theme.colors;
+    let base = palette(theme.mode.is_dark());
+    Palette {
+        window: color_u32(colors.background),
+        panel: color_u32(colors.secondary),
+        elevated: color_u32(colors.muted),
+        border: color_u32(colors.border),
+        text: color_u32(colors.foreground),
+        muted: color_u32(colors.muted_foreground),
+        accent: color_u32(colors.blue),
+        accent_soft: color_u32(colors.selection),
+        add_bg: base.add_bg,
+        del_bg: base.del_bg,
+        hunk: color_u32(colors.blue),
+        ok: color_u32(colors.green),
+        warn: color_u32(colors.yellow),
+        err: color_u32(colors.red),
+        conflict: base.conflict,
     }
 }
 
@@ -194,206 +228,151 @@ pub fn spinner(pal: Palette, label: impl Into<SharedString>) -> Div {
         .child(label.into())
 }
 
-/// A minimal text field. GPUI has no built-in input widget, so this keeps a
-/// `String` plus a character cursor and renders a caret when focused.
+/// Single-line text field backed by the GPUI Kit input. The kit provides the
+/// IME, selection, undo and clipboard behaviour that a hand-rolled input lacks.
 pub struct TextField {
-    id: &'static str,
-    focus: FocusHandle,
-    text: String,
-    cursor: usize,
-    multiline: bool,
+    state: Entity<InputState>,
+    cache: Rc<RefCell<String>>,
+    pending: Option<String>,
+    _sub: Subscription,
 }
 
 impl TextField {
-    pub fn new<T: 'static>(cx: &mut Context<T>, id: &'static str, multiline: bool) -> Self {
+    pub fn new<T: 'static>(
+        cx: &mut Context<T>,
+        window: &mut Window,
+        placeholder: impl Into<SharedString>,
+    ) -> Self {
+        let state = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
+        let cache = Rc::new(RefCell::new(String::new()));
+        let sub = cx.subscribe(&state, {
+            let cache = cache.clone();
+            move |_app: &mut T,
+                  state: Entity<InputState>,
+                  event: &InputEvent,
+                  cx: &mut Context<T>| {
+                if matches!(event, InputEvent::Change) {
+                    *cache.borrow_mut() = state.read(cx).value().to_string();
+                }
+            }
+        });
         Self {
-            id,
-            focus: cx.focus_handle(),
-            text: String::new(),
-            cursor: 0,
-            multiline,
+            state,
+            cache,
+            pending: None,
+            _sub: sub,
         }
     }
 
-    pub fn text(&self) -> &str {
-        &self.text
+    pub fn text(&self) -> String {
+        self.pending
+            .clone()
+            .unwrap_or_else(|| self.cache.borrow().clone())
     }
 
     pub fn set_text(&mut self, text: impl Into<String>) {
-        self.text = text.into();
-        self.cursor = self.text.chars().count();
+        self.pending = Some(text.into());
     }
 
     pub fn clear(&mut self) {
-        self.text.clear();
-        self.cursor = 0;
+        self.pending = Some(String::new());
     }
 
     pub fn is_empty(&self) -> bool {
-        self.text.trim().is_empty()
+        self.text().trim().is_empty()
     }
 
-    fn chars(&self) -> Vec<char> {
-        self.text.chars().collect()
+    pub fn state(&self) -> &Entity<InputState> {
+        &self.state
     }
 
-    fn write(&mut self, chars: &[char]) {
-        self.text = chars.iter().collect();
-        self.cursor = self.cursor.min(chars.len());
-    }
-
-    /// Apply a key press. Returns true when the key was consumed.
-    pub fn handle_key(&mut self, event: &KeyDownEvent) -> bool {
-        let keystroke = &event.keystroke;
-        let modified = keystroke.modifiers.control
-            || keystroke.modifiers.platform
-            || keystroke.modifiers.alt
-            || keystroke.modifiers.function;
-        let mut chars = self.chars();
-        match keystroke.key.as_str() {
-            "backspace" => {
-                if self.cursor > 0 {
-                    chars.remove(self.cursor - 1);
-                    self.cursor -= 1;
-                    self.write(&chars);
-                }
-                true
-            }
-            "delete" => {
-                if self.cursor < chars.len() {
-                    chars.remove(self.cursor);
-                    self.write(&chars);
-                }
-                true
-            }
-            "left" => {
-                self.cursor = self.cursor.saturating_sub(1);
-                true
-            }
-            "right" => {
-                self.cursor = (self.cursor + 1).min(chars.len());
-                true
-            }
-            "home" => {
-                self.cursor = 0;
-                true
-            }
-            "end" => {
-                self.cursor = chars.len();
-                true
-            }
-            "enter" => {
-                if self.multiline {
-                    chars.insert(self.cursor, '\n');
-                    self.cursor += 1;
-                    self.write(&chars);
-                    true
-                } else {
-                    false
-                }
-            }
-            _ => {
-                if modified {
-                    return false;
-                }
-                let Some(typed) = keystroke.key_char.as_deref() else {
-                    return false;
-                };
-                let mut inserted = false;
-                for ch in typed.chars() {
-                    if ch.is_control() {
-                        continue;
-                    }
-                    chars.insert(self.cursor, ch);
-                    self.cursor += 1;
-                    inserted = true;
-                }
-                if inserted {
-                    self.write(&chars);
-                }
-                inserted
-            }
+    /// Flush a programmatic value change (the kit needs a window to move the
+    /// caret) and return the element for the current frame.
+    pub fn input(&mut self, window: &mut Window, cx: &mut App) -> Input {
+        if let Some(text) = self.pending.take() {
+            self.cache.replace(text.clone());
+            self.state
+                .update(cx, |state, cx| state.set_value(text, window, cx));
         }
-    }
-
-    fn split(&self) -> (String, String) {
-        let chars = self.chars();
-        let cursor = self.cursor.min(chars.len());
-        (
-            chars[..cursor].iter().collect(),
-            chars[cursor..].iter().collect(),
-        )
+        Input::new(&self.state)
     }
 }
 
-/// Render a text field. `on_key` receives every key press so the caller can
-/// update its own state and trigger side effects (e.g. Enter to search).
-pub fn text_field<T: 'static>(
+/// Subscribe to Enter on a single-line field (search/filter boxes).
+pub fn on_enter<T: 'static>(
     cx: &mut Context<T>,
-    field: &TextField,
-    placeholder: &str,
-    width: Option<f32>,
-    height: Option<f32>,
-    window: &Window,
-    pal: Palette,
-    on_key: impl Fn(&mut T, &KeyDownEvent, &mut Window, &mut Context<T>) + 'static,
-) -> Stateful<Div> {
-    let focus = field.focus.clone();
-    let focused = field.focus.is_focused(window);
-    let (before, after) = field.split();
-    let show_placeholder = field.text.is_empty();
-    let (text, color) = if show_placeholder {
-        (placeholder.to_string(), pal.muted)
-    } else {
-        (String::new(), pal.text)
-    };
+    state: &Entity<InputState>,
+    handler: impl Fn(&mut T, &mut Context<T>) + 'static,
+) -> Subscription {
+    cx.subscribe(state, move |app, _state, event: &InputEvent, cx| {
+        if matches!(event, InputEvent::PressEnter { .. }) {
+            handler(app, cx);
+        }
+    })
+}
 
-    let mut content = div().flex().flex_row().items_center().overflow_hidden();
-    if show_placeholder {
-        content = content.child(div().text_color(rgb(color)).child(text));
-    } else if field.multiline {
-        content = content
-            .flex_col()
-            .items_start()
-            .child(div().text_color(rgb(pal.text)).child(before))
-            .when(focused, |this| {
-                this.child(div().text_color(rgb(pal.accent)).child("│"))
-            })
-            .child(div().text_color(rgb(pal.text)).child(after));
-    } else {
-        content = content
-            .child(div().text_color(rgb(pal.text)).child(before))
-            .when(focused, |this| {
-                this.child(div().text_color(rgb(pal.accent)).child("│"))
-            })
-            .child(div().text_color(rgb(pal.text)).child(after));
+/// Multi-line field used for commit messages.
+pub struct TextArea {
+    state: Entity<TextareaState>,
+    cache: Rc<RefCell<String>>,
+    pending: Option<String>,
+    _sub: Subscription,
+}
+
+impl TextArea {
+    pub fn new<T: 'static>(
+        cx: &mut Context<T>,
+        window: &mut Window,
+        placeholder: impl Into<SharedString>,
+        rows: usize,
+    ) -> Self {
+        let state = cx.new(|cx| {
+            TextareaState::new(window, cx)
+                .placeholder(placeholder)
+                .rows(rows)
+        });
+        let cache = Rc::new(RefCell::new(String::new()));
+        let sub = cx.subscribe(&state, {
+            let cache = cache.clone();
+            move |_app: &mut T,
+                  state: Entity<TextareaState>,
+                  event: &InputEvent,
+                  cx: &mut Context<T>| {
+                if matches!(event, InputEvent::Change) {
+                    *cache.borrow_mut() = state.read(cx).value().to_string();
+                }
+            }
+        });
+        Self {
+            state,
+            cache,
+            pending: None,
+            _sub: sub,
+        }
     }
 
-    div()
-        .id(field.id)
-        .flex()
-        .items_center()
-        .px_2()
-        .py_1()
-        .rounded_md()
-        .border_1()
-        .border_color(rgb(if focused { pal.accent } else { pal.border }))
-        .bg(rgb(if field.multiline {
-            pal.panel
-        } else {
-            pal.elevated
-        }))
-        .text_sm()
-        .when_some(width, |this, width| this.w(px(width)))
-        .when_some(height, |this, height| this.h(px(height)).items_start())
-        .track_focus(&focus)
-        .on_mouse_down(MouseButton::Left, move |_, window, _| {
-            window.focus(&focus);
-        })
-        .on_key_down(cx.listener(move |view, event: &KeyDownEvent, window, cx| {
-            on_key(view, event, window, cx);
-        }))
-        .child(content)
+    pub fn text(&self) -> String {
+        self.pending
+            .clone()
+            .unwrap_or_else(|| self.cache.borrow().clone())
+    }
+
+    pub fn clear(&mut self) {
+        self.pending = Some(String::new());
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.text().trim().is_empty()
+    }
+
+    pub fn textarea(&mut self, window: &mut Window, cx: &mut App) -> Textarea {
+        if let Some(text) = self.pending.take() {
+            self.cache.replace(text.clone());
+            self.state
+                .update(cx, |state, cx| state.set_value(text, window, cx));
+        }
+        Textarea::new(&self.state)
+    }
 }
 
 /// Turn a checkbox-ish glyph into a clickable element.

@@ -4,10 +4,11 @@ use crate::settings::{Settings, Theme};
 use crate::svn;
 use crate::system;
 use crate::task;
-use crate::ui::{self, palette, Palette};
+use crate::ui::{self, Palette};
 use crate::SvnInfo;
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::component::{Theme as KitTheme, ThemeMode};
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 use std::time::Duration;
 
 pub struct OrcaApp {
@@ -25,19 +26,8 @@ pub struct OrcaApp {
     shown_output: usize,
 }
 
-fn is_dark(window: &Window, theme: Theme) -> bool {
-    match theme {
-        Theme::Light => false,
-        Theme::Dark => true,
-        Theme::System => matches!(
-            window.appearance(),
-            WindowAppearance::Dark | WindowAppearance::VibrantDark
-        ),
-    }
-}
-
 impl OrcaApp {
-    pub fn new(cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let settings = Settings::load();
         i18n::set_lang(settings.lang);
 
@@ -46,14 +36,14 @@ impl OrcaApp {
         shared.open_workspace = launch;
 
         let mut app = Self {
-            settings_page: pages::settings::SettingsPage::new(cx, &shared.settings),
+            settings_page: pages::settings::SettingsPage::new(cx, window, &shared.settings),
             shared,
             page: Page::Workspace,
-            workspace: pages::workspace::WorkspacePage::new(cx),
-            log: pages::log::LogPage::new(cx),
-            blame: pages::blame::BlamePage::new(cx),
-            stash: pages::stash::StashPage::new(cx),
-            checkout: pages::checkout::CheckoutPage::new(cx),
+            workspace: pages::workspace::WorkspacePage::new(cx, window),
+            log: pages::log::LogPage::new(cx, window),
+            blame: pages::blame::BlamePage::new(cx, window),
+            stash: pages::stash::StashPage::new(cx, window),
+            checkout: pages::checkout::CheckoutPage::new(cx, window),
             info_running: false,
             recent_open: false,
             output_scroll: ScrollHandle::new(),
@@ -165,7 +155,15 @@ impl OrcaApp {
         );
     }
 
-    fn apply_window(&mut self, window: &mut Window) {
+    fn apply_window(&mut self, window: &mut Window, cx: &mut App) {
+        let mode = match self.shared.settings.theme {
+            Theme::Dark => ThemeMode::Dark,
+            Theme::Light => ThemeMode::Light,
+            Theme::System => ThemeMode::from(window.appearance()),
+        };
+        if KitTheme::global(cx).mode != mode {
+            KitTheme::change(mode, Some(window), cx);
+        }
         let target = px(16.0 * self.shared.settings.zoom.clamp(0.6, 2.5));
         if (window.rem_size() - target).abs() > px(0.5) {
             window.set_rem_size(target);
@@ -556,8 +554,8 @@ impl OrcaApp {
 
 impl Render for OrcaApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.apply_window(window);
-        let pal = palette(is_dark(window, self.shared.settings.theme));
+        self.apply_window(window, cx);
+        let pal = ui::palette_from_theme(KitTheme::global(cx));
 
         if let Some(path) = self.shared.open_workspace.take() {
             self.switch_workspace(path, cx);

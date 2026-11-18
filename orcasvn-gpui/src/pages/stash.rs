@@ -7,8 +7,8 @@ use crate::svn;
 use crate::task;
 use crate::ui::{self, Palette, TextField};
 use crate::SvnStatus;
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 use std::collections::BTreeSet;
 
 enum Action {
@@ -39,7 +39,7 @@ pub struct StashPage {
 }
 
 impl StashPage {
-    pub fn new(cx: &mut Context<OrcaApp>) -> Self {
+    pub fn new(cx: &mut Context<OrcaApp>, window: &mut Window) -> Self {
         Self {
             workspace: None,
             loaded_for: None,
@@ -47,7 +47,7 @@ impl StashPage {
             changes: Vec::new(),
             status_running: false,
             checked: BTreeSet::new(),
-            name: TextField::new(cx, "stash-name", false),
+            name: TextField::new(cx, window, t("贮藏名称（可选）", "Stash name (optional)")),
             create_running: false,
             apply_running: false,
             pending: None,
@@ -289,7 +289,7 @@ impl StashPage {
 
     fn create_panel(
         &mut self,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<OrcaApp>,
         pal: Palette,
     ) -> AnyElement {
@@ -337,19 +337,7 @@ impl StashPage {
                         "Saves the selected changes as a patch and reverts them. Unversioned files are not stashed.",
                     )),
             )
-            .child(ui::text_field(
-                cx,
-                &self.name,
-                t("贮藏名称（可选）", "Stash name (optional)"),
-                None,
-                None,
-                window,
-                pal,
-                |app, event, _, cx| {
-                    app.stash.name.handle_key(event);
-                    cx.notify();
-                },
-            ))
+            .child(self.name.input(window, cx).w_full())
             .child(ui::sep(pal))
             .child(
                 div()
@@ -658,7 +646,7 @@ impl StashPage {
                 .absolute()
                 .inset_0()
                 .occlude()
-                .bg(gpui::rgba(0x00000088))
+                .bg(gpui_kit::rgba(0x00000088))
                 .flex()
                 .items_center()
                 .justify_center()

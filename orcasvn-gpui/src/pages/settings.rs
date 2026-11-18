@@ -5,8 +5,8 @@ use crate::settings::Theme;
 use crate::svn;
 use crate::task;
 use crate::ui::{self, Palette, TextField};
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 
 pub struct SettingsPage {
     svn_path: TextField,
@@ -16,8 +16,12 @@ pub struct SettingsPage {
 }
 
 impl SettingsPage {
-    pub fn new(cx: &mut Context<OrcaApp>, settings: &crate::settings::Settings) -> Self {
-        let mut svn_path = TextField::new(cx, "settings-svn-path", false);
+    pub fn new(
+        cx: &mut Context<OrcaApp>,
+        window: &mut Window,
+        settings: &crate::settings::Settings,
+    ) -> Self {
+        let mut svn_path = TextField::new(cx, window, "svn");
         svn_path.set_text(settings.svn_path.clone());
         Self {
             svn_path,
@@ -223,19 +227,11 @@ impl SettingsPage {
             .flex_row()
             .items_center()
             .gap_2()
-            .child(div().w(px(340.0)).child(ui::text_field(
-                cx,
-                &self.svn_path,
-                "svn",
-                None,
-                None,
-                window,
-                pal,
-                |app, event, _, cx| {
-                    app.settings_page.svn_path.handle_key(event);
-                    cx.notify();
-                },
-            )))
+            .child(
+                div()
+                    .w(px(340.0))
+                    .child(self.svn_path.input(window, cx).w_full()),
+            )
             .child(ui::button(
                 "svn-browse",
                 t("浏览…", "Browse…"),

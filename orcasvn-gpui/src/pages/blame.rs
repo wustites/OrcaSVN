@@ -4,8 +4,8 @@ use crate::i18n::t;
 use crate::svn::{self, BlameLine};
 use crate::task;
 use crate::ui::{self, Palette, TextField};
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 
 pub struct BlamePage {
     workspace: Option<String>,
@@ -14,17 +14,25 @@ pub struct BlamePage {
     lines: Vec<BlameLine>,
     running: bool,
     highlight: Option<u64>,
+    _subs: Vec<Subscription>,
 }
 
 impl BlamePage {
-    pub fn new(cx: &mut Context<OrcaApp>) -> Self {
+    pub fn new(cx: &mut Context<OrcaApp>, window: &mut Window) -> Self {
+        let file = TextField::new(
+            cx,
+            window,
+            t("工作副本内的文件路径", "File path inside the working copy"),
+        );
+        let subs = vec![ui::on_enter(cx, file.state(), |app, cx| app.blame.run(cx))];
         Self {
             workspace: None,
-            file: TextField::new(cx, "blame-file", false),
+            file,
             shown: String::new(),
             lines: Vec::new(),
             running: false,
             highlight: None,
+            _subs: subs,
         }
     }
 
@@ -128,23 +136,12 @@ impl BlamePage {
             .gap_2()
             .px_3()
             .py_2()
-            .child(div().flex_1().min_w_0().child(ui::text_field(
-                cx,
-                &self.file,
-                t("工作副本内的文件路径", "File path inside the working copy"),
-                None,
-                None,
-                window,
-                pal,
-                |app, event, _, cx| {
-                    let submit = event.keystroke.key == "enter";
-                    app.blame.file.handle_key(event);
-                    if submit {
-                        app.blame.run(cx);
-                    }
-                    cx.notify();
-                },
-            )))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(self.file.input(window, cx).w_full()),
+            )
             .child(browse)
             .child(ui::button(
                 "blame-run",

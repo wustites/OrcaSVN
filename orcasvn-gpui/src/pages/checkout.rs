@@ -4,8 +4,8 @@ use crate::i18n::t;
 use crate::svn;
 use crate::task;
 use crate::ui::{self, Palette, TextField};
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 
 pub struct CheckoutPage {
     url: TextField,
@@ -16,11 +16,11 @@ pub struct CheckoutPage {
 }
 
 impl CheckoutPage {
-    pub fn new(cx: &mut Context<OrcaApp>) -> Self {
+    pub fn new(cx: &mut Context<OrcaApp>, window: &mut Window) -> Self {
         Self {
-            url: TextField::new(cx, "checkout-url", false),
-            path: TextField::new(cx, "checkout-path", false),
-            revision: TextField::new(cx, "checkout-revision", false),
+            url: TextField::new(cx, window, "https://svn.example.com/repo/trunk"),
+            path: TextField::new(cx, window, ""),
+            revision: TextField::new(cx, window, "HEAD"),
             running: false,
             target: String::new(),
         }
@@ -71,19 +71,7 @@ impl CheckoutPage {
                     .flex_col()
                     .gap_1()
                     .child(div().text_sm().child(t("仓库 URL", "Repository URL")))
-                    .child(ui::text_field(
-                        cx,
-                        &self.url,
-                        "https://svn.example.com/repo/trunk",
-                        None,
-                        None,
-                        window,
-                        pal,
-                        |app, event, _, cx| {
-                            app.checkout.url.handle_key(event);
-                            cx.notify();
-                        },
-                    )),
+                    .child(self.url.input(window, cx).w_full()),
             )
             .child(
                 div()
@@ -97,19 +85,12 @@ impl CheckoutPage {
                             .flex_row()
                             .items_center()
                             .gap_2()
-                            .child(div().flex_1().min_w_0().child(ui::text_field(
-                                cx,
-                                &self.path,
-                                "",
-                                None,
-                                None,
-                                window,
-                                pal,
-                                |app, event, _, cx| {
-                                    app.checkout.path.handle_key(event);
-                                    cx.notify();
-                                },
-                            )))
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .child(self.path.input(window, cx).w_full()),
+                            )
                             .child(browse),
                     ),
             )
@@ -119,19 +100,11 @@ impl CheckoutPage {
                     .flex_col()
                     .gap_1()
                     .child(div().text_sm().child(t("版本", "Revision")))
-                    .child(div().w(px(160.0)).child(ui::text_field(
-                        cx,
-                        &self.revision,
-                        "HEAD",
-                        None,
-                        None,
-                        window,
-                        pal,
-                        |app, event, _, cx| {
-                            app.checkout.revision.handle_key(event);
-                            cx.notify();
-                        },
-                    ))),
+                    .child(
+                        div()
+                            .w(px(160.0))
+                            .child(self.revision.input(window, cx).w_full()),
+                    ),
             )
             .child(
                 div()

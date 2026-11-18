@@ -6,8 +6,8 @@ use crate::svn;
 use crate::task;
 use crate::ui::{self, Palette, TextField};
 use crate::SvnLogEntry;
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 
 pub struct LogPage {
     loaded_for: Option<String>,
@@ -21,22 +21,34 @@ pub struct LogPage {
     diff: Option<DiffDocument>,
     diff_running: bool,
     limit: u32,
+    _subs: Vec<Subscription>,
 }
 
 impl LogPage {
-    pub fn new(cx: &mut Context<OrcaApp>) -> Self {
+    pub fn new(cx: &mut Context<OrcaApp>, window: &mut Window) -> Self {
+        let keyword = TextField::new(
+            cx,
+            window,
+            t("关键字 / 版本 / 路径", "Keyword / revision / path"),
+        );
+        let author = TextField::new(cx, window, t("作者", "Author"));
+        let subs = vec![
+            ui::on_enter(cx, keyword.state(), |app, cx| app.log.load(false, cx)),
+            ui::on_enter(cx, author.state(), |app, cx| app.log.load(false, cx)),
+        ];
         Self {
             loaded_for: None,
             entries: Vec::new(),
             task_running: false,
             appending: false,
             exhausted: false,
-            keyword: TextField::new(cx, "log-keyword", false),
-            author: TextField::new(cx, "log-author", false),
+            keyword,
+            author,
             selected: None,
             diff: None,
             diff_running: false,
             limit: 100,
+            _subs: subs,
         }
     }
 
@@ -194,40 +206,16 @@ impl LogPage {
             .gap_2()
             .px_3()
             .py_2()
-            .child(div().w(px(260.0)).child(ui::text_field(
-                cx,
-                &self.keyword,
-                t("关键字 / 版本 / 路径", "Keyword / revision / path"),
-                None,
-                None,
-                window,
-                pal,
-                |app, event, _, cx| {
-                    let submit = event.keystroke.key == "enter";
-                    app.log.keyword.handle_key(event);
-                    if submit {
-                        app.log.load(false, cx);
-                    }
-                    cx.notify();
-                },
-            )))
-            .child(div().w(px(140.0)).child(ui::text_field(
-                cx,
-                &self.author,
-                t("作者", "Author"),
-                None,
-                None,
-                window,
-                pal,
-                |app, event, _, cx| {
-                    let submit = event.keystroke.key == "enter";
-                    app.log.author.handle_key(event);
-                    if submit {
-                        app.log.load(false, cx);
-                    }
-                    cx.notify();
-                },
-            )))
+            .child(
+                div()
+                    .w(px(260.0))
+                    .child(self.keyword.input(window, cx).w_full()),
+            )
+            .child(
+                div()
+                    .w(px(140.0))
+                    .child(self.author.input(window, cx).w_full()),
+            )
             .child(ui::button(
                 "log-search",
                 format!("🔍 {}", t("搜索", "Search")),

@@ -6,10 +6,10 @@ use crate::settings::cache_dir;
 use crate::svn;
 use crate::system::{self, OpenTarget};
 use crate::task;
-use crate::ui::{self, Palette, TextField};
+use crate::ui::{self, Palette, TextArea, TextField};
 use crate::SvnStatus;
-use gpui::prelude::*;
-use gpui::*;
+use gpui_kit::prelude::*;
+use gpui_kit::*;
 use std::collections::BTreeSet;
 use std::future::Future;
 use std::rc::Rc;
@@ -34,15 +34,22 @@ pub struct WorkspacePage {
     hide_unversioned: bool,
     diff: Option<DiffDocument>,
     diff_running: bool,
-    message: TextField,
+    message: TextArea,
     op_running: bool,
     op_label: String,
     confirm: Option<Confirm>,
     update_rev: TextField,
+    _subs: Vec<Subscription>,
 }
 
 impl WorkspacePage {
-    pub fn new(cx: &mut Context<OrcaApp>) -> Self {
+    pub fn new(cx: &mut Context<OrcaApp>, window: &mut Window) -> Self {
+        let filter = TextField::new(cx, window, t("过滤文件…", "Filter files…"));
+        let message = TextArea::new(cx, window, t("提交信息…", "Commit message…"), 3);
+        let update_rev = TextField::new(cx, window, "HEAD");
+        let subs = vec![ui::on_enter(cx, update_rev.state(), |app, cx| {
+            app.workspace.submit_update(&mut app.shared, cx);
+        })];
         Self {
             loaded_for: None,
             entries: Vec::new(),
@@ -50,16 +57,40 @@ impl WorkspacePage {
             last_refresh: None,
             checked: BTreeSet::new(),
             focus: None,
-            filter: TextField::new(cx, "ws-filter", false),
+            filter,
             hide_unversioned: false,
             diff: None,
             diff_running: false,
-            message: TextField::new(cx, "ws-message", true),
+            message,
             op_running: false,
             op_label: String::new(),
             confirm: None,
-            update_rev: TextField::new(cx, "ws-rev", false),
+            update_rev,
+            _subs: subs,
         }
+    }
+
+    /// Run `svn update` with the revision currently typed in the toolbar.
+    fn submit_update(&mut self, shared: &mut Shared, cx: &mut Context<OrcaApp>) {
+        let Some(workspace) = self.workspace() else {
+            return;
+        };
+        let text = self.update_rev.text().trim().to_string();
+        let revision = text.trim_start_matches('r').parse::<u64>().ok();
+        if revision.is_none() && !text.is_empty() {
+            shared.err(t("无效的版本号", "Invalid revision"));
+            cx.notify();
+            return;
+        }
+        self.run_op(
+            "update",
+            async move {
+                svn::update(&workspace, revision)
+                    .await
+                    .map_err(|error| error.to_string())
+            },
+            cx,
+        );
     }
 
     /// Drop workspace-specific state but keep the text fields and their focus
@@ -307,7 +338,7 @@ impl WorkspacePage {
     fn toolbar(
         &mut self,
         workspace: &str,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<OrcaApp>,
         pal: Palette,
     ) -> AnyElement {
@@ -319,32 +350,12 @@ impl WorkspacePage {
             !busy,
             cx.listener(|app, _, _, cx| app.workspace.refresh(cx, true)),
         );
-        let workspace_for_update = workspace.to_string();
         let update = ui::button(
             "ws-update",
             format!("⬇ {}", t("更新", "Update")),
             pal,
             !busy,
-            cx.listener(move |app, _, _, cx| {
-                let text = app.workspace.update_rev.text().trim().to_string();
-                let revision = text.trim_start_matches('r').parse::<u64>().ok();
-                if revision.is_none() && !text.is_empty() {
-                    app.shared.err(t("无效的版本号", "Invalid revision"));
-                    cx.notify();
-                    return;
-                }
-                let path = workspace_for_update.clone();
-                let label = "update";
-                app.workspace.run_op(
-                    label,
-                    async move {
-                        svn::update(&path, revision)
-                            .await
-                            .map_err(|error| error.to_string())
-                    },
-                    cx,
-                );
-            }),
+            cx.listener(|app, _, _, cx| app.workspace.submit_update(&mut app.shared, cx)),
         );
         let workspace_for_cleanup = workspace.to_string();
         let cleanup = ui::button(
@@ -401,19 +412,7 @@ impl WorkspacePage {
                     .flex_row()
                     .items_center()
                     .gap_1()
-                    .child(ui::text_field(
-                        cx,
-                        &self.update_rev,
-                        "HEAD",
-                        Some(84.0),
-                        None,
-                        window,
-                        pal,
-                        |app, event, _, cx| {
-                            app.workspace.update_rev.handle_key(event);
-                            cx.notify();
-                        },
-                    ))
+                    .child(self.update_rev.input(window, cx).w(px(84.0)))
                     .child(update),
             )
             .child(cleanup)
@@ -431,7 +430,7 @@ impl WorkspacePage {
     fn file_panel(
         &mut self,
         workspace: &str,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<OrcaApp>,
         pal: Palette,
     ) -> AnyElement {
@@ -442,19 +441,12 @@ impl WorkspacePage {
             .gap_2()
             .px_3()
             .pt_2()
-            .child(div().flex_1().min_w_0().child(ui::text_field(
-                cx,
-                &self.filter,
-                t("过滤文件…", "Filter files…"),
-                None,
-                None,
-                window,
-                pal,
-                |app, event, _, cx| {
-                    app.workspace.filter.handle_key(event);
-                    cx.notify();
-                },
-            )))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .child(self.filter.input(window, cx).w_full()),
+            )
             .child(
                 div()
                     .flex()
@@ -636,7 +628,7 @@ impl WorkspacePage {
     fn commit_box(
         &mut self,
         workspace: &str,
-        window: &Window,
+        window: &mut Window,
         cx: &mut Context<OrcaApp>,
         pal: Palette,
     ) -> AnyElement {
@@ -670,19 +662,7 @@ impl WorkspacePage {
             .flex_col()
             .gap_2()
             .p_3()
-            .child(ui::text_field(
-                cx,
-                &self.message,
-                t("提交信息…", "Commit message…"),
-                None,
-                Some(70.0),
-                window,
-                pal,
-                |app, event, _, cx| {
-                    app.workspace.message.handle_key(event);
-                    cx.notify();
-                },
-            ))
+            .child(self.message.textarea(window, cx).h(px(70.0)).w_full())
             .child(
                 div()
                     .flex()
@@ -954,7 +934,7 @@ impl WorkspacePage {
                 .absolute()
                 .inset_0()
                 .occlude()
-                .bg(gpui::rgba(0x00000088))
+                .bg(gpui_kit::rgba(0x00000088))
                 .flex()
                 .items_center()
                 .justify_center()

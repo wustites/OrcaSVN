@@ -2,8 +2,8 @@
 //! virtualized `uniform_list`.
 
 use crate::ui::{self, mono_font, Palette};
-use gpui::prelude::*;
-use gpui::{div, px, rgb, uniform_list, AnyElement, SharedString};
+use gpui_kit::prelude::*;
+use gpui_kit::{div, px, rgb, uniform_list, AnyElement, SharedString};
 use std::rc::Rc;
 
 /// One diff row with its line numbers in the original and new file

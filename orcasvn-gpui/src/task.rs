@@ -3,7 +3,7 @@
 //! GPUI background thread, and their results are delivered back to the view on
 //! the foreground thread.
 
-use gpui::{AppContext as _, AsyncApp, Context};
+use gpui_kit::{AppContext as _, AsyncApp, Context};
 use std::future::Future;
 use std::sync::OnceLock;
 
