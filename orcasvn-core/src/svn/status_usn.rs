@@ -64,8 +64,10 @@ fn name(buffer: &[u8], offset: usize, length: usize) -> io::Result<String> {
         )
         .ok_or_else(|| invalid("truncated record name"))?;
     let units: Vec<_> = bytes
-        .chunks_exact(2)
-        .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .map(|bytes| u16::from_le_bytes(*bytes))
         .collect();
     let name = String::from_utf16(&units).map_err(|_| invalid("non-Unicode Windows filename"))?;
     if name.contains(['/', '\\', '\0', ':']) {

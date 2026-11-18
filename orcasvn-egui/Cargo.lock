@@ -2280,6 +2280,7 @@ dependencies = [
  "egui",
  "egui_extras",
  "image",
+ "orcasvn-core",
  "quick-xml 0.37.5",
  "rfd",
  "serde",
@@ -2288,6 +2289,20 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "orcasvn-core"
+version = "0.8.0-alpha.1"
+dependencies = [
+ "chrono",
+ "quick-xml 0.37.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tracing",
  "windows-sys 0.61.2",
 ]
 

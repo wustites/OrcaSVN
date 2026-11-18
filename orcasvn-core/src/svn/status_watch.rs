@@ -32,8 +32,10 @@ fn paths(bytes: &[u8]) -> io::Result<Vec<String>> {
             .get(12..end)
             .ok_or_else(|| invalid("truncated notification name"))?;
         let utf16: Vec<_> = name
-            .chunks_exact(2)
-            .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
+            .as_chunks::<2>()
+            .0
+            .iter()
+            .map(|pair| u16::from_le_bytes(*pair))
             .collect();
         let name = String::from_utf16(&utf16)
             .map_err(|_| invalid("invalid notification UTF-16"))?

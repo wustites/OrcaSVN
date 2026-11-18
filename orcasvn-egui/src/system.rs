@@ -133,10 +133,10 @@ fn spawn_command(mut command: Command) -> Result<(), String> {
 }
 
 pub fn delete_unversioned(path: &str, files: &[String]) -> Result<(), String> {
-    let workspace = fs::canonicalize(&path).map_err(|e| format!("invalid workspace path: {e}"))?;
+    let workspace = fs::canonicalize(path).map_err(|e| format!("invalid workspace path: {e}"))?;
 
     for file in files {
-        let target = resolve_workspace_child(&workspace, &file)?;
+        let target = resolve_workspace_child(&workspace, file)?;
         if !target.exists() {
             return Err(format!("file does not exist: {file}"));
         }

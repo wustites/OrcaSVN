@@ -5,12 +5,11 @@ mod diff;
 mod i18n;
 mod pages;
 mod settings;
-mod svn;
 mod system;
 mod task;
-mod types;
 
-pub use types::*;
+pub use orcasvn_core::svn;
+pub use orcasvn_core::*;
 
 fn load_icon() -> Option<egui::IconData> {
     let image = image::load_from_memory(include_bytes!("../icon.png"))

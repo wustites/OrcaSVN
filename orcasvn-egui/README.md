@@ -2,7 +2,7 @@
 
 `egui` 分支上的 OrcaSVN 重写版本：用纯 Rust + [egui](https://github.com/emilk/egui)/eframe 实现界面，去掉 Tauri、WebView 与 Vue 前端，单个原生可执行文件即可运行。
 
-SVN 后端（`src/svn/`，包括状态缓存、快照、Windows USN 日志与目录通知回退）直接沿用自 `src-tauri/src/svn`，已同步到 `main` 的 v0.6.5 后端。
+SVN 后端改为依赖共享的 `orcasvn-core`（自 `main/src-tauri` 抽取），与 Tauri、GPUI 客户端使用同一份实现。
 
 ## 运行
 
