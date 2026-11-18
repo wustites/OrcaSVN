@@ -11,6 +11,22 @@ use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::time::Duration;
 
+actions!(
+    orcasvn,
+    [
+        OpenWorkspace,
+        RefreshWorkspace,
+        FocusFilter,
+        CommitSelection,
+        Page1,
+        Page2,
+        Page3,
+        Page4,
+        Page5,
+        Page6,
+    ]
+);
+
 pub struct OrcaApp {
     pub shared: Shared,
     pub page: Page,
@@ -24,6 +40,7 @@ pub struct OrcaApp {
     recent_open: bool,
     output_scroll: ScrollHandle,
     shown_output: usize,
+    root_focus: FocusHandle,
 }
 
 impl OrcaApp {
@@ -48,10 +65,90 @@ impl OrcaApp {
             recent_open: false,
             output_scroll: ScrollHandle::new(),
             shown_output: 0,
+            root_focus: cx.focus_handle(),
         };
+        window.focus(&app.root_focus, cx);
         app.configure_svn(cx);
         app.start_clock(cx);
+        app.install_shortcuts(cx);
         app
+    }
+
+    /// Global shortcuts are registered as actions so they keep working when a
+    /// page switch drops the focused control.
+    fn install_shortcuts(&mut self, cx: &mut Context<Self>) {
+        cx.bind_keys([
+            KeyBinding::new("ctrl-o", OpenWorkspace, None),
+            KeyBinding::new("ctrl-r", RefreshWorkspace, None),
+            KeyBinding::new("f5", RefreshWorkspace, None),
+            KeyBinding::new("ctrl-f", FocusFilter, None),
+            KeyBinding::new("ctrl-enter", CommitSelection, None),
+            KeyBinding::new("ctrl-1", Page1, None),
+            KeyBinding::new("ctrl-2", Page2, None),
+            KeyBinding::new("ctrl-3", Page3, None),
+            KeyBinding::new("ctrl-4", Page4, None),
+            KeyBinding::new("ctrl-5", Page5, None),
+            KeyBinding::new("ctrl-6", Page6, None),
+        ]);
+
+        let entity = cx.entity().downgrade();
+        let open = entity.clone();
+        App::on_action(&mut *cx, move |_: &OpenWorkspace, cx: &mut App| {
+            open.update(cx, |app, cx| app.pick_workspace(cx)).ok();
+        });
+        let refresh = entity.clone();
+        App::on_action(&mut *cx, move |_: &RefreshWorkspace, cx: &mut App| {
+            refresh
+                .update(cx, |app, cx| {
+                    if app.page == Page::Workspace {
+                        app.workspace.refresh(cx, true);
+                    }
+                })
+                .ok();
+        });
+        let focus_filter = entity.clone();
+        App::on_action(&mut *cx, move |_: &FocusFilter, cx: &mut App| {
+            focus_filter
+                .update(cx, |app, cx| {
+                    if app.page == Page::Workspace {
+                        app.workspace.request_filter_focus();
+                        cx.notify();
+                    }
+                })
+                .ok();
+        });
+        let commit = entity.clone();
+        App::on_action(&mut *cx, move |_: &CommitSelection, cx: &mut App| {
+            commit
+                .update(cx, |app, cx| {
+                    if app.page == Page::Workspace {
+                        let Self {
+                            workspace, shared, ..
+                        } = app;
+                        workspace.commit(shared, cx);
+                    }
+                })
+                .ok();
+        });
+        macro_rules! page_action {
+            ($action:ty, $page:expr) => {{
+                let entity = entity.clone();
+                App::on_action(&mut *cx, move |_: &$action, cx: &mut App| {
+                    entity
+                        .update(cx, |app, cx| {
+                            app.page = $page;
+                            cx.notify();
+                        })
+                        .ok();
+                });
+            }};
+        }
+        page_action!(Page1, Page::Workspace);
+        page_action!(Page2, Page::Log);
+        page_action!(Page3, Page::Blame);
+        page_action!(Page4, Page::Stash);
+        page_action!(Page5, Page::Checkout);
+        page_action!(Page6, Page::Settings);
     }
 
     fn configure_svn(&mut self, cx: &mut Context<Self>) {
@@ -555,6 +652,11 @@ impl OrcaApp {
 impl Render for OrcaApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.apply_window(window, cx);
+        // Keep a focus target so shortcuts still reach the shell after a page
+        // switch unmounts the previously focused control.
+        if window.focused(cx).is_none() {
+            window.focus(&self.root_focus, cx);
+        }
         let pal = ui::palette_from_theme(KitTheme::global(cx));
 
         if let Some(path) = self.shared.open_workspace.take() {
@@ -601,6 +703,7 @@ impl Render for OrcaApp {
             )
             .when_some(output, |this, output| this.child(output))
             .child(self.status_bar(cx, pal))
+            .track_focus(&self.root_focus)
     }
 }
 

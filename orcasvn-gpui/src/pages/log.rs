@@ -6,6 +6,7 @@ use crate::svn;
 use crate::task;
 use crate::ui::{self, Palette, TextField};
 use crate::SvnLogEntry;
+use gpui_kit::component::resizable::{h_resizable, resizable_panel};
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 
@@ -247,14 +248,16 @@ impl LogPage {
             .child(search)
             .child(ui::sep(pal))
             .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .flex_1()
-                    .min_h_0()
-                    .child(self.list(cx, pal))
-                    .child(ui::sep_vertical(pal))
-                    .child(self.details(cx, pal)),
+                div().flex_1().min_h_0().child(
+                    h_resizable("log-split")
+                        .child(
+                            resizable_panel()
+                                .size(px(520.0))
+                                .size_range(px(320.0)..px(900.0))
+                                .child(self.list(cx, pal)),
+                        )
+                        .child(resizable_panel().child(self.details(cx, pal))),
+                ),
             )
             .into_any_element()
     }
@@ -285,10 +288,9 @@ impl LogPage {
         let empty = self.entries.is_empty() && !running;
 
         div()
-            .w(px(520.0))
-            .flex_shrink_0()
             .flex()
             .flex_col()
+            .flex_1()
             .min_h_0()
             .child(
                 div()

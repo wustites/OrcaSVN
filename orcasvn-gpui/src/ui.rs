@@ -286,6 +286,11 @@ impl TextField {
         &self.state
     }
 
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        let handle = self.state.read(cx).focus_handle(cx);
+        handle.focus(window, cx);
+    }
+
     /// Flush a programmatic value change (the kit needs a window to move the
     /// caret) and return the element for the current frame.
     pub fn input(&mut self, window: &mut Window, cx: &mut App) -> Input {

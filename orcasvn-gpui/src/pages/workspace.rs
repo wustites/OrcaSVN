@@ -8,15 +8,22 @@ use crate::system::{self, OpenTarget};
 use crate::task;
 use crate::ui::{self, Palette, TextArea, TextField};
 use crate::SvnStatus;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use gpui_kit::component::resizable::{h_resizable, resizable_panel};
+use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableState};
+use gpui_kit::component::FocusableExt as _;
+use gpui_kit::component::Theme as KitTheme;
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::BTreeSet;
 use std::future::Future;
-use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 const AUTO_REFRESH: Duration = Duration::from_secs(8);
 
+#[derive(Clone)]
 enum Confirm {
     Revert(Vec<String>),
     Remove(Vec<String>),
@@ -37,9 +44,204 @@ pub struct WorkspacePage {
     message: TextArea,
     op_running: bool,
     op_label: String,
-    confirm: Option<Confirm>,
     update_rev: TextField,
+    table: Entity<TableState<StatusDelegate>>,
+    focus_filter_requested: bool,
     _subs: Vec<Subscription>,
+}
+
+/// Renders the status list through the kit's virtualized table. The delegate
+/// keeps only row indices and reads the actual entries from the app entity, so
+/// there is a single source of truth for selection and filtering.
+struct StatusDelegate {
+    app: WeakEntity<OrcaApp>,
+    rows: Vec<usize>,
+}
+
+impl TableDelegate for StatusDelegate {
+    fn columns_count(&self, _: &App) -> usize {
+        3
+    }
+
+    fn rows_count(&self, _: &App) -> usize {
+        self.rows.len()
+    }
+
+    fn column(&self, col_ix: usize, _: &App) -> Column {
+        match col_ix {
+            0 => Column::new("check", "")
+                .width(px(36.0))
+                .resizable(false)
+                .movable(false)
+                .selectable(false),
+            1 => Column::new("status", t("状态", "Status"))
+                .width(px(52.0))
+                .resizable(false)
+                .movable(false)
+                .selectable(false),
+            _ => Column::new("path", t("文件", "Path"))
+                .width(px(380.0))
+                .min_width(px(120.0)),
+        }
+    }
+
+    fn render_td(
+        &mut self,
+        row_ix: usize,
+        col_ix: usize,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) -> impl IntoElement {
+        let Some(entity) = self.app.upgrade() else {
+            return div().into_any_element();
+        };
+        let app = entity.read(cx);
+        let pal = ui::palette_from_theme(KitTheme::global(cx));
+        let Some(&index) = self.rows.get(row_ix) else {
+            return div().into_any_element();
+        };
+        let Some(entry) = app.workspace.entries.get(index) else {
+            return div().into_any_element();
+        };
+        let path = entry.path.clone();
+
+        match col_ix {
+            0 => {
+                let checked = app.workspace.checked.contains(&path);
+                let entity = entity.clone();
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .h_full()
+                    .child(ui::checkbox(
+                        ("dt-check", row_ix),
+                        checked,
+                        pal,
+                        move |_, _, cx| {
+                            cx.stop_propagation();
+                            entity.update(cx, |app, _| {
+                                if app.workspace.checked.contains(&path) {
+                                    app.workspace.checked.remove(&path);
+                                } else {
+                                    app.workspace.checked.insert(path.clone());
+                                }
+                            });
+                            cx.refresh_windows();
+                        },
+                    ))
+                    .into_any_element()
+            }
+            1 => div()
+                .flex()
+                .items_center()
+                .h_full()
+                .child(ui::status_badge(&entry.status_code, pal))
+                .into_any_element(),
+            _ => {
+                let active = app.workspace.focus.as_deref() == Some(path.as_str());
+                let italic = entry.prop_status != "none" && entry.prop_status != "normal";
+                let workspace = app.workspace.loaded_for.clone().unwrap_or_default();
+                let entity_click = entity.clone();
+                let path_click = path.clone();
+                let entity_menu = entity.clone();
+                let path_menu = path.clone();
+                div()
+                    .id(("dt-path", row_ix))
+                    .flex()
+                    .items_center()
+                    .h_full()
+                    .w_full()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .whitespace_nowrap()
+                    .text_ellipsis()
+                    .text_sm()
+                    .when(active, |this| {
+                        this.bg(rgb(pal.accent_soft))
+                            .font_weight(FontWeight::SEMIBOLD)
+                    })
+                    .when(italic, |this| this.italic())
+                    .cursor_pointer()
+                    .on_click(move |_, _, cx| {
+                        entity_click.update(cx, |app, cx| {
+                            app.workspace.load_diff(path_click.clone(), cx);
+                        });
+                    })
+                    .context_menu(move |menu, _window, _cx| {
+                        let path = path_menu.clone();
+                        let workspace = workspace.clone();
+                        file_context_menu(menu, entity_menu.clone(), path, workspace)
+                    })
+                    .child(path)
+                    .into_any_element()
+            }
+        }
+    }
+}
+
+/// Shared context-menu entries for a working-copy file.
+fn file_context_menu(
+    menu: PopupMenu,
+    entity: Entity<OrcaApp>,
+    path: String,
+    workspace: String,
+) -> PopupMenu {
+    let path_diff = path.clone();
+    let entity_diff = entity.clone();
+    let path_blame = path.clone();
+    let entity_blame = entity.clone();
+    let path_reveal = path.clone();
+    let workspace_reveal = workspace.clone();
+    let path_resolve = path.clone();
+    let entity_resolve = entity.clone();
+    let workspace_resolve = workspace.clone();
+    menu.item(
+        PopupMenuItem::new(t("查看差异", "Show diff")).on_click(move |_, _, cx| {
+            entity_diff.update(cx, |app, cx| {
+                app.workspace.load_diff(path_diff.clone(), cx);
+            });
+        }),
+    )
+    .item(
+        PopupMenuItem::new(t("追溯", "Blame")).on_click(move |_, _, cx| {
+            entity_blame.update(cx, |app, cx| {
+                app.shared.blame_file = Some(path_blame.clone());
+                app.shared.goto = Some(super::Page::Blame);
+                cx.notify();
+            });
+        }),
+    )
+    .item(
+        PopupMenuItem::new(t("在文件管理器中显示", "Reveal in file manager")).on_click(
+            move |_, _, cx| {
+                if let Err(error) =
+                    system::reveal_workspace_file(workspace_reveal.clone(), path_reveal.clone())
+                {
+                    tracing::warn!(%error, "reveal failed");
+                }
+                cx.refresh_windows();
+            },
+        ),
+    )
+    .separator()
+    .item(
+        PopupMenuItem::new(t("标记冲突已解决", "Mark resolved")).on_click(move |_, _, cx| {
+            entity_resolve.update(cx, |app, cx| {
+                let path = path_resolve.clone();
+                let workspace = workspace_resolve.clone();
+                app.workspace.run_op(
+                    "resolve",
+                    async move {
+                        svn::resolve(&workspace, &[path], "working")
+                            .await
+                            .map_err(|error| error.to_string())
+                    },
+                    cx,
+                );
+            });
+        }),
+    )
 }
 
 impl WorkspacePage {
@@ -50,6 +252,17 @@ impl WorkspacePage {
         let subs = vec![ui::on_enter(cx, update_rev.state(), |app, cx| {
             app.workspace.submit_update(&mut app.shared, cx);
         })];
+        let app = cx.entity().downgrade();
+        let table = cx.new(|cx| {
+            TableState::new(
+                StatusDelegate {
+                    app,
+                    rows: Vec::new(),
+                },
+                window,
+                cx,
+            )
+        });
         Self {
             loaded_for: None,
             entries: Vec::new(),
@@ -64,9 +277,153 @@ impl WorkspacePage {
             message,
             op_running: false,
             op_label: String::new(),
-            confirm: None,
             update_rev,
+            table,
+            focus_filter_requested: false,
             _subs: subs,
+        }
+    }
+
+    /// Commit the checked files with the message in the textarea.
+    pub fn commit(&mut self, shared: &mut Shared, cx: &mut Context<OrcaApp>) {
+        if self.op_running || self.checked.is_empty() || self.message.is_empty() {
+            return;
+        }
+        let Some(workspace) = self.workspace() else {
+            return;
+        };
+        let files: Vec<String> = self.checked.iter().cloned().collect();
+        let unversioned: Vec<String> = files
+            .iter()
+            .filter(|file| self.code_of(file) == Some("unversioned"))
+            .cloned()
+            .collect();
+        let message = self.message.text().trim().to_string();
+        let auto_delete_missing = shared.settings.auto_delete_missing;
+        self.run_op(
+            "commit",
+            async move {
+                if !unversioned.is_empty() {
+                    svn::add(&workspace, &unversioned)
+                        .await
+                        .map_err(|error| error.to_string())?;
+                }
+                svn::commit_with_options(&workspace, &message, Some(&files), auto_delete_missing)
+                    .await
+                    .map_err(|error| error.to_string())
+            },
+            cx,
+        );
+    }
+
+    /// Deferred focus requested by the global shortcut handler.
+    pub fn request_filter_focus(&mut self) {
+        self.focus_filter_requested = true;
+    }
+
+    /// Open the kit dialog for a destructive workspace action.
+    fn open_confirm(&mut self, window: &mut Window, cx: &mut Context<OrcaApp>, confirm: Confirm) {
+        let (title, files) = match &confirm {
+            Confirm::Revert(files) => (
+                t(
+                    "还原以下文件的本地修改？",
+                    "Revert local changes to these files?",
+                ),
+                files.clone(),
+            ),
+            Confirm::Remove(files) => (
+                t(
+                    "从版本控制中删除以下文件？",
+                    "Schedule these files for deletion?",
+                ),
+                files.clone(),
+            ),
+            Confirm::DeleteUnversioned(files) => (
+                t(
+                    "永久删除以下未版本文件？",
+                    "Permanently delete these unversioned files?",
+                ),
+                files.clone(),
+            ),
+        };
+        let body = files.join("\n");
+        let entity = cx.entity();
+        window.open_dialog(cx, move |dialog, _window, _cx| {
+            let entity = entity.clone();
+            let confirm = confirm.clone();
+            let content_body = body.clone();
+            dialog
+                .title(title)
+                .content(move |content, _window, _cx| {
+                    content.child(
+                        div()
+                            .id("dialog-files")
+                            .max_h(px(280.0))
+                            .overflow_y_scroll()
+                            .font_family(ui::mono_font())
+                            .text_xs()
+                            .whitespace_normal()
+                            .child(content_body.clone()),
+                    )
+                })
+                .footer(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("dialog-cancel")
+                                .label(t("取消", "Cancel"))
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("dialog-ok")
+                                .primary()
+                                .label(t("确认", "Confirm"))
+                                .on_click(move |_, window, cx| {
+                                    entity.update(cx, |app, cx| {
+                                        app.workspace.run_confirm(confirm.clone(), cx)
+                                    });
+                                    window.close_dialog(cx);
+                                }),
+                        ),
+                )
+        });
+    }
+
+    fn run_confirm(&mut self, confirm: Confirm, cx: &mut Context<OrcaApp>) {
+        let Some(workspace) = self.workspace() else {
+            return;
+        };
+        match confirm {
+            Confirm::Revert(files) => self.run_op(
+                "revert",
+                async move {
+                    svn::revert(&workspace, &files)
+                        .await
+                        .map_err(|error| error.to_string())
+                },
+                cx,
+            ),
+            Confirm::Remove(files) => self.run_op(
+                "delete",
+                async move {
+                    svn::delete(&workspace, &files)
+                        .await
+                        .map_err(|error| error.to_string())
+                },
+                cx,
+            ),
+            Confirm::DeleteUnversioned(files) => {
+                self.run_op(
+                    "rm",
+                    async move {
+                        system::delete_unversioned(&workspace, &files).map(|_| files.join("\n"))
+                    },
+                    cx,
+                )
+            }
         }
     }
 
@@ -104,7 +461,6 @@ impl WorkspacePage {
         self.filter.clear();
         self.message.clear();
         self.update_rev.clear();
-        self.confirm = None;
         self.op_running = false;
         self.status_running = false;
         self.diff_running = false;
@@ -115,7 +471,7 @@ impl WorkspacePage {
         self.loaded_for.clone()
     }
 
-    fn refresh(&mut self, cx: &mut Context<OrcaApp>, force: bool) {
+    pub fn refresh(&mut self, cx: &mut Context<OrcaApp>, force: bool) {
         if self.status_running {
             return;
         }
@@ -307,6 +663,13 @@ impl WorkspacePage {
             self.refresh(cx, false);
         }
 
+        if self.focus_filter_requested {
+            self.focus_filter_requested = false;
+            self.filter.focus(window, cx);
+        }
+        let visible = self.visible_indices();
+        self.sync_table(&visible, cx);
+
         let toolbar = self.toolbar(&workspace, window, cx, pal);
         let left = self.file_panel(&workspace, window, cx, pal);
         let right = self.diff_panel(&workspace, window, cx, pal);
@@ -320,18 +683,17 @@ impl WorkspacePage {
             .child(toolbar)
             .child(ui::sep(pal))
             .child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .flex_1()
-                    .min_h_0()
-                    .child(left)
-                    .child(ui::sep_vertical(pal))
-                    .child(right),
+                div().flex_1().min_h_0().child(
+                    h_resizable("ws-split")
+                        .child(
+                            resizable_panel()
+                                .size(px(470.0))
+                                .size_range(px(300.0)..px(900.0))
+                                .child(left),
+                        )
+                        .child(resizable_panel().child(right)),
+                ),
             )
-            .when_some(self.confirm_modal(&workspace, cx, pal), |this, modal| {
-                this.child(modal)
-            })
             .into_any_element()
     }
 
@@ -513,15 +875,14 @@ impl WorkspacePage {
                 t("已选", "selected")
             )));
 
-        let list = self.entry_list(visible, cx, pal);
+        let list = self.entry_list(pal);
 
         let commit_box = self.commit_box(workspace, window, cx, pal);
 
         div()
-            .w(px(470.0))
-            .flex_shrink_0()
             .flex()
             .flex_col()
+            .flex_1()
             .min_h_0()
             .child(filter_row)
             .child(counts)
@@ -532,12 +893,7 @@ impl WorkspacePage {
             .into_any_element()
     }
 
-    fn entry_list(
-        &mut self,
-        visible: Vec<usize>,
-        cx: &mut Context<OrcaApp>,
-        pal: Palette,
-    ) -> AnyElement {
+    fn entry_list(&mut self, pal: Palette) -> AnyElement {
         if self.entries.is_empty() && !self.status_running {
             return div()
                 .flex_1()
@@ -553,76 +909,27 @@ impl WorkspacePage {
                 ))
                 .into_any_element();
         }
-        let visible = Rc::new(visible);
-        let entity = cx.entity();
-        uniform_list("ws-files", visible.len(), move |range, _window, cx| {
-            let app = entity.read(cx);
-            let page = &app.workspace;
-            range
-                .map(|slot| {
-                    let index = visible[slot];
-                    let entry = &page.entries[index];
-                    let active = page.focus.as_deref() == Some(entry.path.as_str());
-                    let checked = page.checked.contains(&entry.path);
-                    let italic = entry.prop_status != "none" && entry.prop_status != "normal";
-                    let path = entry.path.clone();
-                    let entity_for_toggle = entity.clone();
-                    let entity_for_diff = entity.clone();
-                    div()
-                        .id(("ws-row", index))
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap_2()
-                        .px_3()
-                        .h(px(24.0))
-                        .w_full()
-                        .text_sm()
-                        .when(active, |this| this.bg(rgb(pal.accent_soft)))
-                        .hover(|style| style.bg(rgb(pal.elevated)))
-                        .child(ui::checkbox(
-                            ("ws-check", index),
-                            checked,
-                            pal,
-                            move |_, _, cx| {
-                                cx.stop_propagation();
-                                entity_for_toggle.update(cx, |app, cx| {
-                                    let path = path.clone();
-                                    if app.workspace.checked.contains(&path) {
-                                        app.workspace.checked.remove(&path);
-                                    } else {
-                                        app.workspace.checked.insert(path);
-                                    }
-                                    cx.notify();
-                                });
-                            },
-                        ))
-                        .child(ui::status_badge(&entry.status_code, pal))
-                        .child(
-                            div()
-                                .flex_1()
-                                .min_w_0()
-                                .overflow_hidden()
-                                .whitespace_nowrap()
-                                .text_ellipsis()
-                                .when(italic, |this| this.italic())
-                                .child(entry.path.clone()),
-                        )
-                        .on_click({
-                            let entity = entity_for_diff;
-                            let path = entry.path.clone();
-                            move |_, _, cx| {
-                                entity.update(cx, |app, cx| {
-                                    app.workspace.load_diff(path.clone(), cx);
-                                });
-                            }
-                        })
-                })
-                .collect::<Vec<_>>()
-        })
-        .flex_1()
-        .min_h_0()
-        .into_any_element()
+        div()
+            .flex_1()
+            .min_h_0()
+            .w_full()
+            .child(
+                DataTable::new(&self.table)
+                    .stripe(false)
+                    .bordered(false)
+                    .focus_ring(false),
+            )
+            .into_any_element()
+    }
+
+    /// Keep the table's visible row indices in sync with the current filter.
+    fn sync_table(&mut self, visible: &[usize], cx: &mut Context<OrcaApp>) {
+        if self.table.read(cx).delegate().rows == visible {
+            return;
+        }
+        let rows = visible.to_vec();
+        self.table
+            .update(cx, |state, _| state.delegate_mut().rows = rows);
     }
 
     fn commit_box(
@@ -635,14 +942,6 @@ impl WorkspacePage {
         let busy = self.op_running;
         let can_commit = !busy && !self.checked.is_empty() && !self.message.is_empty();
         let workspace = workspace.to_string();
-        let selected: Vec<String> = self.checked.iter().cloned().collect();
-        let unversioned: Vec<String> = selected
-            .iter()
-            .filter(|file| self.code_of(file) == Some("unversioned"))
-            .cloned()
-            .collect();
-        let message = self.message.text().trim().to_string();
-
         let selection = self.selection();
         let codes: Vec<(String, Option<String>)> = selection
             .iter()
@@ -653,8 +952,6 @@ impl WorkspacePage {
         let revert_files = selection.clone();
         let delete_codes = codes.clone();
         let (stash_files, stash_len) = (selection.clone(), selection.len());
-        let (commit_ws, commit_files) = (workspace.clone(), selected.clone());
-        let (commit_unversioned, commit_message) = (unversioned, message);
         let commit_count = self.checked.len();
 
         div()
@@ -675,31 +972,8 @@ impl WorkspacePage {
                         format!("✔ {} ({commit_count})", t("提交", "Commit")),
                         pal,
                         can_commit,
-                        cx.listener(move |app, _, _, cx| {
-                            let files = commit_files.clone();
-                            let unversioned = commit_unversioned.clone();
-                            let message = commit_message.clone();
-                            let path = commit_ws.clone();
-                            let auto_delete_missing = app.shared.settings.auto_delete_missing;
-                            app.workspace.run_op(
-                                "commit",
-                                async move {
-                                    if !unversioned.is_empty() {
-                                        svn::add(&path, &unversioned)
-                                            .await
-                                            .map_err(|error| error.to_string())?;
-                                    }
-                                    svn::commit_with_options(
-                                        &path,
-                                        &message,
-                                        Some(&files),
-                                        auto_delete_missing,
-                                    )
-                                    .await
-                                    .map_err(|error| error.to_string())
-                                },
-                                cx,
-                            );
+                        cx.listener(|app, _, _, cx| {
+                            app.workspace.commit(&mut app.shared, cx);
                         }),
                     ))
                     .child(ui::button(
@@ -726,9 +1000,12 @@ impl WorkspacePage {
                         t("还原", "Revert"),
                         pal,
                         !busy && !revert_files.is_empty(),
-                        cx.listener(move |app, _, _, cx| {
-                            app.workspace.confirm = Some(Confirm::Revert(revert_files.clone()));
-                            cx.notify();
+                        cx.listener(move |app, _, window, cx| {
+                            app.workspace.open_confirm(
+                                window,
+                                cx,
+                                Confirm::Revert(revert_files.clone()),
+                            );
                         }),
                     ))
                     .child(ui::button(
@@ -736,12 +1013,12 @@ impl WorkspacePage {
                         t("删除", "Delete"),
                         pal,
                         !busy && !delete_codes.is_empty(),
-                        cx.listener(move |app, _, _, cx| {
+                        cx.listener(move |app, _, window, cx| {
                             let (unversioned, versioned): (Vec<_>, Vec<_>) = delete_codes
                                 .iter()
                                 .cloned()
                                 .partition(|(_, code)| code.as_deref() == Some("unversioned"));
-                            app.workspace.confirm = Some(if !versioned.is_empty() {
+                            let confirm = if !versioned.is_empty() {
                                 Confirm::Remove(
                                     versioned.into_iter().map(|(path, _)| path).collect(),
                                 )
@@ -749,8 +1026,8 @@ impl WorkspacePage {
                                 Confirm::DeleteUnversioned(
                                     unversioned.into_iter().map(|(path, _)| path).collect(),
                                 )
-                            });
-                            cx.notify();
+                            };
+                            app.workspace.open_confirm(window, cx, confirm);
                         }),
                     ))
                     .child(ui::button(
@@ -897,146 +1174,5 @@ impl WorkspacePage {
             .child(ui::sep(pal))
             .child(body)
             .into_any_element()
-    }
-
-    fn confirm_modal(
-        &mut self,
-        workspace: &str,
-        cx: &mut Context<OrcaApp>,
-        pal: Palette,
-    ) -> Option<AnyElement> {
-        let (title, files) = match self.confirm.as_ref()? {
-            Confirm::Revert(files) => (
-                t(
-                    "还原以下文件的本地修改？",
-                    "Revert local changes to these files?",
-                ),
-                files.clone(),
-            ),
-            Confirm::Remove(files) => (
-                t(
-                    "从版本控制中删除以下文件？",
-                    "Schedule these files for deletion?",
-                ),
-                files.clone(),
-            ),
-            Confirm::DeleteUnversioned(files) => (
-                t(
-                    "永久删除以下未版本文件？",
-                    "Permanently delete these unversioned files?",
-                ),
-                files.clone(),
-            ),
-        };
-        let workspace = workspace.to_string();
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .occlude()
-                .bg(gpui_kit::rgba(0x00000088))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .w(px(460.0))
-                        .max_h(px(420.0))
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .p_4()
-                        .rounded_lg()
-                        .border_1()
-                        .border_color(rgb(pal.border))
-                        .bg(rgb(pal.panel))
-                        .shadow_lg()
-                        .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(title),
-                        )
-                        .child(
-                            div()
-                                .id("ws-confirm-files")
-                                .flex_1()
-                                .min_h_0()
-                                .overflow_y_scroll()
-                                .font_family(ui::mono_font())
-                                .text_xs()
-                                .children(
-                                    files
-                                        .iter()
-                                        .map(|file| div().whitespace_normal().child(file.clone())),
-                                ),
-                        )
-                        .child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .gap_2()
-                                .child(ui::button(
-                                    "confirm-yes",
-                                    t("确认", "Confirm"),
-                                    pal,
-                                    true,
-                                    cx.listener(move |app, _, _, cx| {
-                                        app.workspace.confirm_selected(true, workspace.clone(), cx);
-                                    }),
-                                ))
-                                .child(ui::button(
-                                    "confirm-no",
-                                    t("取消", "Cancel"),
-                                    pal,
-                                    true,
-                                    cx.listener(|app, _, _, cx| {
-                                        app.workspace.confirm = None;
-                                        cx.notify();
-                                    }),
-                                )),
-                        ),
-                )
-                .into_any_element(),
-        )
-    }
-
-    fn confirm_selected(&mut self, answer: bool, workspace: String, cx: &mut Context<OrcaApp>) {
-        let Some(confirm) = self.confirm.take() else {
-            return;
-        };
-        if !answer {
-            cx.notify();
-            return;
-        }
-        match confirm {
-            Confirm::Revert(files) => self.run_op(
-                "revert",
-                async move {
-                    svn::revert(&workspace, &files)
-                        .await
-                        .map_err(|error| error.to_string())
-                },
-                cx,
-            ),
-            Confirm::Remove(files) => self.run_op(
-                "delete",
-                async move {
-                    svn::delete(&workspace, &files)
-                        .await
-                        .map_err(|error| error.to_string())
-                },
-                cx,
-            ),
-            Confirm::DeleteUnversioned(files) => {
-                self.run_op(
-                    "rm",
-                    async move {
-                        system::delete_unversioned(&workspace, &files).map(|_| files.join("\n"))
-                    },
-                    cx,
-                )
-            }
-        }
     }
 }

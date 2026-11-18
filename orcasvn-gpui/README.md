@@ -26,22 +26,31 @@ cargo run --release -- /path/to/working-copy   # 路径可选
 
 | 页面 | 状态 | 说明 |
 | --- | --- | --- |
-| 工作区 | ✅ | 状态列表（虚拟化、过滤、全选、勾选）、彩色差异、提交（自动 `svn add` 未版本文件、可选自动删除缺失文件）、添加 / 还原 / 删除（带确认弹窗）、更新到 HEAD 或指定版本（冲突提示）、清理、在文件管理器 / VS Code / 终端中打开、每 8 秒自动刷新 |
+| 工作区 | ✅ | 状态列表（kit `DataTable`：虚拟滚动、列宽可拖、过滤、全选、勾选）、彩色差异、提交（自动 `svn add` 未版本文件、可选自动删除缺失文件）、添加 / 还原 / 删除（kit 对话框确认）、更新到 HEAD 或指定版本（冲突提示）、清理、在文件管理器 / VS Code / 终端中打开、右键菜单（差异 / 追溯 / 显示 / 标记冲突已解决）、每 8 秒自动刷新 |
 | 日志 | ✅ | 分页加载、关键字 / 作者搜索（回车提交）、变更路径列表、单文件或整个版本的差异 |
 | 追溯 | ✅ | 逐行作者与版本，点击版本高亮同版本行，文件浏览器选择 |
 | 贮藏 | ✅ | 补丁粒度贮藏、应用 / 弹出 / 预览 / 删除（带确认弹窗） |
 | 检出 | ✅ | URL、本地目录、可选版本 |
 | 设置 | ✅ | 简体中文 / English、浅色 / 深色 / 跟随系统、界面缩放、日志条数、提交时自动删除缺失文件、SVN 可执行文件检测 |
-| 通用 | ✅ | 命令输出面板、状态栏提示、最近工作副本下拉、启动参数打开工作副本 |
+| 通用 | ✅ | 命令输出面板、状态栏提示、最近工作副本下拉、启动参数打开工作副本、可拖拽分栏（kit `Resizable`） |
+
+快捷键（通过 GPUI actions 全局注册，输入框内也可用）：
+
+| 快捷键 | 动作 |
+| --- | --- |
+| `Ctrl+O` | 打开工作副本 |
+| `Ctrl+R` / `F5` | 刷新状态 |
+| `Ctrl+F` | 聚焦文件过滤框 |
+| `Ctrl+Enter` | 提交已选文件 |
+| `Ctrl+1` … `Ctrl+6` | 工作区 / 日志 / 追溯 / 贮藏 / 检出 / 设置 |
 
 文本输入使用 GPUI Kit 的 `Input` / `Textarea`：支持 IME（中文输入法）、选择、撤销/重做和剪贴板，这是手写输入框无法覆盖的部分。
 
 以下与 `egui` 分支行为不同或缺失：
 
-- 没有右键菜单（差异 / 追溯 / 在文件管理器中显示目前通过按钮完成，解决冲突尚未接入）。
-- 面板不可拖拽改宽（左侧列表、日志列表固定宽度）。
-- 列表和弹窗仍是自绘的轻量实现，没有用上 kit 的 `DataTable` / `Dock` / `Modal`。
-- 没有窗口图标、菜单栏和键盘快捷键。
+- 面板使用 `Resizable` 分栏而不是 `Dock`：没有标签页、拖拽停靠和布局持久化。
+- 没有窗口图标和菜单栏；快捷键目前是固定绑定，未提供自定义。
+- 状态列表的列不可排序（kit `DataTable` 的排序回调尚未接入）。
 - `gpui-kit` 固定了 GPUI 快照版本，升级 kit 时需要跟着适配 API。
 
 ## 实现要点
@@ -59,7 +68,9 @@ src/
 - **启动**：`gpui_kit::application()` + `gpui_kit::init` 注册主题、Root、输入法与弹窗基础，再用 `gpui_kit::open_window` 挂载带 Root 的窗口。主题在创建任何输入实体之前根据设置确定（kit 的 `Input` 在构造时固定外观）。
 - **异步桥接**：GPUI 使用 smol 执行器，SVN 后端使用 tokio（子进程、超时、`spawn_blocking`）。`task::spawn` 在 GPUI 的后台线程上 `block_on` tokio future，再通过 `WeakEntity` 回到前台线程更新视图。
 - **输入框**：`ui::TextField` / `ui::TextArea` 包装 kit 的 `InputState` / `TextareaState`，订阅 `InputEvent` 缓存文本、`PressEnter` 触发搜索；程序化赋值延迟到下一帧（`set_value` 需要 window）。
-- **虚拟化**：文件列表、差异和追溯都使用 `uniform_list`，只渲染可见行，适合大工作副本。
+- **虚拟化**：文件列表使用 kit 的 `DataTable`（自定义 `TableDelegate` 只保存可见行索引，数据仍从应用实体读取，避免两份状态）；差异和追溯使用 `uniform_list`。
+- **对话框**：确认操作改用 kit 的 `WindowExt::open_dialog` + `Button`，不再自绘遮罩层。
+- **快捷键**：`actions!` 定义动作，`cx.bind_keys` 绑定，`App::on_action` 全局处理，避免页面切换丢失焦点后快捷键失效。
 - **主题**：kit 提供全局 `Theme`，`ui::palette_from_theme` 把主题色映射成自绘布局使用的 `Palette`，保证自绘区域与 kit 控件一致；界面缩放通过 `window.set_rem_size` 实现。
 
 ## 已知问题
@@ -70,8 +81,7 @@ src/
 
 ## 后续工作
 
-1. 列表改用 kit 的 `DataTable`，弹窗改用 kit 的 `Modal`/`Dialog`，分栏改用 `Dock`。
-2. 右键菜单、键盘快捷键、窗口图标。
-3. 复用 `svn::resolve`，补上“标记冲突已解决”。
-4. 为 GPUI 版本添加 CI（`cargo check` / `cargo test` + Linux 依赖）和打包脚本。
-5. 与 `egui` 分支共享的分层：把 `svn/`、`settings.rs`、`i18n.rs` 抽成 workspace crate，避免两份拷贝漂移。
+1. 分栏升级为 kit 的 `Dock`（标签页、拖拽停靠、布局持久化），状态列表接入列排序。
+2. 窗口图标、菜单栏、可自定义快捷键。
+3. 为 GPUI 版本添加 CI（`cargo check` / `cargo test` + Linux 依赖）和打包脚本。
+4. 与 `egui` 分支共享的分层：把 `svn/`、`settings.rs`、`i18n.rs` 抽成 workspace crate，避免两份拷贝漂移。

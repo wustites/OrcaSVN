@@ -7,6 +7,9 @@ use crate::svn;
 use crate::task;
 use crate::ui::{self, Palette, TextField};
 use crate::SvnStatus;
+use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::resizable::{h_resizable, resizable_panel};
+use gpui_kit::component::WindowExt as _;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use std::collections::BTreeSet;
@@ -34,7 +37,6 @@ pub struct StashPage {
     create_running: bool,
     apply_running: bool,
     pending: Option<(Action, String)>,
-    confirm_drop: Option<String>,
     preview: Option<DiffDocument>,
 }
 
@@ -51,7 +53,6 @@ impl StashPage {
             create_running: false,
             apply_running: false,
             pending: None,
-            confirm_drop: None,
             preview: None,
         }
     }
@@ -272,19 +273,68 @@ impl StashPage {
 
         let left = self.create_panel(window, cx, pal);
         let right = self.list_panel(window, cx, pal);
-        let modal = self.drop_modal(cx, pal);
 
         div()
             .relative()
-            .flex()
-            .flex_row()
             .flex_1()
             .min_h_0()
-            .child(left)
-            .child(ui::sep_vertical(pal))
-            .child(right)
-            .when_some(modal, |this, modal| this.child(modal))
+            .child(
+                h_resizable("stash-split")
+                    .child(
+                        resizable_panel()
+                            .size(px(440.0))
+                            .size_range(px(320.0)..px(760.0))
+                            .child(left),
+                    )
+                    .child(resizable_panel().child(right)),
+            )
             .into_any_element()
+    }
+
+    /// Kit dialog instead of the hand-drawn overlay.
+    fn open_drop_dialog(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<OrcaApp>,
+        id: String,
+        name: String,
+    ) {
+        let entity = cx.entity();
+        window.open_dialog(cx, move |dialog, _window, _cx| {
+            let entity = entity.clone();
+            let id = id.clone();
+            let content_name = name.clone();
+            dialog
+                .title(t("删除该贮藏？", "Drop this stash?"))
+                .content(move |content, _window, _cx| {
+                    content.child(div().text_sm().child(content_name.clone()))
+                })
+                .footer(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .justify_end()
+                        .gap_2()
+                        .child(
+                            Button::new("stash-drop-cancel")
+                                .label(t("取消", "Cancel"))
+                                .on_click(|_, window, cx| window.close_dialog(cx)),
+                        )
+                        .child(
+                            Button::new("stash-drop-ok")
+                                .primary()
+                                .label(t("确认", "Confirm"))
+                                .on_click(move |_, window, cx| {
+                                    entity.update(cx, |app, cx| {
+                                        app.stash.stashes.retain(|stash| stash.id != id);
+                                        app.stash.persist();
+                                        cx.notify();
+                                    });
+                                    window.close_dialog(cx);
+                                }),
+                        ),
+                )
+        });
     }
 
     fn create_panel(
@@ -314,12 +364,11 @@ impl StashPage {
             .collect();
 
         div()
-            .w(px(440.0))
-            .flex_shrink_0()
             .flex()
             .flex_col()
             .gap_2()
             .p_3()
+            .flex_1()
             .min_h_0()
             .child(
                 div()
@@ -580,10 +629,21 @@ impl StashPage {
                                         true,
                                         {
                                             let entity = entity.clone();
-                                            move |_, _, cx| {
+                                            move |_, window, cx| {
                                                 entity.update(cx, |app, cx| {
-                                                    app.stash.confirm_drop = Some(id_drop.clone());
-                                                    cx.notify();
+                                                    let name = app
+                                                        .stash
+                                                        .stashes
+                                                        .iter()
+                                                        .find(|stash| stash.id == id_drop)
+                                                        .map(|stash| stash.name.clone())
+                                                        .unwrap_or_default();
+                                                    app.stash.open_drop_dialog(
+                                                        window,
+                                                        cx,
+                                                        id_drop.clone(),
+                                                        name,
+                                                    );
                                                 });
                                             }
                                         },
@@ -631,77 +691,6 @@ impl StashPage {
                     .child(body)
             })
             .into_any_element()
-    }
-
-    fn drop_modal(&mut self, cx: &mut Context<OrcaApp>, pal: Palette) -> Option<AnyElement> {
-        let id = self.confirm_drop.clone()?;
-        let name = self
-            .stashes
-            .iter()
-            .find(|stash| stash.id == id)
-            .map(|stash| stash.name.clone())
-            .unwrap_or_default();
-        Some(
-            div()
-                .absolute()
-                .inset_0()
-                .occlude()
-                .bg(gpui_kit::rgba(0x00000088))
-                .flex()
-                .items_center()
-                .justify_center()
-                .child(
-                    div()
-                        .w(px(380.0))
-                        .flex()
-                        .flex_col()
-                        .gap_3()
-                        .p_4()
-                        .rounded_lg()
-                        .border_1()
-                        .border_color(rgb(pal.border))
-                        .bg(rgb(pal.panel))
-                        .shadow_lg()
-                        .child(
-                            div()
-                                .text_lg()
-                                .font_weight(FontWeight::SEMIBOLD)
-                                .child(t("删除该贮藏？", "Drop this stash?")),
-                        )
-                        .child(div().text_sm().child(name))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .gap_2()
-                                .child(ui::button(
-                                    "stash-drop-yes",
-                                    t("确认", "Confirm"),
-                                    pal,
-                                    true,
-                                    cx.listener(move |app, _, _, cx| {
-                                        let Some(id) = app.stash.confirm_drop.take() else {
-                                            return;
-                                        };
-                                        app.stash.stashes.retain(|stash| stash.id != id);
-                                        app.stash.persist();
-                                        cx.notify();
-                                    }),
-                                ))
-                                .child(ui::button(
-                                    "stash-drop-no",
-                                    t("取消", "Cancel"),
-                                    pal,
-                                    true,
-                                    cx.listener(|app, _, _, cx| {
-                                        app.stash.confirm_drop = None;
-                                        cx.notify();
-                                    }),
-                                )),
-                        ),
-                )
-                .into_any_element(),
-        )
     }
 }
 
