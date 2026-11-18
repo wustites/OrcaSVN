@@ -276,6 +276,169 @@ impl SettingsPage {
             None => div(),
         };
 
+        let favorites = shared.settings.favorites.clone();
+        let notes: Vec<(String, String)> = shared
+            .settings
+            .workspace_notes
+            .iter()
+            .map(|(path, note)| (path.clone(), note.clone()))
+            .collect();
+        let collapsed = shared.settings.workspace_list_collapsed;
+        let workspace_section = div()
+            .flex()
+            .flex_col()
+            .gap_2()
+            .child(ui::sep(pal))
+            .child(
+                div()
+                    .text_sm()
+                    .font_weight(FontWeight::BOLD)
+                    .child(t("多项目工作区", "Workspaces")),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(ui::checkbox(
+                        "settings-rail-collapsed",
+                        collapsed,
+                        pal,
+                        cx.listener(|app, _, _, cx| {
+                            app.shared.settings.workspace_list_collapsed =
+                                !app.shared.settings.workspace_list_collapsed;
+                            app.shared.settings.save();
+                            cx.notify();
+                        }),
+                    ))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(pal.muted))
+                            .child(t("折叠多项目栏", "Collapse workspace rail")),
+                    ),
+            )
+            .child(
+                div()
+                    .pt_1()
+                    .text_xs()
+                    .text_color(rgb(pal.muted))
+                    .child(format!("★ {}", t("收藏", "Favorites"))),
+            )
+            .children(favorites.into_iter().enumerate().map(|(index, path)| {
+                let remove = path.clone();
+                div()
+                    .id(("settings-favorite", index))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_xs()
+                            .child(path),
+                    )
+                    .child(ui::button(
+                        "settings-favorite-remove",
+                        t("移除", "Remove"),
+                        pal,
+                        true,
+                        cx.listener(move |app, _, _, cx| {
+                            app.shared.settings.favorites.retain(|item| item != &remove);
+                            app.shared.settings.save();
+                            cx.notify();
+                        }),
+                    ))
+            }))
+            .when(shared.settings.favorites.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(pal.muted))
+                        .child(t("还没有收藏的工作区", "No favorite workspaces yet")),
+                )
+            })
+            .child(
+                div()
+                    .pt_1()
+                    .text_xs()
+                    .text_color(rgb(pal.muted))
+                    .child(format!("✎ {}", t("备注", "Notes"))),
+            )
+            .children(notes.into_iter().enumerate().map(|(index, (path, note))| {
+                let edit_path = path.clone();
+                let edit_note = note.clone();
+                let clear_path = path.clone();
+                div()
+                    .id(("settings-note", index))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .py_1()
+                    .child(
+                        div()
+                            .w(px(220.0))
+                            .flex_shrink_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_xs()
+                            .child(path),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .overflow_hidden()
+                            .whitespace_nowrap()
+                            .text_ellipsis()
+                            .text_xs()
+                            .text_color(rgb(pal.muted))
+                            .child(note),
+                    )
+                    .child(ui::button(
+                        "settings-note-edit",
+                        t("编辑", "Edit"),
+                        pal,
+                        true,
+                        cx.listener(move |_app, _, window, cx| {
+                            super::sidebar::open_note_dialog(
+                                window,
+                                cx,
+                                edit_path.clone(),
+                                edit_note.clone(),
+                            );
+                        }),
+                    ))
+                    .child(ui::button(
+                        "settings-note-clear",
+                        t("清除", "Clear"),
+                        pal,
+                        true,
+                        cx.listener(move |app, _, _, cx| {
+                            app.shared.settings.workspace_notes.remove(&clear_path);
+                            app.shared.settings.save();
+                            cx.notify();
+                        }),
+                    ))
+            }))
+            .when(shared.settings.workspace_notes.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .text_color(rgb(pal.muted))
+                        .child(t("还没有工作区备注", "No workspace notes yet")),
+                )
+            });
+
         let row = |label: &str, control: AnyElement| {
             div()
                 .flex()
@@ -354,6 +517,7 @@ impl SettingsPage {
                     .child(svn_status)
                     .into_any_element(),
             ))
+            .child(workspace_section)
             .child(ui::sep(pal))
             .child(
                 div()

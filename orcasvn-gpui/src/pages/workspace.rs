@@ -11,7 +11,7 @@ use crate::SvnStatus;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
-use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableState};
+use gpui_kit::component::table::{Column, ColumnSort, DataTable, TableDelegate, TableState};
 use gpui_kit::component::FocusableExt as _;
 use gpui_kit::component::Theme as KitTheme;
 use gpui_kit::component::WindowExt as _;
@@ -56,6 +56,30 @@ pub struct WorkspacePage {
 struct StatusDelegate {
     app: WeakEntity<OrcaApp>,
     rows: Vec<usize>,
+    sort: ColumnSort,
+}
+
+impl StatusDelegate {
+    fn resort(&mut self, cx: &App) {
+        if self.sort == ColumnSort::Default {
+            return;
+        }
+        let Some(app) = self.app.upgrade() else {
+            return;
+        };
+        let app = app.read(cx);
+        let path_of = |index: &usize| {
+            app.workspace
+                .entries
+                .get(*index)
+                .map(|entry| entry.path.clone())
+                .unwrap_or_default()
+        };
+        self.rows.sort_by_key(path_of);
+        if self.sort == ColumnSort::Descending {
+            self.rows.reverse();
+        }
+    }
 }
 
 impl TableDelegate for StatusDelegate {
@@ -81,8 +105,24 @@ impl TableDelegate for StatusDelegate {
                 .selectable(false),
             _ => Column::new("path", t("文件", "Path"))
                 .width(px(380.0))
-                .min_width(px(120.0)),
+                .min_width(px(120.0))
+                .sortable(),
         }
+    }
+
+    fn perform_sort(
+        &mut self,
+        col_ix: usize,
+        sort: ColumnSort,
+        _window: &mut Window,
+        cx: &mut Context<TableState<Self>>,
+    ) {
+        if col_ix != 2 {
+            return;
+        }
+        self.sort = sort;
+        self.resort(cx);
+        cx.notify();
     }
 
     fn render_td(
@@ -196,10 +236,37 @@ fn file_context_menu(
     let path_resolve = path.clone();
     let entity_resolve = entity.clone();
     let workspace_resolve = workspace.clone();
+    let path_commit = path.clone();
+    let entity_commit = entity.clone();
+    let path_commit_dir = path.clone();
+    let entity_commit_dir = entity.clone();
     menu.item(
         PopupMenuItem::new(t("查看差异", "Show diff")).on_click(move |_, _, cx| {
             entity_diff.update(cx, |app, cx| {
                 app.workspace.load_diff(path_diff.clone(), cx);
+            });
+        }),
+    )
+    .item(
+        PopupMenuItem::new(t("提交此文件", "Commit this file")).on_click(move |_, _, cx| {
+            entity_commit.update(cx, |app, cx| {
+                app.shared.commit_file = Some(path_commit.clone());
+                app.shared.goto = Some(super::Page::Commit);
+                cx.notify();
+            });
+        }),
+    )
+    .item(
+        PopupMenuItem::new(t("提交此目录", "Commit this directory")).on_click(move |_, _, cx| {
+            entity_commit_dir.update(cx, |app, cx| {
+                let path = path_commit_dir.clone();
+                let directory = path
+                    .rsplit_once('/')
+                    .map(|(dir, _)| dir.to_string())
+                    .unwrap_or_default();
+                app.shared.commit_scope = Some(directory);
+                app.shared.goto = Some(super::Page::Commit);
+                cx.notify();
             });
         }),
     )
@@ -258,6 +325,7 @@ impl WorkspacePage {
                 StatusDelegate {
                     app,
                     rows: Vec::new(),
+                    sort: ColumnSort::Default,
                 },
                 window,
                 cx,
@@ -928,10 +996,23 @@ impl WorkspacePage {
 
     /// Keep the table's visible row indices in sync with the current filter.
     fn sync_table(&mut self, visible: &[usize], cx: &mut Context<OrcaApp>) {
-        if self.table.read(cx).delegate().rows == visible {
+        let sort = self.table.read(cx).delegate().sort;
+        let mut rows = visible.to_vec();
+        if sort != ColumnSort::Default {
+            let entries = &self.entries;
+            rows.sort_by_key(|index| {
+                entries
+                    .get(*index)
+                    .map(|entry| entry.path.clone())
+                    .unwrap_or_default()
+            });
+            if sort == ColumnSort::Descending {
+                rows.reverse();
+            }
+        }
+        if self.table.read(cx).delegate().rows == rows {
             return;
         }
-        let rows = visible.to_vec();
         self.table
             .update(cx, |state, _| state.delegate_mut().rows = rows);
     }

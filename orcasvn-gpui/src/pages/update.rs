@@ -148,6 +148,7 @@ impl UpdatePage {
                         app.update.output = Some(output);
                         app.shared.info_dirty = true;
                         app.update.load_local(cx);
+                        app.rail.refresh(&app.shared, cx);
                     }
                     Err(error) => app.shared.err(error),
                 }

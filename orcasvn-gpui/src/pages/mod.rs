@@ -88,6 +88,8 @@ pub struct Shared {
     pub goto: Option<Page>,
     pub blame_file: Option<String>,
     pub stash_files: Option<Vec<String>>,
+    pub commit_scope: Option<String>,
+    pub commit_file: Option<String>,
     pub info_dirty: bool,
 }
 
@@ -104,6 +106,8 @@ impl Shared {
             goto: None,
             blame_file: None,
             stash_files: None,
+            commit_scope: None,
+            commit_file: None,
             info_dirty: false,
         }
     }

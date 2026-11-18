@@ -29,6 +29,8 @@ pub struct Settings {
     pub workspace_notes: std::collections::BTreeMap<String, String>,
     /// Multi-project rail collapsed to an icon strip.
     pub workspace_list_collapsed: bool,
+    /// Rail ordering: `manual`, `name` or `changed`.
+    pub workspace_sort_mode: String,
 }
 
 impl Default for Settings {
@@ -45,6 +47,7 @@ impl Default for Settings {
             favorites: Vec::new(),
             workspace_notes: std::collections::BTreeMap::new(),
             workspace_list_collapsed: false,
+            workspace_sort_mode: "manual".to_string(),
         }
     }
 }

@@ -16,6 +16,7 @@ use std::collections::BTreeSet;
 
 pub struct CommitPage {
     loaded_for: Option<String>,
+    scope: Option<String>,
     entries: Vec<SvnStatus>,
     status_running: bool,
     checked: BTreeSet<String>,
@@ -30,6 +31,7 @@ impl CommitPage {
     pub fn new(cx: &mut Context<OrcaApp>, window: &mut Window) -> Self {
         Self {
             loaded_for: None,
+            scope: None,
             entries: Vec::new(),
             status_running: false,
             checked: BTreeSet::new(),
@@ -43,6 +45,7 @@ impl CommitPage {
 
     pub fn reset(&mut self) {
         self.loaded_for = None;
+        self.scope = None;
         self.entries.clear();
         self.checked.clear();
         self.focus = None;
@@ -51,6 +54,33 @@ impl CommitPage {
         self.status_running = false;
         self.diff_running = false;
         self.op_running = false;
+    }
+
+    /// Restrict the page to one directory (like `main`'s `?directory=` scope).
+    pub fn set_scope(&mut self, scope: Option<String>) {
+        self.scope = scope;
+        self.checked.clear();
+        self.focus = None;
+        self.diff = None;
+    }
+
+    /// Select a file that the shell asked this page to commit.
+    pub fn preselect(&mut self, file: String, cx: &mut Context<OrcaApp>) {
+        self.checked.insert(file.clone());
+        self.load_diff(file, cx);
+    }
+
+    fn visible_entries(&self) -> Vec<(usize, &SvnStatus)> {
+        self.entries
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| match &self.scope {
+                Some(scope) if !scope.is_empty() => {
+                    entry.path == *scope || entry.path.starts_with(&format!("{scope}/"))
+                }
+                _ => true,
+            })
+            .collect()
     }
 
     pub fn refresh(&mut self, cx: &mut Context<OrcaApp>) {
@@ -167,6 +197,7 @@ impl CommitPage {
                         app.commit.message.clear();
                         app.shared.info_dirty = true;
                         app.commit.refresh(cx);
+                        app.rail.refresh(&app.shared, cx);
                     }
                     Err(error) => app.shared.err(error),
                 }
@@ -186,18 +217,39 @@ impl CommitPage {
             return div().into_any_element();
         };
         if self.loaded_for.as_deref() != Some(workspace.as_str()) {
+            // Keep a scope/preselection requested by the shell before the page
+            // mounted; only the workspace-specific data is reset.
+            let scope = self.scope.clone();
+            let checked = std::mem::take(&mut self.checked);
+            let focus = self.focus.clone();
             self.reset();
+            self.scope = scope;
+            self.checked = checked;
+            self.focus = focus.clone();
             self.loaded_for = Some(workspace.clone());
             self.refresh(cx);
+            if let Some(file) = focus {
+                self.load_diff(file, cx);
+            }
         }
 
         let busy = self.op_running;
-        let all =
-            !self.entries.is_empty() && self.entries.iter().all(|e| self.checked.contains(&e.path));
-        let (selected, total) = (self.checked.len(), self.entries.len());
+        let visible = self.visible_entries();
+        let all = !visible.is_empty()
+            && visible
+                .iter()
+                .all(|(_, entry)| self.checked.contains(&entry.path));
+        let (selected, total) = (self.checked.len(), visible.len());
+        let visible_empty = visible.is_empty();
+        let _ = &visible_empty;
+        let scope_label = self
+            .scope
+            .clone()
+            .filter(|scope| !scope.is_empty())
+            .unwrap_or_else(|| t("全部目录", "All directories").to_string());
 
         let mut rows = Vec::new();
-        for (index, entry) in self.entries.iter().enumerate() {
+        for (index, entry) in visible {
             let path = entry.path.clone();
             let checked = self.checked.contains(&path);
             let active = self.focus.as_deref() == Some(path.as_str());
@@ -263,7 +315,7 @@ impl CommitPage {
             .overflow_y_scroll()
             .flex()
             .flex_col()
-            .when(self.entries.is_empty() && !self.status_running, |this| {
+            .when(visible_empty && !self.status_running, |this| {
                 this.child(
                     div()
                         .p_6()
@@ -327,15 +379,42 @@ impl CommitPage {
                         all,
                         pal,
                         cx.listener(|app, _, _, cx| {
-                            if app.commit.checked.len() == app.commit.entries.len() {
-                                app.commit.checked.clear();
+                            let visible: Vec<String> = app
+                                .commit
+                                .visible_entries()
+                                .into_iter()
+                                .map(|(_, entry)| entry.path.clone())
+                                .collect();
+                            if visible.iter().all(|path| app.commit.checked.contains(path)) {
+                                for path in visible {
+                                    app.commit.checked.remove(&path);
+                                }
                             } else {
-                                app.commit.checked =
-                                    app.commit.entries.iter().map(|e| e.path.clone()).collect();
+                                for path in visible {
+                                    app.commit.checked.insert(path);
+                                }
                             }
                             cx.notify();
                         }),
                     ))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(pal.muted))
+                            .child(format!("{}: {scope_label}", t("范围", "Scope"))),
+                    )
+                    .when(self.scope.is_some(), |this| {
+                        this.child(ui::button(
+                            "commit-scope-reset",
+                            t("全部目录", "All directories"),
+                            pal,
+                            true,
+                            cx.listener(|app, _, _, cx| {
+                                app.commit.set_scope(None);
+                                cx.notify();
+                            }),
+                        ))
+                    })
                     .child(div().text_xs().text_color(rgb(pal.muted)).child(format!(
                         "{} {} · {} {}",
                         total,

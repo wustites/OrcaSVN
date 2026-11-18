@@ -850,6 +850,15 @@ impl Render for OrcaApp {
         if let Some(page) = self.shared.goto.take() {
             self.page = page;
         }
+        if self.page == Page::Commit {
+            if let Some(scope) = self.shared.commit_scope.take() {
+                self.commit
+                    .set_scope(if scope.is_empty() { None } else { Some(scope) });
+            }
+            if let Some(file) = self.shared.commit_file.take() {
+                self.commit.preselect(file, cx);
+            }
+        }
         if let Some(file) = self.shared.blame_file.take() {
             self.blame.open(file, cx);
             self.page = Page::Blame;

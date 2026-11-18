@@ -13,6 +13,13 @@ use crate::SvnStatus;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DiffMode {
+    Working,
+    Change,
+    Between,
+}
+
 pub struct DiffPage {
     loaded_for: Option<String>,
     entries: Vec<SvnStatus>,
@@ -20,7 +27,10 @@ pub struct DiffPage {
     focus: Option<String>,
     diff: Option<DiffDocument>,
     running: bool,
-    revision: TextField,
+    mode: DiffMode,
+    change_rev: TextField,
+    old_rev: TextField,
+    new_rev: TextField,
 }
 
 impl DiffPage {
@@ -32,7 +42,10 @@ impl DiffPage {
             focus: None,
             diff: None,
             running: false,
-            revision: TextField::new(cx, window, t("版本（可选）", "Revision (optional)")),
+            mode: DiffMode::Working,
+            change_rev: TextField::new(cx, window, t("版本", "Revision")),
+            old_rev: TextField::new(cx, window, t("起始版本", "From revision")),
+            new_rev: TextField::new(cx, window, t("结束版本", "To revision")),
         }
     }
 
@@ -43,7 +56,10 @@ impl DiffPage {
         self.diff = None;
         self.status_running = false;
         self.running = false;
-        self.revision.clear();
+        self.mode = DiffMode::Working;
+        self.change_rev.clear();
+        self.old_rev.clear();
+        self.new_rev.clear();
     }
 
     fn refresh(&mut self, cx: &mut Context<OrcaApp>) {
@@ -83,24 +99,37 @@ impl DiffPage {
         let Some(workspace) = self.loaded_for.clone() else {
             return;
         };
-        let text = self.revision.text().trim().to_string();
-        let revision = if text.is_empty() {
-            None
-        } else {
-            match text.trim_start_matches('r').parse::<u64>() {
-                Ok(value) => Some(value),
-                Err(_) => {
+        let parse = |text: String| -> Result<Option<u64>, ()> {
+            let text = text.trim().trim_start_matches('r').to_string();
+            if text.is_empty() {
+                Ok(None)
+            } else {
+                text.parse::<u64>().map(Some).map_err(|_| ())
+            }
+        };
+        let (old_rev, new_rev) = match self.mode {
+            DiffMode::Working => (None, None),
+            DiffMode::Change => match parse(self.change_rev.text()) {
+                Ok(Some(rev)) => (Some(rev), None),
+                _ => {
                     self.diff = None;
                     return;
                 }
-            }
+            },
+            DiffMode::Between => match (parse(self.old_rev.text()), parse(self.new_rev.text())) {
+                (Ok(Some(old)), Ok(Some(new))) if old <= new => (Some(old), Some(new)),
+                _ => {
+                    self.diff = None;
+                    return;
+                }
+            },
         };
         self.focus = Some(file.clone());
         self.running = true;
         task::spawn(
             cx,
             async move {
-                let result = svn::diff(&workspace, &file, revision, None)
+                let result = svn::diff(&workspace, &file, old_rev, new_rev)
                     .await
                     .map_err(|error| error.to_string());
                 (file, result)
@@ -224,11 +253,56 @@ impl DiffPage {
                         !self.status_running,
                         cx.listener(|app, _, _, cx| app.diff_page.refresh(cx)),
                     ))
-                    .child(
-                        div()
-                            .w(px(170.0))
-                            .child(self.revision.input(window, cx).w_full()),
-                    )
+                    .child(ui::button(
+                        "diff-mode-working",
+                        t("工作副本", "Working copy"),
+                        pal,
+                        self.mode != DiffMode::Working,
+                        cx.listener(|app, _, _, cx| {
+                            app.diff_page.mode = DiffMode::Working;
+                            cx.notify();
+                        }),
+                    ))
+                    .child(ui::button(
+                        "diff-mode-change",
+                        t("指定版本", "One revision"),
+                        pal,
+                        self.mode != DiffMode::Change,
+                        cx.listener(|app, _, _, cx| {
+                            app.diff_page.mode = DiffMode::Change;
+                            cx.notify();
+                        }),
+                    ))
+                    .child(ui::button(
+                        "diff-mode-between",
+                        t("版本比较", "Between revisions"),
+                        pal,
+                        self.mode != DiffMode::Between,
+                        cx.listener(|app, _, _, cx| {
+                            app.diff_page.mode = DiffMode::Between;
+                            cx.notify();
+                        }),
+                    ))
+                    .when(self.mode == DiffMode::Change, |this| {
+                        this.child(
+                            div()
+                                .w(px(110.0))
+                                .child(self.change_rev.input(window, cx).w_full()),
+                        )
+                    })
+                    .when(self.mode == DiffMode::Between, |this| {
+                        this.child(
+                            div()
+                                .w(px(120.0))
+                                .child(self.old_rev.input(window, cx).w_full()),
+                        )
+                        .child(div().text_xs().text_color(rgb(pal.muted)).child("→"))
+                        .child(
+                            div()
+                                .w(px(120.0))
+                                .child(self.new_rev.input(window, cx).w_full()),
+                        )
+                    })
                     .child(ui::button(
                         "diff-reload",
                         t("重新加载", "Reload"),

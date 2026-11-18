@@ -106,65 +106,6 @@ impl WorkspaceRail {
         shared.settings.save();
     }
 
-    fn open_note_dialog(
-        &mut self,
-        window: &mut Window,
-        cx: &mut Context<OrcaApp>,
-        path: String,
-        note: String,
-    ) {
-        let state = cx.new(|cx| {
-            InputState::new(window, cx)
-                .placeholder(t("工作区备注", "Workspace note"))
-                .default_value(note)
-        });
-        let entity = cx.entity();
-        window.open_dialog(cx, move |dialog, _window, _cx| {
-            let entity = entity.clone();
-            let path = path.clone();
-            let state = state.clone();
-            let content_state = state.clone();
-            dialog
-                .title(t("编辑备注", "Edit note"))
-                .content(move |content, _window, _cx| {
-                    content.child(Input::new(&content_state).w_full())
-                })
-                .footer(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .justify_end()
-                        .gap_2()
-                        .child(
-                            Button::new("note-cancel")
-                                .label(t("取消", "Cancel"))
-                                .on_click(|_, window, cx| window.close_dialog(cx)),
-                        )
-                        .child(
-                            Button::new("note-save")
-                                .primary()
-                                .label(t("保存", "Save"))
-                                .on_click(move |_, window, cx| {
-                                    let value = state.read(cx).value().trim().to_string();
-                                    entity.update(cx, |app, cx| {
-                                        if value.is_empty() {
-                                            app.shared.settings.workspace_notes.remove(&path);
-                                        } else {
-                                            app.shared
-                                                .settings
-                                                .workspace_notes
-                                                .insert(path.clone(), value);
-                                        }
-                                        app.shared.settings.save();
-                                        cx.notify();
-                                    });
-                                    window.close_dialog(cx);
-                                }),
-                        ),
-                )
-        });
-    }
-
     pub fn render(
         &mut self,
         shared: &Shared,
@@ -174,11 +115,29 @@ impl WorkspaceRail {
     ) -> AnyElement {
         let collapsed = shared.settings.workspace_list_collapsed;
         let mut paths = shared.settings.recent.clone();
-        // Favorites first, keeping their configured order.
+        // Favorites first, then the configured order.
         let favorites = shared.settings.favorites.clone();
-        paths.sort_by_key(|path| {
-            let favorite = favorites.iter().position(|item| item == path);
-            (favorite.is_none(), favorite.unwrap_or(usize::MAX))
+        let sort_mode = shared.settings.workspace_sort_mode.clone();
+        let changed_of = |path: &str| {
+            self.summaries
+                .get(path)
+                .and_then(|summary| summary.changed)
+                .unwrap_or(usize::MAX)
+        };
+        paths.sort_by(|a, b| {
+            let favorite = |path: &str| favorites.iter().position(|item| item == path);
+            match (favorite(a), favorite(b)) {
+                (Some(left), Some(right)) => left.cmp(&right),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => match sort_mode.as_str() {
+                    "name" => workspace_name(a)
+                        .to_lowercase()
+                        .cmp(&workspace_name(b).to_lowercase()),
+                    "changed" => changed_of(a).cmp(&changed_of(b)),
+                    _ => std::cmp::Ordering::Equal,
+                },
+            }
         });
 
         if collapsed {
@@ -249,6 +208,11 @@ impl WorkspaceRail {
                 let path_star = path.clone();
                 let path_note = path.clone();
                 let note_text = note.clone().unwrap_or_default();
+                let manual = sort_mode == "manual";
+                let can_up = index > 0;
+                let can_down = index + 1 < paths.len();
+                let path_up = path.clone();
+                let path_down = path.clone();
                 div()
                     .id(("rail-row", index))
                     .flex()
@@ -283,6 +247,40 @@ impl WorkspaceRail {
                                     .when(active, |this| this.font_weight(FontWeight::SEMIBOLD))
                                     .child(name),
                             )
+                            .when(manual, |this| {
+                                this.child(
+                                    div()
+                                        .id(("rail-up", index))
+                                        .px_1()
+                                        .text_sm()
+                                        .text_color(rgb(pal.muted))
+                                        .cursor_pointer()
+                                        .when(can_up, |this| {
+                                            this.on_click(cx.listener(move |app, _, _, cx| {
+                                                cx.stop_propagation();
+                                                move_recent(&mut app.shared, &path_up, -1);
+                                                cx.notify();
+                                            }))
+                                        })
+                                        .child("↑"),
+                                )
+                                .child(
+                                    div()
+                                        .id(("rail-down", index))
+                                        .px_1()
+                                        .text_sm()
+                                        .text_color(rgb(pal.muted))
+                                        .cursor_pointer()
+                                        .when(can_down, |this| {
+                                            this.on_click(cx.listener(move |app, _, _, cx| {
+                                                cx.stop_propagation();
+                                                move_recent(&mut app.shared, &path_down, 1);
+                                                cx.notify();
+                                            }))
+                                        })
+                                        .child("↓"),
+                                )
+                            })
                             .child(
                                 div()
                                     .id(("rail-star", index))
@@ -308,9 +306,9 @@ impl WorkspaceRail {
                                         pal.muted
                                     }))
                                     .cursor_pointer()
-                                    .on_click(cx.listener(move |app, _, window, cx| {
+                                    .on_click(cx.listener(move |_app, _, window, cx| {
                                         cx.stop_propagation();
-                                        app.rail.open_note_dialog(
+                                        open_note_dialog(
                                             window,
                                             cx,
                                             path_note.clone(),
@@ -370,6 +368,26 @@ impl WorkspaceRail {
                             .child(format!("🗂 {} ({})", t("工作区", "Workspaces"), paths.len())),
                     )
                     .child(ui::button(
+                        "rail-sort",
+                        match sort_mode.as_str() {
+                            "name" => t("⇅ 名称", "⇅ Name"),
+                            "changed" => t("⇅ 变更", "⇅ Changes"),
+                            _ => t("⇅ 手动", "⇅ Manual"),
+                        },
+                        pal,
+                        true,
+                        cx.listener(|app, _, _, cx| {
+                            let next = match app.shared.settings.workspace_sort_mode.as_str() {
+                                "manual" => "name",
+                                "name" => "changed",
+                                _ => "manual",
+                            };
+                            app.shared.settings.workspace_sort_mode = next.to_string();
+                            app.shared.settings.save();
+                            cx.notify();
+                        }),
+                    ))
+                    .child(ui::button(
                         "rail-refresh",
                         "🔄",
                         pal,
@@ -426,6 +444,18 @@ impl WorkspaceRail {
     }
 }
 
+fn move_recent(shared: &mut Shared, path: &str, delta: isize) {
+    let Some(index) = shared.settings.recent.iter().position(|item| item == path) else {
+        return;
+    };
+    let target = index as isize + delta;
+    if target < 0 || target as usize >= shared.settings.recent.len() {
+        return;
+    }
+    shared.settings.recent.swap(index, target as usize);
+    shared.settings.save();
+}
+
 pub fn workspace_name(path: &str) -> String {
     std::path::Path::new(path)
         .file_name()
@@ -439,4 +469,63 @@ fn format_modified(millis: u64) -> String {
         chrono::LocalResult::Single(time) => time.format("%m-%d %H:%M").to_string(),
         _ => "—".to_string(),
     }
+}
+
+/// Shared "edit workspace note" dialog, used by the rail and the settings page.
+pub fn open_note_dialog(
+    window: &mut Window,
+    cx: &mut Context<OrcaApp>,
+    path: String,
+    note: String,
+) {
+    let state = cx.new(|cx| {
+        InputState::new(window, cx)
+            .placeholder(t("工作区备注", "Workspace note"))
+            .default_value(note)
+    });
+    let entity = cx.entity();
+    window.open_dialog(cx, move |dialog, _window, _cx| {
+        let entity = entity.clone();
+        let path = path.clone();
+        let state = state.clone();
+        let content_state = state.clone();
+        dialog
+            .title(t("编辑备注", "Edit note"))
+            .content(move |content, _window, _cx| {
+                content.child(Input::new(&content_state).w_full())
+            })
+            .footer(
+                div()
+                    .flex()
+                    .flex_row()
+                    .justify_end()
+                    .gap_2()
+                    .child(
+                        Button::new("note-cancel")
+                            .label(t("取消", "Cancel"))
+                            .on_click(|_, window, cx| window.close_dialog(cx)),
+                    )
+                    .child(
+                        Button::new("note-save")
+                            .primary()
+                            .label(t("保存", "Save"))
+                            .on_click(move |_, window, cx| {
+                                let value = state.read(cx).value().trim().to_string();
+                                entity.update(cx, |app, cx| {
+                                    if value.is_empty() {
+                                        app.shared.settings.workspace_notes.remove(&path);
+                                    } else {
+                                        app.shared
+                                            .settings
+                                            .workspace_notes
+                                            .insert(path.clone(), value);
+                                    }
+                                    app.shared.settings.save();
+                                    cx.notify();
+                                });
+                                window.close_dialog(cx);
+                            }),
+                    ),
+            )
+    });
 }
