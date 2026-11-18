@@ -139,7 +139,7 @@ jobs:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          name="OrcaSVN-gpui-${RELEASE_TAG}-${{ matrix.asset }}"
+          name="OrcaSVN-${RELEASE_TAG}-${{ matrix.asset }}"
           mkdir -p "dist/$name"
           cp orcasvn-gpui/README.md LICENSE "dist/$name/"
           if [ "$RUNNER_OS" = "Windows" ]; then
