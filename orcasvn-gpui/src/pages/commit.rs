@@ -105,7 +105,12 @@ impl CommitPage {
                     return;
                 }
                 match result {
-                    Ok(mut entries) => {
+                    Ok(entries) => {
+                        let mut entries = crate::settings::filter_gitignore(
+                            entries,
+                            &app.shared.settings,
+                            &workspace,
+                        );
                         entries.sort_by(|a, b| a.path.cmp(&b.path));
                         let paths: BTreeSet<_> =
                             entries.iter().map(|entry| entry.path.clone()).collect();

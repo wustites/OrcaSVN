@@ -87,7 +87,12 @@ impl DiffPage {
                     return;
                 }
                 match result {
-                    Ok(mut entries) => {
+                    Ok(entries) => {
+                        let mut entries = crate::settings::filter_gitignore(
+                            entries,
+                            &app.shared.settings,
+                            &workspace,
+                        );
                         entries.sort_by(|a, b| a.path.cmp(&b.path));
                         app.diff_page.entries = entries;
                     }

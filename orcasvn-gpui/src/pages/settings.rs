@@ -10,6 +10,7 @@ use gpui_kit::*;
 
 pub struct SettingsPage {
     svn_path: TextField,
+    pub gitignore: TextField,
     svn_running: bool,
     svn_version: Option<String>,
     checked_svn: bool,
@@ -23,8 +24,11 @@ impl SettingsPage {
     ) -> Self {
         let mut svn_path = TextField::new(cx, window, "svn");
         svn_path.set_text(settings.svn_path.clone());
+        let mut gitignore = TextField::new(cx, window, ".gitignore");
+        gitignore.set_text(settings.gitignore_file.clone());
         Self {
             svn_path,
+            gitignore,
             svn_running: false,
             svn_version: None,
             checked_svn: false,
@@ -503,6 +507,52 @@ impl SettingsPage {
                             .child(t(
                                 "开启后，提交已选中的缺失文件时会先执行 svn delete --force",
                                 "When enabled, selected missing files are scheduled with svn delete --force before commit",
+                            )),
+                    )
+                    .into_any_element(),
+            ))
+            .child(row(
+                t("Gitignore 过滤", "Gitignore filter"),
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(ui::checkbox(
+                        "gitignore-enabled",
+                        shared.settings.gitignore_enabled,
+                        pal,
+                        cx.listener(|app, _, _, cx| {
+                            app.shared.settings.gitignore_enabled =
+                                !app.shared.settings.gitignore_enabled;
+                            app.shared.settings.save();
+                            cx.notify();
+                        }),
+                    ))
+                    .child(
+                        div()
+                            .w(px(180.0))
+                            .child(self.gitignore.input(window, cx).w_full()),
+                    )
+                    .child(ui::button(
+                        "gitignore-apply",
+                        t("应用", "Apply"),
+                        pal,
+                        true,
+                        cx.listener(|app, _, _, cx| {
+                            app.shared.settings.gitignore_file =
+                                app.settings_page.gitignore.text().trim().to_string();
+                            app.shared.settings.save();
+                            cx.notify();
+                        }),
+                    ))
+                    .child(
+                        div()
+                            .text_xs()
+                            .text_color(rgb(pal.muted))
+                            .child(t(
+                                "开启后隐藏被 .gitignore 匹配的未版本文件",
+                                "Hide unversioned files matched by .gitignore",
                             )),
                     )
                     .into_any_element(),
