@@ -96,6 +96,28 @@ impl SettingsPage {
                 ui.checkbox(&mut settings.auto_delete_missing, t("开启", "Enabled"));
                 ui.end_row();
 
+                ui.label(t("Gitignore 过滤", "Gitignore filter"));
+                ui.horizontal(|ui| {
+                    ui.checkbox(
+                        &mut settings.gitignore_enabled,
+                        t("开启", "Enabled"),
+                    );
+                    ui.add(
+                        egui::TextEdit::singleline(&mut settings.gitignore_file)
+                            .hint_text(".gitignore")
+                            .desired_width(160.0),
+                    );
+                    ui.label(
+                        RichText::new(t(
+                            "隐藏被该文件匹配的未版本文件",
+                            "Hide unversioned files matched by this file",
+                        ))
+                        .weak()
+                        .small(),
+                    );
+                });
+                ui.end_row();
+
                 ui.label(t("SVN 可执行文件", "SVN executable"));
                 ui.horizontal(|ui| {
                     ui.add(

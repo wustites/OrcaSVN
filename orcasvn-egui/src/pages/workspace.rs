@@ -78,7 +78,9 @@ impl WorkspacePage {
     fn poll(&mut self, ctx: &egui::Context, shared: &mut Shared, workspace: &str) {
         if let Some(result) = self.status_task.poll() {
             match result {
-                Ok(mut entries) => {
+                Ok(entries) => {
+                    let mut entries =
+                        crate::settings::filter_gitignore(entries, &shared.settings, workspace);
                     entries.sort_by(|a, b| a.path.cmp(&b.path));
                     let paths: BTreeSet<_> = entries.iter().map(|e| e.path.clone()).collect();
                     self.checked.retain(|path| paths.contains(path));

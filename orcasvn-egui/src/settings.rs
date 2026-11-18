@@ -31,6 +31,10 @@ pub struct Settings {
     pub workspace_list_collapsed: bool,
     /// `manual`, `name` or `changed`.
     pub workspace_sort_mode: String,
+    /// Hide unversioned files matched by the workspace gitignore file.
+    pub gitignore_enabled: bool,
+    /// File name read from the workspace root (default `.gitignore`).
+    pub gitignore_file: String,
 }
 
 impl Default for Settings {
@@ -48,7 +52,24 @@ impl Default for Settings {
             workspace_notes: std::collections::BTreeMap::new(),
             workspace_list_collapsed: false,
             workspace_sort_mode: "manual".to_string(),
+            gitignore_enabled: false,
+            gitignore_file: ".gitignore".to_string(),
         }
+    }
+}
+
+/// Hide unversioned entries matched by the workspace gitignore file.
+pub fn filter_gitignore(
+    entries: Vec<crate::SvnStatus>,
+    settings: &Settings,
+    workspace: &str,
+) -> Vec<crate::SvnStatus> {
+    if !settings.gitignore_enabled {
+        return entries;
+    }
+    match orcasvn_core::gitignore::Gitignore::load(workspace, &settings.gitignore_file) {
+        Some(matcher) => orcasvn_core::gitignore::filter_status(entries, &matcher),
+        None => entries,
     }
 }
 
