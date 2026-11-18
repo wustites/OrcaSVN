@@ -247,6 +247,15 @@ impl CommitPage {
             .clone()
             .filter(|scope| !scope.is_empty())
             .unwrap_or_else(|| t("全部目录", "All directories").to_string());
+        let mut directories: Vec<String> = self
+            .entries
+            .iter()
+            .filter_map(|entry| entry.path.rsplit_once('/').map(|(dir, _)| dir.to_string()))
+            .filter(|dir| !dir.is_empty())
+            .collect::<std::collections::BTreeSet<_>>()
+            .into_iter()
+            .collect();
+        directories.truncate(8);
 
         let mut rows = Vec::new();
         for (index, entry) in visible {
@@ -415,6 +424,26 @@ impl CommitPage {
                             }),
                         ))
                     })
+                    .children(
+                        directories
+                            .into_iter()
+                            .enumerate()
+                            .map(|(index, directory)| {
+                                let active = self.scope.as_deref() == Some(directory.as_str());
+                                let dir = directory.clone();
+                                ui::button(
+                                    ("commit-scope", index),
+                                    format!("{directory}/"),
+                                    pal,
+                                    !active,
+                                    cx.listener(move |app, _, _, cx| {
+                                        app.commit.set_scope(Some(dir.clone()));
+                                        cx.notify();
+                                    }),
+                                )
+                            })
+                            .collect::<Vec<_>>(),
+                    )
                     .child(div().text_xs().text_color(rgb(pal.muted)).child(format!(
                         "{} {} · {} {}",
                         total,

@@ -28,6 +28,7 @@ pub struct DiffPage {
     diff: Option<DiffDocument>,
     running: bool,
     mode: DiffMode,
+    path: TextField,
     change_rev: TextField,
     old_rev: TextField,
     new_rev: TextField,
@@ -43,6 +44,7 @@ impl DiffPage {
             diff: None,
             running: false,
             mode: DiffMode::Working,
+            path: TextField::new(cx, window, t("文件路径", "File path")),
             change_rev: TextField::new(cx, window, t("版本", "Revision")),
             old_rev: TextField::new(cx, window, t("起始版本", "From revision")),
             new_rev: TextField::new(cx, window, t("结束版本", "To revision")),
@@ -57,6 +59,7 @@ impl DiffPage {
         self.status_running = false;
         self.running = false;
         self.mode = DiffMode::Working;
+        self.path.clear();
         self.change_rev.clear();
         self.old_rev.clear();
         self.new_rev.clear();
@@ -246,6 +249,23 @@ impl DiffPage {
                     .gap_2()
                     .px_3()
                     .py_2()
+                    .child(
+                        div()
+                            .w(px(260.0))
+                            .child(self.path.input(window, cx).w_full()),
+                    )
+                    .child(ui::button(
+                        "diff-path",
+                        t("对比该路径", "Diff this path"),
+                        pal,
+                        !self.path.is_empty(),
+                        cx.listener(|app, _, _, cx| {
+                            let path = app.diff_page.path.text().trim().to_string();
+                            if !path.is_empty() {
+                                app.diff_page.load(path, cx);
+                            }
+                        }),
+                    ))
                     .child(ui::button(
                         "diff-refresh",
                         format!("🔄 {}", t("刷新", "Refresh")),
