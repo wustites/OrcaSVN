@@ -105,3 +105,7 @@ git push origin gpui-v0.8.0-alpha.1
 1. 多项目栏拖拽排序（当前为 ↑/↓ + 排序模式）。
 2. 分栏升级为 `Dock`（标签页、停靠、布局持久化）。
 3. 窗口图标、菜单栏、自定义快捷键；macOS Intel 与 Linux aarch64 产物。
+
+## 相关文档
+
+- [引入 gpui-kit-material 的可行性评估](../docs/gpui-material-migration.md)：依赖特性、MSRV、图标体积、风险与分阶段方案。尚未实施。
