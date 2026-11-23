@@ -60,7 +60,7 @@
 
 `main` 分支的 Tauri 客户端已经在用 M3 语义变量（`src/design-tokens.css` 中的 `--md-sys-color-*`），主色为 `#1261a0`，深色下为 `#8bc7fa`。也就是说项目已有的设计语言就是 Material 3，`gpui` 分支的 `Palette` 反而是偏离的一方。引入本库是把两条分支拉回同一套语义，而不是换一种视觉风格。
 
-`Palette` 到 Material 色彩角色的建议映射：
+`Palette` 到 Material 色彩角色的映射（Phase 2 已落地）：
 
 | `Palette` 字段 | Material 角色 | 备注 |
 | --- | --- | --- |
@@ -72,8 +72,9 @@
 | `muted` | `ON_SURFACE_VARIANT` | 次要文字 |
 | `accent` | `PRIMARY` | 主操作 |
 | `accent_soft` | `SECONDARY_CONTAINER` | 选中背景 |
-| `add_bg` / `del_bg` | 无对应 | 差异底色，保留自定义值 |
-| `ok` / `warn` / `err` / `conflict` | 无完整对应 | 可参考 `ERROR` 与 `design-tokens.css` 的 success/warning 语义色 |
+| `add_bg` / `del_bg` | `SURFACE` 与 `SUCCESS` / `ERROR` 混合 14% | 差异底色，保持克制 |
+| `ok` / `warn` / `err` | `SUCCESS` / `WARNING` / `ERROR` | 状态语义 |
+| `conflict` | `TERTIARY` | 种子方案里与主色分开的色相 |
 
 品牌色用种子方案生成，而不是在内置主题上打补丁：`SeedScheme::new(0x1261a0).dark(is_dark).scheme()` 会从品牌色推导整套色彩角色（含 Kit 扩展的 `SUCCESS`、`WARNING`、`INFO`），表面与容器都带品牌色相。只覆盖 `PRIMARY` 会让背景仍停留在 Baseline 的紫色（Phase 0 实测）。
 
@@ -109,7 +110,7 @@
 
 **6. 状态色只有部分对应。** `SeedScheme` 会生成 Kit 扩展的 `SUCCESS`、`WARNING`、`INFO`，`ok`、`warn`、`err` 可以映射过去；`add_bg`、`del_bg`、`conflict` 仍没有 M3 角色，差异底色需保留自定义值，与纯 Material 表面会有轻微色温差异，需要视觉确认。
 
-**7. 现有 `Palette` 映射会降低深色模式对比度。** `palette_from_theme` 把 `accent` 取 `colors.blue`、`accent_soft` 取 `colors.selection`。Material 投影后 `selection` 是主色的半透明叠加，深色模式下选中卡片仍为浅蓝，而 `muted`（`ON_SURFACE_VARIANT`）也是浅色，文字对比度明显下降（Phase 0 截图可见）。这就是 Phase 2 必须改用 `ColorRole`、不能再沿用 Kit 旧字段的直接原因。
+**7. 旧字段映射会降低深色模式对比度（已在 Phase 2 修复）。** 原实现把 `accent` 取 `colors.blue`、`accent_soft` 取 `colors.selection`；Material 投影后 `selection` 是主色半透明叠加，深色模式下选中卡片出现浅底浅字。现改为 `PRIMARY` / `SECONDARY_CONTAINER`，见 Phase 2 实测。教训仍然成立：跨主题系统复用时不要按字段名近似映射，要按语义角色映射。
 
 **8. 许可证需随分发保留声明。** 上游是 `MIT AND Apache-2.0`，移植文件来自 AndroidX。与项目 MIT 兼容，但发布包需包含相应 NOTICE 与许可证文本。
 
@@ -158,7 +159,7 @@ theme::init_component_theme(scheme, settings.zoom, cx);  // 必须在 open_windo
 | --- | --- | --- |
 | Phase 0 | 只改依赖与启动顺序，页面代码不动 | ✅ 2026-11-23 通过，见下节 |
 | Phase 1 | 重写 `ui.rs` 的 `button`、`checkbox`、`spinner`、`status_badge` | ✅ 部分完成：button / spinner 已换，checkbox 因尺寸冲突保留自绘，见 Phase 1 实测 |
-| Phase 2 | `Palette` 改为 `ColorRole` 查询的薄封装，保留差异/状态自定义色 | `pal.*` 与 `rgb(...)` 通过类型改动收敛，不逐个改 240 余处 |
+| Phase 2 | `Palette` 改为 `ColorRole` 查询的薄封装，保留差异/状态自定义色 | ✅ 完成：字段级换源，240 余处引用未改，见 Phase 2 实测 |
 | Phase 3 | 外壳：`NavigationRail`、`TopAppBar`、`MaterialTabs` 替换手写导航 | 快捷键、焦点、分栏与折叠行为不变 |
 | Phase 4 | 3 处 `open_dialog` 与 1 处右键菜单改用 `MaterialDialog`、`MaterialContextMenu` | 现有确认/右键流程行为一致 |
 
@@ -214,6 +215,33 @@ Phase 0 是唯一的决策点：通过则后续是低风险的外观重构，不
 3. **`MaterialButton` 是 `RenderOnce`。** 在返回值上继续链式调用会编译失败；本项目 73 处调用点都是直接 `child(...)` 或放进 `Vec`，因此零改动。若以后要写法式链式调用，需要先 `.into_any_element()`。
 
 仍未处理：`apply_window` 的 render 内主题切换、`Palette` 到 `ColorRole` 的全量替换、对话框与菜单。
+
+## Phase 2 实测结果
+
+2026-11-23 同一分支完成。目标是把 `Palette` 的取色从 Kit 旧字段换到 Material 角色，并消掉深色模式的对比度问题。
+
+实现上保留 `Palette` 的 `u32` 字段，只替换来源：
+
+- 每个字段由 `theme::color(ColorRole::…)` 解析，`add_bg` / `del_bg` 用 `theme::blend(SURFACE, SUCCESS|ERROR, 0.14)`。
+- `palette_from_theme` 不再接收 `KitTheme`，改为直接读当前绘制方案；两个调用点各删一个参数。
+- `Palette` 每帧重建，所以主题切换立刻反映到自绘布局，不依赖 Kit 的全局刷新。
+
+结果：
+
+- 135 处 `pal.*` 与 109 处 `rgb(...)` **一处未改**，收敛靠的是取色来源，不是批量替换。
+- 深色模式下选中工作区卡片恢复为浅字深底；浅色下为深字浅底，Phase 0/1 记录的对比度问题消除。
+- 差异视图的增删底色由 `SUCCESS` / `ERROR` 与表面混合生成，深浅主题都成立。
+
+![Phase 2 浅色主题](images/gpui-material-phase2-light.png)
+
+![Phase 2 深色主题](images/gpui-material-phase2-dark.png)
+
+![Phase 2 差异视图](images/gpui-material-phase2-diff.png)
+
+遗留：
+
+- `status_color` 里 `"replaced"` 仍是硬编码 `0x786ee6`，差异头部的几条字面量颜色也未收敛；它们不在 `Palette` 里，需要单独判断语义。
+- `palette()` 每次调用做十余次角色查表和两次混合。当前每帧调用两次（外壳与表格单元格），实测无感；若以后热点变多，可以在 `advance_component_theme` 改变时缓存。
 
 ## 待定事项
 
