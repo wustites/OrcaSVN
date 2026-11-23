@@ -120,7 +120,7 @@
 ```toml
 gpui-kit-material = { version = "=0.2.0", default-features = false, features = [
     "buttons", "selection", "inputs", "menus", "dialogs",
-    "navigation", "feedback", "progress", "shapes", "dynamic-color",
+    "navigation", "feedback", "progress", "loading", "shapes", "dynamic-color",
 ] }
 ```
 
@@ -157,7 +157,7 @@ theme::init_component_theme(scheme, settings.zoom, cx);  // 必须在 open_windo
 | 阶段 | 目标 | 验收 |
 | --- | --- | --- |
 | Phase 0 | 只改依赖与启动顺序，页面代码不动 | ✅ 2026-11-23 通过，见下节 |
-| Phase 1 | 重写 `ui.rs` 的 `button`、`checkbox`、`spinner`、`status_badge` | 73 处调用点签名不变即可通过编译 |
+| Phase 1 | 重写 `ui.rs` 的 `button`、`checkbox`、`spinner`、`status_badge` | ✅ 部分完成：button / spinner 已换，checkbox 因尺寸冲突保留自绘，见 Phase 1 实测 |
 | Phase 2 | `Palette` 改为 `ColorRole` 查询的薄封装，保留差异/状态自定义色 | `pal.*` 与 `rgb(...)` 通过类型改动收敛，不逐个改 240 余处 |
 | Phase 3 | 外壳：`NavigationRail`、`TopAppBar`、`MaterialTabs` 替换手写导航 | 快捷键、焦点、分栏与折叠行为不变 |
 | Phase 4 | 3 处 `open_dialog` 与 1 处右键菜单改用 `MaterialDialog`、`MaterialContextMenu` | 现有确认/右键流程行为一致 |
@@ -190,6 +190,30 @@ Phase 0 是唯一的决策点：通过则后续是低风险的外观重构，不
 4. **旧字段映射在深色下对比度不足。** `accent`/`accent_soft` 取 Kit 的 `colors.blue`/`colors.selection`，Material 投影后选中卡片出现浅底浅字，印证 Phase 2 必须改用 `ColorRole`。
 
 另外确认两点利好：`SeedScheme` 自带 `SUCCESS`、`WARNING`、`INFO`，状态色不必全靠自定义；主题投影不影响等宽字体与几何值。
+
+## Phase 1 实测结果
+
+2026-11-23 同一分支完成。范围限定在 `ui.rs` 的控件助手，调用点签名保持不变。
+
+| 控件 | 处理 | 结果 |
+| --- | --- | --- |
+| `button` | `material_button(Outlined)` + `ButtonSize::ExtraSmall` | 73 处调用点零改动；禁用态、悬停、水波纹由组件提供 |
+| `button_compact` | 新增；保留原 32px 紧凑几何，配色改用 `ColorRole` | 项目栏 5 个控件，44px 折叠栏放得下 |
+| `checkbox` | 保留自绘 16px，配色改用 `PRIMARY` / `OUTLINE` / `ON_PRIMARY` | 见下方尺寸冲突 |
+| `spinner` | `LoadingIndicator`（16px，无容器背景）+ 原标签 | 需要 `loading` 特性，不在 `progress` 组里 |
+| `status_badge` | 未动 | 等 Phase 2 一起改 `ColorRole` |
+
+![Phase 1 浅色主题](images/gpui-material-phase1-light.png)
+
+![Phase 1 深色主题](images/gpui-material-phase1-dark.png)
+
+三条经验：
+
+1. **M3 的尺寸下限与密集桌面布局冲突。** 最小按钮 32px 高、12px 横向内边距，`MaterialCheckbox` 强制 40px 命中区。项目栏折叠后只有 44px 宽，放不下 M3 按钮；状态表行高 28px，放不下 40px 复选框。这两处只能保留紧凑几何，或等 Phase 3 重排外壳。
+2. **特性按组件开，不能按分组猜。** `LoadingIndicator` 在 `loading` 组，只开 `progress` 会得到 `unresolved import`；`MaterialButton` 在 `buttons`，`MaterialCheckbox` 在 `selection`。
+3. **`MaterialButton` 是 `RenderOnce`。** 在返回值上继续链式调用会编译失败；本项目 73 处调用点都是直接 `child(...)` 或放进 `Vec`，因此零改动。若以后要写法式链式调用，需要先 `.into_any_element()`。
+
+仍未处理：`apply_window` 的 render 内主题切换、`Palette` 到 `ColorRole` 的全量替换、对话框与菜单。
 
 ## 待定事项
 
