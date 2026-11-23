@@ -5,6 +5,11 @@ use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, Textar
 use gpui_kit::component::Theme as KitTheme;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
+use gpui_kit_material::color::ColorRole;
+use gpui_kit_material::components::{
+    ButtonSize, ButtonVariant, LoadingIndicator, MaterialButton, material_button,
+};
+use gpui_kit_material::theme::color;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::OnceLock;
@@ -171,14 +176,41 @@ pub fn status_badge(code: &str, pal: Palette) -> Div {
 }
 
 /// A flat, hoverable button.
+///
+/// Phase 1: the visual shell is Material's `Outlined` button in its smallest
+/// size. `pal` is kept in the signature until Phase 2 moves callers onto
+/// `ColorRole`; the component paints from the theme, not from `pal`.
 pub fn button(
     id: impl Into<ElementId>,
     label: impl Into<SharedString>,
-    pal: Palette,
+    _pal: Palette,
+    enabled: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+) -> MaterialButton {
+    material_button(id, ButtonVariant::Outlined)
+        .button_size(ButtonSize::ExtraSmall)
+        .disabled(!enabled)
+        .on_click(on_click)
+        .child(label.into())
+}
+
+/// The dense variant for fixed-width strips (the workspace rail, inline row
+/// actions). M3's smallest button is 32 px high with 12 px padding and a 40 px
+/// hit target, which overflows a 44 px collapsed rail and makes the 28 px
+/// table rows grow. This keeps the compact geometry and takes its colors from
+/// Material roles instead of the old palette.
+pub fn button_compact(
+    id: impl Into<ElementId>,
+    label: impl Into<SharedString>,
+    _pal: Palette,
     enabled: bool,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
-    let color = if enabled { pal.text } else { pal.muted };
+    let text = if enabled {
+        color(ColorRole::ON_SURFACE)
+    } else {
+        color(ColorRole::ON_SURFACE_VARIANT)
+    };
     div()
         .id(id)
         .flex()
@@ -189,13 +221,13 @@ pub fn button(
         .py_1()
         .rounded_md()
         .border_1()
-        .border_color(rgb(if enabled { pal.border } else { pal.panel }))
-        .bg(rgb(pal.elevated))
-        .text_color(rgb(color))
+        .border_color(color(ColorRole::OUTLINE_VARIANT))
+        .bg(color(ColorRole::SURFACE_CONTAINER_HIGH))
+        .text_color(text)
         .text_sm()
         .when(enabled, |this| {
             this.cursor_pointer()
-                .hover(|style| style.bg(rgb(pal.accent_soft)))
+                .hover(|style| style.bg(color(ColorRole::SECONDARY_CONTAINER)))
         })
         .when(enabled, |this| this.on_click(on_click))
         .child(label.into())
@@ -218,14 +250,19 @@ pub fn sep_vertical(pal: Palette) -> Div {
 }
 
 pub fn spinner(pal: Palette, label: impl Into<SharedString>) -> Div {
+    let label = label.into();
     div()
         .flex()
         .items_center()
         .gap_1()
         .text_xs()
         .text_color(rgb(pal.muted))
-        .child("⏳")
-        .child(label.into())
+        .child(
+            LoadingIndicator::new(label.clone(), label.clone())
+                .size(16.0)
+                .contained(false),
+        )
+        .child(label)
 }
 
 /// Single-line text field backed by the GPUI Kit input. The kit provides the
@@ -380,11 +417,16 @@ impl TextArea {
     }
 }
 
-/// Turn a checkbox-ish glyph into a clickable element.
+/// A status checkbox.
+///
+/// Phase 1 kept this hand-drawn on purpose: `MaterialCheckbox` enforces a
+/// 40 px hit target, which grows the 28 px status rows and misaligns the
+/// status letter. Its colors now come from Material roles so it matches the
+/// swapped buttons.
 pub fn checkbox(
     id: impl Into<ElementId>,
     checked: bool,
-    pal: Palette,
+    _pal: Palette,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
 ) -> Stateful<Div> {
     div()
@@ -397,10 +439,22 @@ pub fn checkbox(
         .justify_center()
         .rounded_sm()
         .border_1()
-        .border_color(rgb(if checked { pal.accent } else { pal.border }))
-        .bg(rgb(if checked { pal.accent } else { pal.panel }))
+        .border_color(color(if checked {
+            ColorRole::PRIMARY
+        } else {
+            ColorRole::OUTLINE
+        }))
+        .bg(color(if checked {
+            ColorRole::PRIMARY
+        } else {
+            ColorRole::SURFACE
+        }))
         .text_xs()
-        .text_color(rgb(if checked { pal.panel } else { pal.muted }))
+        .text_color(color(if checked {
+            ColorRole::ON_PRIMARY
+        } else {
+            ColorRole::ON_SURFACE_VARIANT
+        }))
         .cursor_pointer()
         .on_click(on_click)
         .child(if checked { "✔" } else { "" })

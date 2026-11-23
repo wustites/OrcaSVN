@@ -841,6 +841,7 @@ impl WorkspacePage {
             .gap_2()
             .px_3()
             .py_2()
+            .flex_wrap()
             .child(refresh)
             .child(
                 div()

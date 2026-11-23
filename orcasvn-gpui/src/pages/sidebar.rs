@@ -150,7 +150,7 @@ impl WorkspaceRail {
                 .gap_2()
                 .py_2()
                 .bg(rgb(pal.panel))
-                .child(ui::button(
+                .child(ui::button_compact(
                     "rail-expand",
                     "»",
                     pal,
@@ -367,7 +367,7 @@ impl WorkspaceRail {
                             .font_weight(FontWeight::BOLD)
                             .child(format!("🗂 {} ({})", t("工作区", "Workspaces"), paths.len())),
                     )
-                    .child(ui::button(
+                    .child(ui::button_compact(
                         "rail-sort",
                         match sort_mode.as_str() {
                             "name" => t("⇅ 名称", "⇅ Name"),
@@ -387,7 +387,7 @@ impl WorkspaceRail {
                             cx.notify();
                         }),
                     ))
-                    .child(ui::button(
+                    .child(ui::button_compact(
                         "rail-refresh",
                         "🔄",
                         pal,
@@ -396,7 +396,7 @@ impl WorkspaceRail {
                             app.rail.refresh(&app.shared, cx);
                         }),
                     ))
-                    .child(ui::button(
+                    .child(ui::button_compact(
                         "rail-collapse",
                         "«",
                         pal,
@@ -408,7 +408,7 @@ impl WorkspaceRail {
                         }),
                     )),
             )
-            .child(ui::button(
+            .child(ui::button_compact(
                 "rail-open",
                 format!("📂 {}", t("打开…", "Open…")),
                 pal,

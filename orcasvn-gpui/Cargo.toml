@@ -15,6 +15,7 @@ gpui-kit-material = { version = "=0.2.0", default-features = false, features = [
     "dialogs",
     "navigation",
     "feedback",
+    "loading",
     "progress",
     "shapes",
     "dynamic-color",
