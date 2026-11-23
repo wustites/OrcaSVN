@@ -75,7 +75,7 @@
 | `add_bg` / `del_bg` | 无对应 | 差异底色，保留自定义值 |
 | `ok` / `warn` / `err` / `conflict` | 无完整对应 | 可参考 `ERROR` 与 `design-tokens.css` 的 success/warning 语义色 |
 
-品牌色可用 `Scheme::with_role(ColorRole::PRIMARY, Color::hex(0x1261a0))` 覆盖，无需在 20 套内置主题里挑近似色。深浅两套主色写成常量即可与 Tauri 客户端对齐。
+品牌色用种子方案生成，而不是在内置主题上打补丁：`SeedScheme::new(0x1261a0).dark(is_dark).scheme()` 会从品牌色推导整套色彩角色（含 Kit 扩展的 `SUCCESS`、`WARNING`、`INFO`），表面与容器都带品牌色相。只覆盖 `PRIMARY` 会让背景仍停留在 Baseline 的紫色（Phase 0 实测）。
 
 ## 变更范围
 
@@ -107,9 +107,11 @@
 
 **5. 主题过渡不能写在 `render` 里。** `advance_component_theme` 的文档明确要求从主题/缩放事件和下一帧回调调用，不能在 `Render` 中调用。当前 `apply_window`（`src/app.rs:274`）在 `render` 内调用 `KitTheme::change`，并直接用 `window.set_rem_size` 处理界面缩放。迁移后需要改为计划回调，并把 `zoom` 作为 `scale` 参数交给 Material，而不是自己设 rem。
 
-**6. Material 没有差异与状态色。** `add_bg`、`del_bg`、`ok`、`warn`、`err`、`conflict` 以及 `status_color()` 没有 M3 对应角色。差异视图可以保留自定义值，但会和纯 Material 表面存在轻微色温差异，需要视觉确认。
+**6. 状态色只有部分对应。** `SeedScheme` 会生成 Kit 扩展的 `SUCCESS`、`WARNING`、`INFO`，`ok`、`warn`、`err` 可以映射过去；`add_bg`、`del_bg`、`conflict` 仍没有 M3 角色，差异底色需保留自定义值，与纯 Material 表面会有轻微色温差异，需要视觉确认。
 
-**7. 许可证需随分发保留声明。** 上游是 `MIT AND Apache-2.0`，移植文件来自 AndroidX。与项目 MIT 兼容，但发布包需包含相应 NOTICE 与许可证文本。
+**7. 现有 `Palette` 映射会降低深色模式对比度。** `palette_from_theme` 把 `accent` 取 `colors.blue`、`accent_soft` 取 `colors.selection`。Material 投影后 `selection` 是主色的半透明叠加，深色模式下选中卡片仍为浅蓝，而 `muted`（`ON_SURFACE_VARIANT`）也是浅色，文字对比度明显下降（Phase 0 截图可见）。这就是 Phase 2 必须改用 `ColorRole`、不能再沿用 Kit 旧字段的直接原因。
+
+**8. 许可证需随分发保留声明。** 上游是 `MIT AND Apache-2.0`，移植文件来自 AndroidX。与项目 MIT 兼容，但发布包需包含相应 NOTICE 与许可证文本。
 
 ## 集成方案
 
@@ -118,25 +120,31 @@
 ```toml
 gpui-kit-material = { version = "=0.2.0", default-features = false, features = [
     "buttons", "selection", "inputs", "menus", "dialogs",
-    "navigation", "feedback", "progress", "shapes",
+    "navigation", "feedback", "progress", "shapes", "dynamic-color",
 ] }
 ```
 
-刻意不启用：`embedded-symbols`（图标体积）、`gpui-fast`（引擎替换）、`pickers`（暂时不需要日期/时间选择）、`adaptive`、`dynamic-color`。需要日期选择时再单独打开 `pickers`，它会带 `chrono`。
+刻意不启用：`embedded-symbols`（图标体积）、`gpui-fast`（引擎替换）、`pickers`（暂时不需要日期/时间选择）、`adaptive`。`dynamic-color` 需要打开：内置主题的 Baseline 是紫色系，直接用会让整个界面偏紫；用品牌种子色生成方案才与 Tauri 客户端一致。需要日期选择时再单独打开 `pickers`，它会带 `chrono`。
 
 ### 启动顺序
 
 ```rust
-gpui_kit::init(cx);                       // 注册 Kit 的主题、Root、输入与对话框
-gpui_kit_material::init(cx);               // 注册 Material 的键位与组件
+gpui_kit::init(cx);                        // 注册 Kit 的主题、Root、输入与对话框
 ui::init_fonts(cx);                        // 等宽字体选择保持现状
-let scheme = ThemeId::Baseline
-    .scheme(mode, Contrast::Standard)
-    .with_role(ColorRole::PRIMARY, Color::hex(0x1261a0));
+
+let settings = crate::settings::Settings::load();
+let mode = /* 设置 + 系统外观 */;
+KitTheme::change(mode, None, cx);          // 先加载 Kit 的模式配置
+
+let scheme = SeedScheme::new(0x1261a0)     // OrcaSVN 品牌色
+    .dark(mode.is_dark())
+    .scheme();
 theme::init_component_theme(scheme, settings.zoom, cx);  // 必须在 open_window 之前
 ```
 
-`init_component_theme` 必须在 `open_window` 之前完成，因为它要在 Root 首次渲染前写好 Kit 主题；输入控件在构造时就会捕获样式。
+`init_component_theme` 必须在 `open_window` 之前完成，因为它要在 Root 首次渲染前写好 Kit 主题；输入控件在构造时就会捕获样式。`KitTheme::change` 要排在它前面：Component 在模式变化后会重新加载模式配置，先加载再投影才不会被覆盖。
+
+`gpui_kit_material::init(cx)` 暂时不要调用。它会把 Kit 的内置图标（下拉箭头 `unfold_more`、空状态 `inbox`）重定向到 Material Symbols 路径；未启用 `embedded-symbols` 时这些资源不存在，图标变空白并持续报错（Phase 0 实测）。等图标方案确定后再打开。
 
 ### 主题切换与缩放
 
@@ -148,7 +156,7 @@ theme::init_component_theme(scheme, settings.zoom, cx);  // 必须在 open_windo
 
 | 阶段 | 目标 | 验收 |
 | --- | --- | --- |
-| Phase 0 | 只改依赖与启动顺序，页面代码不动 | `cargo run` 后现有界面整体变为 Material 配色；`palette_from_theme` 仍生效；`KitTheme` 未报错 |
+| Phase 0 | 只改依赖与启动顺序，页面代码不动 | ✅ 2026-11-23 通过，见下节 |
 | Phase 1 | 重写 `ui.rs` 的 `button`、`checkbox`、`spinner`、`status_badge` | 73 处调用点签名不变即可通过编译 |
 | Phase 2 | `Palette` 改为 `ColorRole` 查询的薄封装，保留差异/状态自定义色 | `pal.*` 与 `rgb(...)` 通过类型改动收敛，不逐个改 240 余处 |
 | Phase 3 | 外壳：`NavigationRail`、`TopAppBar`、`MaterialTabs` 替换手写导航 | 快捷键、焦点、分栏与折叠行为不变 |
@@ -156,10 +164,37 @@ theme::init_component_theme(scheme, settings.zoom, cx);  // 必须在 open_windo
 
 Phase 0 是唯一的决策点：通过则后续是低风险的外观重构，不通过就没有必要继续。
 
+## Phase 0 实测结果
+
+2026-11-23 在 `gpui-material-phase0` 分支完成，只改 `Cargo.toml`、`Cargo.lock` 和 `main.rs`，页面代码未动。
+
+环境：rustc 1.98.0、Xvfb + lavapipe（软件 Vulkan）、演示工作副本含 2 个修改 / 1 个新增 / 1 个删除。
+
+| 检查项 | 结果 |
+| --- | --- |
+| `cargo check --all-targets` | 通过，无警告，3 分 09 秒 |
+| `cargo build` | 通过，7 分 08 秒（首次），1 分 20 秒（增量） |
+| 锁文件新增 | `gpui-kit-material`、`gpui-kit-material-color`、`gpui-material-symbols`，共 3 个 |
+| `gpui-fast` | 未出现在锁文件，`gpui-pre 0.3.12` 仍是唯一引擎 |
+| 无头启动 | 正常进入工作区，无 panic |
+
+![Phase 0 浅色主题](images/gpui-material-phase0-light.png)
+
+![Phase 0 深色主题](images/gpui-material-phase0-dark.png)
+
+结论：主题桥接成立，`palette_from_theme` 与 Kit 的 `DataTable`、`Input`、对话框都跟随了新配色，无需改页面代码。同时暴露四个必须处理的问题：
+
+1. **Baseline 是紫色系。** 不生成种子方案时整个界面泛紫，只覆盖 `PRIMARY` 不够，`dynamic-color` 不是可选项。
+2. **`gpui_kit_material::init` 会打断 Kit 内置图标。** 无 `embedded-symbols` 时下拉箭头与空状态图标空白，并持续输出 `could not find asset at path "material-symbols/rounded/..."`。Phase 0 先不调用。
+3. **正文依赖 Roboto。** 桥接把 sans 设为 Roboto，系统没有时回退到其他字体。实测把上游 gallery 的 Regular / Medium / SemiBold 放进字体目录后正常；产品化需要随包附带（Apache-2.0）并保留许可。
+4. **旧字段映射在深色下对比度不足。** `accent`/`accent_soft` 取 Kit 的 `colors.blue`/`colors.selection`，Material 投影后选中卡片出现浅底浅字，印证 Phase 2 必须改用 `ColorRole`。
+
+另外确认两点利好：`SeedScheme` 自带 `SUCCESS`、`WARNING`、`INFO`，状态色不必全靠自定义；主题投影不影响等宽字体与几何值。
+
 ## 待定事项
 
-- **主题与品牌色**：使用 `Baseline` 加主色覆盖，还是挑一套内置主题？建议前者，与 Tauri 客户端的 `#1261a0` 对齐。
-- **图标策略**：不引入 Material 图标、只引入 `outlined`、或沿用现有文字/符号。建议先不引入，避免 10 MB 以上的额外体积。
+- **主题与品牌色**：已确定为 `SeedScheme` 从 `#1261a0` 生成，而非内置主题加覆盖。深浅两套由此自动推导，无需另存。
+- **图标策略**：不引入 Material 图标、只引入 `rounded`（15.2 MB）、或沿用现有文字/符号。在决定前 `gpui_kit_material::init` 不能调用。建议先不引入，避免额外体积。
 - **`Palette` 是否保留**：作为 `ColorRole` 的兼容层保留一个版本，还是直接改用 `color(ColorRole::…)`。建议保留一层，降低一次性改动面。
 - **外壳是否迁移**：Phase 3 的收益主要是 Expressive 动效与统一导航外观，工作量最大。可以先只做 Phase 1、2、4。
 - **版本策略**：锁定 `=0.2.0` 还是 vendor。若上游迭代频繁，vendor 更稳。
