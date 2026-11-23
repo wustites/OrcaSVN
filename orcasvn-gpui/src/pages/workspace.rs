@@ -13,7 +13,6 @@ use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
 use gpui_kit::component::table::{Column, ColumnSort, DataTable, TableDelegate, TableState};
 use gpui_kit::component::FocusableExt as _;
-use gpui_kit::component::Theme as KitTheme;
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
@@ -136,7 +135,7 @@ impl TableDelegate for StatusDelegate {
             return div().into_any_element();
         };
         let app = entity.read(cx);
-        let pal = ui::palette_from_theme(KitTheme::global(cx));
+        let pal = ui::palette_from_theme();
         let Some(&index) = self.rows.get(row_ix) else {
             return div().into_any_element();
         };

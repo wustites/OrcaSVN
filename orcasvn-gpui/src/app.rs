@@ -838,7 +838,7 @@ impl Render for OrcaApp {
         if window.focused(cx).is_none() {
             window.focus(&self.root_focus, cx);
         }
-        let pal = ui::palette_from_theme(KitTheme::global(cx));
+        let pal = ui::palette_from_theme();
 
         if let Some(path) = self.shared.open_workspace.take() {
             self.switch_workspace(path, cx);

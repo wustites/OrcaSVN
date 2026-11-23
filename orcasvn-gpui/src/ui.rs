@@ -2,13 +2,13 @@
 //! minimal single-line/multi-line text field (GPUI ships no text input).
 
 use gpui_kit::component::input::{Input, InputEvent, InputState, Textarea, TextareaState};
-use gpui_kit::component::Theme as KitTheme;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
 use gpui_kit_material::color::ColorRole;
 use gpui_kit_material::components::{
-    ButtonSize, ButtonVariant, LoadingIndicator, MaterialButton, material_button,
+    material_button, ButtonSize, ButtonVariant, LoadingIndicator, MaterialButton,
 };
+use gpui_kit_material::theme;
 use gpui_kit_material::theme::color;
 use std::cell::RefCell;
 use std::rc::Rc;
@@ -64,74 +64,40 @@ pub struct Palette {
     pub conflict: u32,
 }
 
-pub fn palette(dark: bool) -> Palette {
-    if dark {
-        Palette {
-            window: 0x1b1d21,
-            panel: 0x23262b,
-            elevated: 0x2b2f36,
-            border: 0x3a3f47,
-            text: 0xdfe3e8,
-            muted: 0x8b939d,
-            accent: 0x4f8ff7,
-            accent_soft: 0x2a3a52,
-            add_bg: 0x184028,
-            del_bg: 0x501e22,
-            hunk: 0x6ea0e6,
-            ok: 0x28a05a,
-            warn: 0xdc9628,
-            err: 0xdc4646,
-            conflict: 0xc828a0,
-        }
-    } else {
-        Palette {
-            window: 0xf6f7f9,
-            panel: 0xffffff,
-            elevated: 0xeef0f4,
-            border: 0xd3d8e0,
-            text: 0x1d2229,
-            muted: 0x606a78,
-            accent: 0x1e5ab4,
-            accent_soft: 0xdbe6f8,
-            add_bg: 0xdafbe1,
-            del_bg: 0xffe1e1,
-            hunk: 0x1e5ab4,
-            ok: 0x28a05a,
-            warn: 0xdc9628,
-            err: 0xdc4646,
-            conflict: 0xc828a0,
-        }
-    }
-}
-
-fn color_u32(color: Hsla) -> u32 {
-    let rgba = color.to_rgb();
-    let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u32;
-    (channel(rgba.r) << 16) | (channel(rgba.g) << 8) | channel(rgba.b)
-}
-
-/// Derive the application palette from the GPUI Kit theme so the hand-drawn
-/// layout and the kit controls share one set of colors.
-pub fn palette_from_theme(theme: &KitTheme) -> Palette {
-    let colors = &theme.colors;
-    let base = palette(theme.mode.is_dark());
+pub fn palette() -> Palette {
+    let role = |role: ColorRole| rgba_u32(color(role));
+    let tint =
+        |role: ColorRole| rgba_u32(theme::blend(color(ColorRole::SURFACE), color(role), 0.14));
     Palette {
-        window: color_u32(colors.background),
-        panel: color_u32(colors.secondary),
-        elevated: color_u32(colors.muted),
-        border: color_u32(colors.border),
-        text: color_u32(colors.foreground),
-        muted: color_u32(colors.muted_foreground),
-        accent: color_u32(colors.blue),
-        accent_soft: color_u32(colors.selection),
-        add_bg: base.add_bg,
-        del_bg: base.del_bg,
-        hunk: color_u32(colors.blue),
-        ok: color_u32(colors.green),
-        warn: color_u32(colors.yellow),
-        err: color_u32(colors.red),
-        conflict: base.conflict,
+        window: role(ColorRole::SURFACE),
+        panel: role(ColorRole::SURFACE_CONTAINER_LOW),
+        elevated: role(ColorRole::SURFACE_CONTAINER_HIGH),
+        border: role(ColorRole::OUTLINE_VARIANT),
+        text: role(ColorRole::ON_SURFACE),
+        muted: role(ColorRole::ON_SURFACE_VARIANT),
+        accent: role(ColorRole::PRIMARY),
+        accent_soft: role(ColorRole::SECONDARY_CONTAINER),
+        add_bg: tint(ColorRole::SUCCESS),
+        del_bg: tint(ColorRole::ERROR),
+        hunk: role(ColorRole::PRIMARY),
+        ok: role(ColorRole::SUCCESS),
+        warn: role(ColorRole::WARNING),
+        err: role(ColorRole::ERROR),
+        conflict: role(ColorRole::TERTIARY),
     }
+}
+
+fn rgba_u32(color: Rgba) -> u32 {
+    let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u32;
+    (channel(color.r) << 16) | (channel(color.g) << 8) | channel(color.b)
+}
+
+/// The palette used across the hand-drawn layout: every entry is a Material
+/// role, so the layout and the Kit controls share the scheme. Kept as `u32`
+/// so the existing `rgb(pal.x)` call sites did not have to change; the roles
+/// are resolved per frame, which is what makes a theme switch take effect.
+pub fn palette_from_theme() -> Palette {
+    palette()
 }
 
 pub fn status_color(code: &str, pal: Palette) -> u32 {
