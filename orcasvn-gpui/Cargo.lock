@@ -1974,7 +1974,7 @@ dependencies = [
  "log",
  "presser",
  "thiserror 2.0.21",
- "windows 0.61.3",
+ "windows 0.62.2",
 ]
 
 [[package]]
@@ -2106,6 +2106,37 @@ dependencies = [
  "rust-embed",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "gpui-kit-material"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fad8aa7e3cd7c6830a8d06abb5f6b1795b1ac0571adee9414f5c8534e27c1ac8"
+dependencies = [
+ "gpui-base",
+ "gpui-kit",
+ "gpui-kit-material-color",
+ "gpui-material-symbols",
+ "log",
+ "web-time",
+]
+
+[[package]]
+name = "gpui-kit-material-color"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94c4246166376753d28ba209629c4176839820bb8ca4c946dd9c0c2eee565cfc"
+
+[[package]]
+name = "gpui-material-symbols"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d413397a08767008379e6ed9e4aa1fab79df5119ff715e8ad4be5cd992e3390b"
+dependencies = [
+ "anyhow",
+ "gpui-kit",
+ "ttf-parser",
 ]
 
 [[package]]
@@ -4456,6 +4487,7 @@ dependencies = [
  "chrono",
  "directories",
  "gpui-kit",
+ "gpui-kit-material",
  "orcasvn-core",
  "quick-xml 0.37.5",
  "rfd",

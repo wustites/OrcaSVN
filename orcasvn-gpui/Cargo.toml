@@ -7,6 +7,18 @@ edition = "2021"
 
 [dependencies]
 gpui-kit = "0.10"
+gpui-kit-material = { version = "=0.2.0", default-features = false, features = [
+    "buttons",
+    "selection",
+    "inputs",
+    "menus",
+    "dialogs",
+    "navigation",
+    "feedback",
+    "progress",
+    "shapes",
+    "dynamic-color",
+] }
 orcasvn-core = { path = "../orcasvn-core" }
 # gpui-kit re-exports GPUI (a pinned 0.3.12 snapshot published as
 # `gpui-pre`) plus the styled component layer, so the application depends on
