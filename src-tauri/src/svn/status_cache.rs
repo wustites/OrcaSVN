@@ -819,13 +819,24 @@ mod tests {
         #[cfg(unix)]
         std::os::unix::fs::symlink("/", root.join("outside")).unwrap();
         let before = status_snapshot::capture(&root).unwrap();
-        #[cfg(unix)]
         let original_time = fs::metadata(root.join("file")).unwrap().modified().unwrap();
         // Restoring mtime leaves ctime as the edit signal. Let the filesystem
         // clock advance so both writes cannot share one timestamp tick.
         #[cfg(unix)]
         std::thread::sleep(std::time::Duration::from_millis(1100));
         fs::write(root.join("file"), "bbbb").unwrap();
+        // Windows can coalesce rapid writes into one filesystem clock tick.
+        // Make the changed mtime deterministic instead of relying on CI speed.
+        #[cfg(windows)]
+        fs::File::options()
+            .write(true)
+            .open(root.join("file"))
+            .unwrap()
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(original_time + std::time::Duration::from_secs(2)),
+            )
+            .unwrap();
         #[cfg(unix)]
         fs::File::options()
             .write(true)
