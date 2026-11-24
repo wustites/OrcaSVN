@@ -53,10 +53,15 @@ fn svn_executable_lock() -> &'static RwLock<PathBuf> {
 }
 
 pub(super) fn current_svn_executable() -> Result<PathBuf, SvnError> {
-    svn_executable_lock()
+    let executable = svn_executable_lock()
         .read()
         .map(|path| path.clone())
-        .map_err(|_| SvnError::CommandFailed("SVN 可执行文件配置锁已损坏".to_string()))
+        .map_err(|_| SvnError::CommandFailed("SVN 可执行文件配置锁已损坏".to_string()))?;
+    #[cfg(windows)]
+    if executable == std::path::Path::new("svn") {
+        return super::windows_runtime::executable();
+    }
+    Ok(executable)
 }
 
 fn build_command_args(args: &[String]) -> Vec<String> {
@@ -70,6 +75,19 @@ async fn execute_svn_inner(
     args: &[&str],
     path: Option<&str>,
 ) -> Result<String, SvnError> {
+    #[cfg(windows)]
+    let executable = {
+        let bundled = super::windows_runtime::executable()?;
+        if executable == std::path::Path::new("svn") || executable == bundled {
+            bundled
+        } else {
+            match super::windows_encoding::validate_arguments(&executable, args).await {
+                Ok(()) => executable,
+                Err(SvnError::InvalidArguments(_)) => bundled,
+                Err(error) => return Err(error),
+            }
+        }
+    };
     let args_vec: Vec<String> = args.iter().map(|s| s.to_string()).collect();
     let mut cmd = Command::new(&executable);
     cmd.args(build_command_args(&args_vec));
@@ -122,7 +140,10 @@ fn always_prints_output(args: &[String]) -> bool {
     args.iter().any(|arg| arg == "--xml" || arg == "--version")
 }
 
-async fn collect_command_output(cmd: &mut Command, deadline: Duration) -> Result<String, SvnError> {
+pub(super) async fn collect_command_output(
+    cmd: &mut Command,
+    deadline: Duration,
+) -> Result<String, SvnError> {
     let output = timeout(deadline, cmd.output())
         .await
         .map_err(|_| SvnError::Timeout)?
@@ -146,6 +167,79 @@ async fn collect_command_output(cmd: &mut Command, deadline: Duration) -> Result
 mod tests {
     use super::*;
     use std::path::Path;
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_unicode_arguments_work_with_bundled_and_legacy_clients() {
+        for executable in ["svn", "svn.exe"] {
+            let directory = std::env::temp_dir().join(format!(
+                "orcasvn-windows-encoding-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir(&directory).unwrap();
+            struct Cleanup(PathBuf);
+            impl Drop for Cleanup {
+                fn drop(&mut self) {
+                    let _ = std::fs::remove_dir_all(&self.0);
+                }
+            }
+            let _cleanup = Cleanup(directory.clone());
+            let repository = directory.join("repo");
+            let admin = super::super::windows_runtime::executable()
+                .unwrap()
+                .with_file_name("svnadmin.exe");
+            let created = std::process::Command::new(admin)
+                .arg("create")
+                .arg(&repository)
+                .output()
+                .unwrap();
+            assert!(created.status.success(), "{created:?}");
+            let url = format!(
+                "file:///{}",
+                repository.to_string_lossy().replace('\\', "/")
+            );
+            let wc = directory.join("工作副本 🐋");
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let run = |args: &[&str], cwd| {
+                runtime
+                    .block_on(execute_svn_inner(PathBuf::from(executable), args, cwd))
+                    .unwrap()
+            };
+            run(&["checkout", &url, wc.to_str().unwrap()], None);
+            let wc_path = wc.to_str().unwrap();
+            for name in [
+                "A.txt",
+                "Ａ.txt",
+                "中文 空格.txt",
+                "日本語.txt",
+                "emoji-🐋.txt",
+            ] {
+                std::fs::write(wc.join(name), format!("original {name}\n")).unwrap();
+                run(&["add", "--", name], Some(wc_path));
+                run(&["commit", "-m", "中文提交 🐋"], Some(wc_path));
+                let info = run(&["info", "--xml", "--", name], Some(wc_path));
+                assert!(info.contains(name), "wrong target: {info}");
+                std::fs::write(wc.join(name), "changed\n").unwrap();
+                let diff = run(&["diff", "--", name], Some(wc_path));
+                assert!(diff.contains("+changed"), "{diff}");
+                run(&["revert", "--", name], Some(wc_path));
+                assert_eq!(
+                    std::fs::read_to_string(wc.join(name)).unwrap(),
+                    format!("original {name}\n")
+                );
+            }
+            let log = run(&["log", "--xml", "-v", &url], None);
+            assert!(log.contains("中文提交 🐋"));
+            assert!(log.contains("emoji-🐋.txt"));
+        }
+    }
 
     #[test]
     fn empty_output_is_only_an_error_for_commands_that_always_print() {

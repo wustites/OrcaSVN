@@ -5,6 +5,10 @@ const { collectWindowsRelease } = require('./collect-release.cjs')
 
 const root = path.resolve(__dirname, '..')
 const args = process.argv.slice(2)
+if (['build', 'dev', 'bundle'].includes(args[0]) && !args.some(arg => ['--help', '-h', '--version', '-V'].includes(arg))) {
+  const prepared = spawnSync(process.execPath, [path.join(__dirname, 'prepare-svn.cjs'), ...args], { stdio: 'inherit', windowsHide: true })
+  if (prepared.error || prepared.status !== 0) process.exit(prepared.status || 1)
+}
 const startedAt = Date.now()
 const result = spawnSync(process.execPath, [require.resolve('@tauri-apps/cli/tauri.js'), ...args], {
   cwd: root,

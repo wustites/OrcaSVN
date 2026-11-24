@@ -12,7 +12,7 @@ cargo --version
 svn --version --quiet
 ```
 
-Windows 还需要 Visual Studio C++ Build Tools 和 WebView2。
+Windows 还需要 Visual Studio C++ Build Tools（含 Windows SDK / mt.exe）和 WebView2。运行环境要求 Windows 10 1903 或更新版本，以支持进程 UTF-8 代码页。Windows 构建会自动准备并嵌入私有 SVN，无需用户额外安装。直接运行 cargo 命令前先执行 `npm run prepare:svn`。
 
 Linux（Debian/Ubuntu）还需 Tauri 2 的系统包，并安装 Subversion：
 
@@ -68,7 +68,7 @@ Windows 完整构建成功后，最新程序、安装包和免安装 ZIP 会自�
 
 ### 找不到 SVN
 
-确保 `svn` 位于当前用户的 `PATH` 中，然后重新启动 OrcaSVN。
+macOS/Linux 确保 `svn` 位于当前用户的 `PATH` 中，然后重新启动 OrcaSVN。Windows 默认使用内置运行时；若手动配置了自定义 SVN，请检查设置中的路径。
 
 ### Windows 编译失败
 
@@ -77,3 +77,5 @@ Windows 完整构建成功后，最新程序、安装包和免安装 ZIP 会自�
 ### 端口 1420 被占用
 
 开发服务器要求固定使用 1420 端口。结束占用进程后重新运行 `npm run tauri dev`。
+
+Windows 默认使用嵌入程序的私有 UTF-8 SVN 运行时；自定义旧 SVN 无法无损接收参数时，在执行之前切换至内置运行时。首次使用会将运行时校验并解包到 `%LOCALAPPDATA%/OrcaSVN/svn-runtime/`。无需改变系统区域设置或修改已安装的 SVN。来源、固定校验值、许可证及构建步骤见 [Windows SVN 运行时](docs/windows-svn-runtime.md)。

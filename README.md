@@ -21,7 +21,7 @@ OrcaSVN 是一个基于 Tauri、Rust 和 Vue 3 的跨平台 SVN 桌面客户端�
 - 支持简体中文、繁体中文、英语、日语和韩语
 - 支持浅色、深色主题以及 Windows、macOS、Linux
 
-> OrcaSVN 调用本机的 `svn` 命令行工具，不会自行实现 SVN 协议。
+> OrcaSVN 通过 SVN 命令行工具操作仓库。Windows 内置私有 UTF-8 SVN 运行时；macOS/Linux 使用本机 SVN。
 
 Switch、Merge、Resolve 和受控文件安排删除目前需使用其他 SVN 客户端或命令行完成，再回到 OrcaSVN 刷新。工作区中的“删除”按钮用于删除未跟踪的本地文件。
 
@@ -35,7 +35,7 @@ winget install OrcaSVN.OrcaSVN
 
 也可以从 [GitHub Releases](https://github.com/wustites/OrcaSVN/releases) 下载 Windows、macOS 或 Linux 安装包。
 
-安装后请确认 SVN CLI 可用：
+Windows 版已内置 SVN，无需额外安装。macOS/Linux 安装后请确认 SVN CLI 可用：
 
 ```bash
 svn --version --quiet
@@ -64,7 +64,7 @@ svn --version --quiet
 
 - Node.js 18 或更高版本
 - 最新稳定版 Rust
-- SVN CLI 1.10 或更高版本
+- macOS/Linux：SVN CLI 1.10 或更高版本；Windows 构建自动准备内置运行时
 - 平台对应的 Tauri 2 构建依赖
 
 Linux（Debian/Ubuntu）系统包示例：

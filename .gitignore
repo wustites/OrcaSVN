@@ -36,6 +36,7 @@ target/
 
 # Tauri
 src-tauri/dist
+/src-tauri/runtime/
 
 build-output.txt
 

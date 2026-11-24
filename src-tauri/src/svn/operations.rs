@@ -1288,11 +1288,21 @@ mod tests {
         log_entry_matches_dates, normalize_diff_target, normalize_svn_path, parse_update_conflicts,
         patch_output_has_conflicts, percent_decode,
     };
-    #[cfg(unix)]
     use super::{blame, diff};
     use crate::svn::executor::SvnError;
     use crate::{SvnLogEntry, SvnLogPath};
     use std::collections::HashSet;
+
+    fn test_svn() -> std::path::PathBuf {
+        #[cfg(windows)]
+        {
+            return super::super::windows_runtime::executable().unwrap();
+        }
+        #[cfg(not(windows))]
+        {
+            "svn".into()
+        }
+    }
 
     #[test]
     fn target_arguments_are_separated_from_options() {
@@ -1362,14 +1372,14 @@ mod tests {
             .status()
             .unwrap()
             .success());
-        assert!(Command::new("svn")
+        assert!(Command::new(test_svn())
             .args(["checkout", "-q"])
             .arg(format!("file://{}", repository.display()))
             .arg(&wc)
             .status()
             .unwrap()
             .success());
-        assert!(Command::new("svn")
+        assert!(Command::new(test_svn())
             .args(["mkdir", "-q"])
             .arg(&added)
             .status()
@@ -1412,7 +1422,7 @@ mod tests {
             .success());
         let url = format!("file://{}", repository.display());
         let run = |args: &[&str]| {
-            let output = Command::new("svn")
+            let output = Command::new(test_svn())
                 .args(args)
                 .current_dir(if args[0] == "checkout" {
                     &directory
@@ -1536,7 +1546,7 @@ mod tests {
                 .trim_start_matches('/')
         );
         let run = |args: &[&str]| {
-            let output = Command::new("svn")
+            let output = Command::new(test_svn())
                 .args(args)
                 .current_dir(if wc.exists() { &wc } else { &directory })
                 .output()
@@ -1940,7 +1950,7 @@ mod tests {
                 .trim_start_matches('/')
         );
         let run = |cwd: &std::path::Path, args: &[&str]| {
-            let output = Command::new("svn")
+            let output = Command::new(test_svn())
                 .args(args)
                 .env("LC_ALL", "C.UTF-8")
                 .current_dir(cwd)
@@ -1954,11 +1964,7 @@ mod tests {
         run(&directory, &["checkout", &url, wc.to_str().unwrap()]);
         // svn.exe decodes arguments with the ANSI code page, which on an English
         // Windows runner cannot represent these paths.
-        let (mine, cjk) = if cfg!(windows) {
-            ("mine.txt", "cjk.txt")
-        } else {
-            ("甲.txt", "纯中文.txt")
-        };
+        let (mine, cjk) = ("甲.txt", "纯中文.txt");
         for name in [mine, "other.txt", "conflict.txt"] {
             std::fs::write(wc.join(name), "base\n").unwrap();
             run(&wc, &["add", name]);
@@ -2012,7 +2018,7 @@ mod tests {
 
         // Without an auto-props rule, UTF-8 text returns to text.
         let mime = |name: &str| {
-            Command::new("svn")
+            Command::new(test_svn())
                 .args(["propget", "svn:mime-type", "--", name])
                 .current_dir(&wc)
                 .output()
@@ -2045,9 +2051,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&directory);
     }
 
-    // svn.exe decodes arguments with the ANSI code page, which on an English
-    // Windows runner cannot represent these paths.
-    #[cfg(unix)]
     #[test]
     fn partial_commit_revision_text_mime_and_nested_unversioned_diff() {
         for tool in ["svn", "svnadmin"] {
@@ -2120,7 +2123,7 @@ mod tests {
             .unwrap();
 
         let mime = |name: &str| {
-            std::process::Command::new("svn")
+            std::process::Command::new(test_svn())
                 .args(["propget", "svn:mime-type", "--non-interactive", "--", name])
                 .current_dir(&wc)
                 .env("LC_ALL", "C.UTF-8")

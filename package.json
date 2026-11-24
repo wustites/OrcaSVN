@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "tauri": "node scripts/tauri.cjs",
     "release": "node scripts/tauri.cjs build",
-    "test:unit": "node --test tests/*.test.cjs"
+    "test:unit": "node --test tests/*.test.cjs",
+    "prepare:svn": "node scripts/prepare-svn.cjs",
+    "precheck": "npm run prepare:svn"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

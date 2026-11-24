@@ -19,7 +19,7 @@ Current stable version: **0.6.3**. See the [release notes](docs/releases/v0.6.3.
 - Available in Simplified Chinese, Traditional Chinese, English, Japanese, and Korean
 - Light and dark themes on Windows, macOS, and Linux
 
-> OrcaSVN uses the locally installed `svn` command-line tool; it does not implement the SVN protocol itself.
+> OrcaSVN uses SVN command-line tools. Windows includes a private UTF-8 SVN runtime; macOS/Linux use the locally installed SVN.
 
 Switch, Merge, Resolve, and scheduling deletion of versioned files currently require another SVN client or the command line. Refresh OrcaSVN afterward. The workspace Delete button removes unversioned local files.
 
@@ -33,7 +33,7 @@ winget install OrcaSVN.OrcaSVN
 
 You can also download installers for Windows, macOS, and Linux from [GitHub Releases](https://github.com/wustites/OrcaSVN/releases).
 
-After installation, make sure the SVN CLI is available:
+Windows includes SVN. On macOS/Linux, make sure the SVN CLI is available:
 
 ```bash
 svn --version --quiet
@@ -54,7 +54,7 @@ Requirements:
 
 - Node.js 18 or later
 - Latest stable Rust toolchain
-- SVN CLI 1.10 or later
+- macOS/Linux: SVN CLI 1.10 or later; Windows builds prepare an embedded runtime
 - Tauri 2 build dependencies for your platform
 
 Example Linux (Debian/Ubuntu) packages:

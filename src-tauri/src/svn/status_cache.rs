@@ -515,6 +515,10 @@ pub async fn cached_status(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // All cache tests share the production three-workspace LRU. Keep each
+    // fixture alive for its complete test without eviction by another test.
+    static CACHE_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     use std::collections::BTreeMap;
     use std::fs;
     use std::process::Command;
@@ -539,6 +543,9 @@ mod tests {
 
     #[test]
     fn scoped_merge_removes_cleaned_files_without_erasing_other_paths() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let previous = [
             entry("src/a", "modified"),
             entry("src/sub/keep", "modified"),
@@ -577,6 +584,9 @@ mod tests {
 
     #[test]
     fn polling_reuses_unchanged_status_and_forces_metadata_and_periodic_checks() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let Some(fixture) = Fixture::new() else {
             return;
         };
@@ -614,6 +624,9 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn directory_fallback_skips_inventory_and_detects_timestamp_preserving_edits() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let Some(fixture) = Fixture::new() else {
             return;
         };
@@ -713,6 +726,9 @@ mod tests {
 
     #[test]
     fn disk_snapshot_reopens_and_checks_offline_changes() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let Some(fixture) = Fixture::new() else {
             return;
         };
@@ -788,6 +804,9 @@ mod tests {
 
     #[test]
     fn inventory_detects_same_size_edits_and_does_not_follow_symlinks() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let root = std::env::temp_dir().join(format!(
             "orcasvn-inventory-{}",
             SystemTime::now()
@@ -919,6 +938,9 @@ mod tests {
 
     #[test]
     fn subdirectory_cache_checks_ancestor_administration_in_memory_and_on_disk() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let Some(fixture) = Fixture::new() else {
             return;
         };
@@ -954,6 +976,9 @@ mod tests {
 
     #[test]
     fn real_svn_scoped_status_preserves_ignore_rules_and_unversioned_directory_collapsing() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let Some(fixture) = Fixture::new() else {
             return;
         };
@@ -989,6 +1014,9 @@ mod tests {
 
     #[test]
     fn real_filesystem_changes_update_reverted_renamed_added_and_missing_files() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let Some(fixture) = Fixture::new() else {
             return;
         };
@@ -1031,6 +1059,9 @@ mod tests {
     #[test]
     #[ignore = "creates a real 20,000-file working copy for performance measurement"]
     fn benchmark_twenty_thousand_files_forty_changes() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let Some(fixture) = Fixture::new() else {
             panic!("svnadmin required for benchmark");
         };
@@ -1099,6 +1130,9 @@ mod tests {
     #[test]
     #[ignore = "read-only startup benchmark; set ORCASVN_BENCH_WORKSPACE"]
     fn benchmark_workspace_startup() {
+        let _cache_guard = CACHE_TEST_LOCK
+            .lock()
+            .unwrap_or_else(|error| error.into_inner());
         let path = std::env::var("ORCASVN_BENCH_WORKSPACE")
             .expect("set ORCASVN_BENCH_WORKSPACE to a real SVN working copy");
         let root = fs::canonicalize(&path).unwrap();
