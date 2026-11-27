@@ -110,6 +110,7 @@ function readFavoriteWorkspaces(paths: string[]): string[] {
 }
 
 export const useWorkspaceStore = defineStore('workspace', () => {
+  const workspaceSession = ref(0)
   const currentPath = ref<string | null>(null)
   const recentWorkspaces = ref<string[]>(readRecentWorkspaces())
   const favoriteWorkspaces = ref<string[]>(readFavoriteWorkspaces(recentWorkspaces.value))
@@ -349,6 +350,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
 
   // 加载失败时仅清空内存状态，保留下次启动需要恢复的工作区。
   function resetWorkspaceState() {
+    workspaceSession.value++
     currentPath.value = null
     svnInfo.value = null
     statusList.value = []
@@ -388,6 +390,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   return {
+    workspaceSession,
     currentPath,
     recentWorkspaces,
     sortedWorkspaces,

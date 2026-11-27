@@ -12,7 +12,7 @@ function deferred() {
 function harness() {
   const requests = [], snapshots = new Map(), writes = [], invalidations = [], summaries = [], summaryErrors = []
   const store = {
-    currentPath: '/a', recentWorkspaces: ['/a', '/b'], statusList: [], svnInfo: null, gitignorePatterns: [],
+    workspaceSession: 0, currentPath: '/a', recentWorkspaces: ['/a', '/b'], statusList: [], svnInfo: null, gitignorePatterns: [],
     resolveWorkspacePath(path) { return path },
     setCurrentPath(path) { this.currentPath = path },
     setStatusList(list) { this.statusList = list },
@@ -26,7 +26,7 @@ function harness() {
     lastWorkspacePath: null,
     getLastWorkspacePath() { return this.lastWorkspacePath },
     clearWorkspace() { this.lastWorkspacePath = null; this.resetWorkspaceState() },
-    resetWorkspaceState() { this.currentPath = null; this.statusList = []; this.svnInfo = null; this.statusIsStale = false; this.isLoading = false; this.error = null },
+    resetWorkspaceState() { this.workspaceSession++; this.currentPath = null; this.statusList = []; this.svnInfo = null; this.statusIsStale = false; this.isLoading = false; this.error = null },
     beginWorkspaceSummary() { return 1 },
     setWorkspaceSummary(...args) { summaries.push(args) },
     setWorkspaceSummaryError(...args) { summaryErrors.push(args) },
@@ -355,3 +355,31 @@ test('切换期间移除旧工作区后，目标加载失败不会恢复已移�
   assert.equal(h.store.svnInfo, null)
   assert.equal(h.store.isLoading, false)
 })
+
+for (const oldFinishesFirst of [true, false]) {
+  test(`remove and reopen starts an independent load (old finishes first: ${oldFinishesFirst})`, async () => {
+    const h = harness(), workspace = h.useWorkspace()
+    const old = workspace.loadWorkspace('/a')
+    h.store.recentWorkspaces = ['/b']
+    h.store.clearWorkspace()
+    h.store.recentWorkspaces.push('/a')
+    const fresh = workspace.loadWorkspace('/a')
+    assert.notEqual(old, fresh)
+    assert.equal(h.requests.length, 2)
+    if (oldFinishesFirst) {
+      h.requests[0].resolve([{ path: 'obsolete' }])
+      assert.equal(await old, false)
+      assert.equal(h.store.isLoading, true)
+      assert.equal(workspace.loadWorkspace('/a'), fresh)
+    }
+    h.requests[1].resolve([{ path: 'fresh' }])
+    assert.equal(await fresh, true)
+    if (!oldFinishesFirst) {
+      h.requests[0].resolve([{ path: 'obsolete' }])
+      assert.equal(await old, false)
+    }
+    assert.equal(h.store.currentPath, '/a')
+    assert.equal(h.store.statusList[0].path, 'fresh')
+    assert.equal(h.store.isLoading, false)
+  })
+}

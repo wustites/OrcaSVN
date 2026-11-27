@@ -10,18 +10,18 @@ import { cacheWorkspaceSnapshot, getWorkspaceSnapshot, invalidateWorkspaceSnapsh
 import type { SvnInfo, SvnStatus } from '@/types'
 
 let workspaceRequestGeneration = 0
-let pendingRequest: { path: string; generation: number; force: boolean; background: boolean; promise: Promise<boolean> } | null = null
+let pendingRequest: { path: string; session: number; generation: number; force: boolean; background: boolean; promise: Promise<boolean> } | null = null
 // 后台轮询只报告一次相同的状态错误，恢复时不清除其他操作产生的错误。
 let lastStatusError: { path: string; message: string } | null = null
-let lastRefresh: { path: string; generation: number; timestamp: number } | null = null
+let lastRefresh: { path: string; session: number; generation: number; timestamp: number } | null = null
 
 function trackRequest(path: string, operation: () => Promise<boolean>, force = false, background = false): Promise<boolean> {
   const promise = operation()
-  const request = { path, generation: workspaceRequestGeneration, force, background, promise }
+  const request = { path, session: useWorkspaceStore().workspaceSession, generation: workspaceRequestGeneration, force, background, promise }
   pendingRequest = request
   request.promise = promise.then(success => {
-    if (success && request.generation === workspaceRequestGeneration) {
-      lastRefresh = { path, generation: request.generation, timestamp: Date.now() }
+    if (success && request.session === useWorkspaceStore().workspaceSession && request.generation === workspaceRequestGeneration) {
+      lastRefresh = { path, session: request.session, generation: request.generation, timestamp: Date.now() }
     }
     return success
   }).finally(() => {
@@ -125,6 +125,7 @@ export function useWorkspace() {
   }
 
   async function performLoadWorkspace(path: string): Promise<boolean> {
+    const session = workspaceStore.workspaceSession
     const generation = ++workspaceRequestGeneration
     const summaryRequest = workspaceStore.beginWorkspaceSummary(path)
     const previousPath = workspaceStore.currentPath
@@ -133,7 +134,7 @@ export function useWorkspace() {
     const previousStatusIsStale = workspaceStore.statusIsStale
     const { settings } = useSettings()
     const snapshot = getWorkspaceSnapshot(path, settings.gitignoreEnabled)
-    const isCurrentGeneration = () => generation === workspaceRequestGeneration
+    const isCurrentGeneration = () => session === workspaceStore.workspaceSession && generation === workspaceRequestGeneration
     const isCurrent = () => (
       isCurrentGeneration() && workspaceStore.currentPath === path
     )
@@ -229,11 +230,12 @@ export function useWorkspace() {
   async function performRefreshStatus(force = false, background = false): Promise<boolean> {
     if (!workspaceStore.currentPath) return false
 
+    const session = workspaceStore.workspaceSession
     const generation = ++workspaceRequestGeneration
     const path = workspaceStore.currentPath
     const summaryRequest = workspaceStore.beginWorkspaceSummary(path)
     const isCurrent = () => (
-      generation === workspaceRequestGeneration && workspaceStore.currentPath === path
+      session === workspaceStore.workspaceSession && generation === workspaceRequestGeneration && workspaceStore.currentPath === path
     )
 
     workspaceStore.setLoading(true)
@@ -279,14 +281,14 @@ export function useWorkspace() {
   function loadWorkspace(path: string): Promise<boolean> {
     // 沿用已有记录的路径写法，确保选中状态、摘要和去重请求使用同一个键。
     path = workspaceStore.resolveWorkspacePath(path)
-    if (pendingRequest?.path === path && !pendingRequest.background && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
+    if (pendingRequest?.path === path && pendingRequest.session === workspaceStore.workspaceSession && !pendingRequest.background && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
     return trackRequest(path, () => performLoadWorkspace(path))
   }
 
   function refreshStatus(): Promise<boolean> {
     const path = workspaceStore.currentPath
     if (!path) return Promise.resolve(false)
-    if (pendingRequest?.path === path && pendingRequest.force && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
+    if (pendingRequest?.path === path && pendingRequest.session === workspaceStore.workspaceSession && pendingRequest.force && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
     return trackRequest(path, () => performRefreshStatus(true), true)
   }
 
@@ -304,8 +306,8 @@ export function useWorkspace() {
   function refreshStatusIfStale(maxAgeMs: number): Promise<boolean> {
     const path = workspaceStore.currentPath
     if (!path) return Promise.resolve(false)
-    if (pendingRequest?.path === path && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
-    if (lastRefresh?.path === path && lastRefresh.generation === workspaceRequestGeneration
+    if (pendingRequest?.path === path && pendingRequest.session === workspaceStore.workspaceSession && pendingRequest.generation === workspaceRequestGeneration) return pendingRequest.promise
+    if (lastRefresh?.path === path && lastRefresh.session === workspaceStore.workspaceSession && lastRefresh.generation === workspaceRequestGeneration
       && Date.now() - lastRefresh.timestamp < maxAgeMs) return Promise.resolve(true)
     return trackRequest(path, () => performRefreshStatus(false, true), false, true)
   }
