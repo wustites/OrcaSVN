@@ -133,10 +133,10 @@ impl SettingsPage {
                 t("跟随系统", "System"),
                 pal,
                 theme != Theme::System,
-                cx.listener(|app, _, _, cx| {
+                cx.listener(|app, _, window, cx| {
                     app.shared.settings.theme = Theme::System;
                     app.shared.settings.save();
-                    cx.notify();
+                    app.apply_appearance(window, cx);
                 }),
             ))
             .child(ui::button(
@@ -144,10 +144,10 @@ impl SettingsPage {
                 t("浅色", "Light"),
                 pal,
                 theme != Theme::Light,
-                cx.listener(|app, _, _, cx| {
+                cx.listener(|app, _, window, cx| {
                     app.shared.settings.theme = Theme::Light;
                     app.shared.settings.save();
-                    cx.notify();
+                    app.apply_appearance(window, cx);
                 }),
             ))
             .child(ui::button(
@@ -155,10 +155,10 @@ impl SettingsPage {
                 t("深色", "Dark"),
                 pal,
                 theme != Theme::Dark,
-                cx.listener(|app, _, _, cx| {
+                cx.listener(|app, _, window, cx| {
                     app.shared.settings.theme = Theme::Dark;
                     app.shared.settings.save();
-                    cx.notify();
+                    app.apply_appearance(window, cx);
                 }),
             ));
 
@@ -172,10 +172,10 @@ impl SettingsPage {
                 "−",
                 pal,
                 zoom > 0.75,
-                cx.listener(|app, _, _, cx| {
+                cx.listener(|app, _, window, cx| {
                     app.shared.settings.zoom = (app.shared.settings.zoom - 0.05).max(0.75);
                     app.shared.settings.save();
-                    cx.notify();
+                    app.apply_appearance(window, cx);
                 }),
             ))
             .child(
@@ -189,10 +189,10 @@ impl SettingsPage {
                 "+",
                 pal,
                 zoom < 2.0,
-                cx.listener(|app, _, _, cx| {
+                cx.listener(|app, _, window, cx| {
                     app.shared.settings.zoom = (app.shared.settings.zoom + 0.05).min(2.0);
                     app.shared.settings.save();
-                    cx.notify();
+                    app.apply_appearance(window, cx);
                 }),
             ));
 

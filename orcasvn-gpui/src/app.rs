@@ -7,9 +7,11 @@ use crate::system;
 use crate::task;
 use crate::ui::{self, Palette};
 use crate::SvnInfo;
-use gpui_kit::component::{Theme as KitTheme, ThemeMode};
+use gpui_kit::component::ThemeMode;
 use gpui_kit::prelude::*;
 use gpui_kit::*;
+use gpui_kit_material::color::ColorRole;
+use gpui_kit_material::components::{TopAppBar, TopAppBarVariant};
 use std::time::Duration;
 
 actions!(
@@ -49,11 +51,14 @@ pub struct OrcaApp {
     output_scroll: ScrollHandle,
     shown_output: usize,
     root_focus: FocusHandle,
+    _appearance_subscription: Subscription,
 }
 
 impl OrcaApp {
-    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let settings = Settings::load();
+    pub fn new(settings: Settings, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        if settings.theme == Theme::System {
+            crate::apply_theme(&settings, ThemeMode::from(window.appearance()), cx);
+        }
         i18n::set_lang(settings.lang);
 
         let launch = system::launch_workspace_path().or_else(|| settings.workspace.clone());
@@ -78,6 +83,11 @@ impl OrcaApp {
             output_scroll: ScrollHandle::new(),
             shown_output: 0,
             root_focus: cx.focus_handle(),
+            _appearance_subscription: cx.observe_window_appearance(window, |app, window, cx| {
+                if app.shared.settings.theme == Theme::System {
+                    app.apply_appearance(window, cx);
+                }
+            }),
         };
         window.focus(&app.root_focus, cx);
         app.configure_svn(cx);
@@ -274,19 +284,13 @@ impl OrcaApp {
         );
     }
 
-    fn apply_window(&mut self, window: &mut Window, cx: &mut App) {
-        let mode = match self.shared.settings.theme {
-            Theme::Dark => ThemeMode::Dark,
-            Theme::Light => ThemeMode::Light,
-            Theme::System => ThemeMode::from(window.appearance()),
-        };
-        if KitTheme::global(cx).mode != mode {
-            KitTheme::change(mode, Some(window), cx);
-        }
-        let target = px(16.0 * self.shared.settings.zoom.clamp(0.6, 2.5));
-        if (window.rem_size() - target).abs() > px(0.5) {
-            window.set_rem_size(target);
-        }
+    pub(crate) fn apply_appearance(&self, window: &mut Window, cx: &mut App) {
+        crate::apply_theme(
+            &self.shared.settings,
+            ThemeMode::from(window.appearance()),
+            cx,
+        );
+        window.refresh();
     }
 
     fn top_bar(&mut self, cx: &mut Context<Self>, pal: Palette) -> AnyElement {
@@ -766,36 +770,17 @@ impl OrcaApp {
             .into_any_element()
     }
 
-    fn route_header(&self, _cx: &mut Context<Self>, pal: Palette) -> AnyElement {
+    fn route_header(&self) -> TopAppBar {
         let repo = self
             .shared
             .workspace
             .as_deref()
             .map(pages::sidebar::workspace_name)
             .unwrap_or_else(|| t("未打开工作副本", "No working copy").to_string());
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap_2()
-            .px_3()
-            .py_2()
-            .child(
-                div()
-                    .w(px(3.0))
-                    .h(px(14.0))
-                    .rounded_sm()
-                    .bg(rgb(pal.accent)),
-            )
-            .child(
-                div()
-                    .text_sm()
-                    .font_weight(FontWeight::BOLD)
-                    .child(self.page.title()),
-            )
-            .child(div().flex_1())
-            .child(div().text_xs().text_color(rgb(pal.muted)).child(repo))
-            .into_any_element()
+        TopAppBar::new("route-header", TopAppBarVariant::Small)
+            .container(ColorRole::SURFACE_CONTAINER_LOW)
+            .title(self.page.title())
+            .subtitle(repo)
     }
 
     fn central(&mut self, window: &mut Window, cx: &mut Context<Self>, pal: Palette) -> AnyElement {
@@ -832,7 +817,6 @@ impl OrcaApp {
 
 impl Render for OrcaApp {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        self.apply_window(window, cx);
         // Keep a focus target so shortcuts still reach the shell after a page
         // switch unmounts the previously focused control.
         if window.focused(cx).is_none() {
@@ -890,7 +874,7 @@ impl Render for OrcaApp {
                             .min_h_0()
                             .flex()
                             .flex_col()
-                            .child(self.route_header(cx, pal))
+                            .child(self.route_header())
                             .child(ui::sep(pal))
                             .child(self.central(window, cx, pal)),
                     ),

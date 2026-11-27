@@ -13,7 +13,7 @@ mod ui;
 pub use orcasvn_core::svn;
 pub use orcasvn_core::*;
 
-use gpui_kit::component::{Theme as KitTheme, ThemeMode};
+use gpui_kit::component::ThemeMode;
 use gpui_kit::{
     px, size, App, AppContext as _, Bounds, TitlebarOptions, WindowBounds, WindowOptions,
 };
@@ -41,19 +41,8 @@ fn main() {
             // Select the theme before any input entity is created; inputs
             // capture their styling when they are constructed.
             let settings = crate::settings::Settings::load();
-            let mode = match settings.theme {
-                crate::settings::Theme::Light => ThemeMode::Light,
-                crate::settings::Theme::Dark => ThemeMode::Dark,
-                crate::settings::Theme::System => ThemeMode::from(cx.window_appearance()),
-            };
-            KitTheme::change(mode, None, cx);
-
-            // Derive the whole Material scheme from the OrcaSVN brand color, so
-            // surfaces and containers are tuned around the brand hue instead of
-            // the default Baseline purple. Must run after the mode config is
-            // loaded and before the first Root render.
-            let scheme = SeedScheme::new(BRAND).dark(mode.is_dark()).scheme();
-            theme::init_component_theme(scheme, settings.zoom, cx);
+            let system_mode = ThemeMode::from(cx.window_appearance());
+            apply_theme(&settings, system_mode, cx);
 
             let bounds = Bounds::centered(None, size(px(1200.0), px(780.0)), cx);
             gpui_kit::open_window(
@@ -68,8 +57,18 @@ fn main() {
                     ..Default::default()
                 },
                 cx,
-                |window, cx| cx.new(|cx| app::OrcaApp::new(window, cx)),
+                move |window, cx| cx.new(|cx| app::OrcaApp::new(settings, window, cx)),
             )
             .expect("failed to open the OrcaSVN window");
         });
+}
+
+fn apply_theme(settings: &settings::Settings, system_mode: ThemeMode, cx: &mut App) {
+    let mode = match settings.theme {
+        settings::Theme::Light => ThemeMode::Light,
+        settings::Theme::Dark => ThemeMode::Dark,
+        settings::Theme::System => system_mode,
+    };
+    let scheme = SeedScheme::new(BRAND).dark(mode.is_dark()).scheme();
+    theme::init_component_theme(scheme, settings.zoom.clamp(0.6, 2.5), cx);
 }

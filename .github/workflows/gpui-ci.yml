@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - gpui
+      - gpui-material
     paths:
       - "orcasvn-core/**"
       - "orcasvn-gpui/**"
