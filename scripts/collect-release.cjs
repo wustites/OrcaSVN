@@ -19,7 +19,7 @@ function readManagedNames(releaseDir) {
   return new Set([...names, manifestName])
 }
 
-function collectWindowsRelease({ root, outputDir, version, startedAt, target = '', includeBundles = true }) {
+function collectWindowsRelease({ root, outputDir, version, startedAt, target = '', expectedBundles = ['nsis', 'msi'] }) {
   root = path.resolve(root)
   const releaseDir = path.join(root, 'release')
   const sourceExe = path.join(outputDir, 'OrcaSVN.exe')
@@ -28,16 +28,22 @@ function collectWindowsRelease({ root, outputDir, version, startedAt, target = '
   const architecture = target ? target.split('-')[0].replace('x86_64', 'x64').replace('aarch64', 'arm64') : process.arch
   const portableName = `OrcaSVN-${version}-windows-${architecture}-portable.zip`
   const sources = [{ source: sourceExe, name: 'OrcaSVN.exe' }, { source: path.join(root, 'LICENSE'), name: 'LICENSE' }]
-  if (includeBundles) {
-    for (const kind of ['nsis', 'msi']) {
+  {
+    for (const kind of expectedBundles) {
+      if (!['nsis', 'msi'].includes(kind)) throw new Error(`不支持的安装包格式：${kind}`)
+      let found = false
       const directory = path.join(outputDir, 'bundle', kind)
-      if (!fs.existsSync(directory)) continue
+      if (!fs.existsSync(directory)) throw new Error(`缺少本次安装包目录：${kind}`)
       for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
         if (!entry.isFile() || !entry.name.startsWith(`OrcaSVN_${version}_`) || !/\.(exe|msi)$/i.test(entry.name)) continue
         const source = path.join(directory, entry.name)
         // 只收集本次打包更新的安装程序，避免混入旧版本或上一次未选择的格式。
-        if (fs.statSync(source).mtimeMs >= startedAt - 2000) sources.push({ source, name: entry.name })
+        if (fs.statSync(source).mtimeMs >= startedAt - 2000 && path.extname(entry.name).toLowerCase() === (kind === 'nsis' ? '.exe' : '.msi')) {
+          sources.push({ source, name: entry.name })
+          found = true
+        }
       }
+      if (!found) throw new Error(`缺少本次构建的 ${kind} 安装包（版本 ${version}），保留旧发布目录`)
     }
   }
   const generatedNames = new Set([...sources.map(file => file.name), '使用说明.txt', portableName, manifestName])
@@ -55,7 +61,7 @@ function collectWindowsRelease({ root, outputDir, version, startedAt, target = '
     for (const entry of sources) fs.copyFileSync(entry.source, path.join(stage, entry.name))
     fs.writeFileSync(path.join(stage, '使用说明.txt'), [
       `OrcaSVN ${version} Windows 版`, '',
-      '免安装运行：双击 OrcaSVN.exe；需要 Windows WebView2 Runtime 和 SVN 命令行工具。',
+      '免安装运行：双击 OrcaSVN.exe；需要 Windows WebView2 Runtime，已内置支持 Unicode 的私有 SVN 运行时。',
       '更新前请先退出旧版 OrcaSVN。', '',
       '工作区支持通过资源管理器、Android Studio、IntelliJ IDEA、VS Code 或终端打开目录。',
       '非标准安装位置可在打开方式的设置中选择编辑器程序。',

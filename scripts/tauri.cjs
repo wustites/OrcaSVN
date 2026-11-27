@@ -1,6 +1,6 @@
-const fs = require('node:fs')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { resolveReleaseConfig } = require('./release-config.cjs')
 const { collectWindowsRelease } = require('./collect-release.cjs')
 
 const root = path.resolve(__dirname, '..')
@@ -35,9 +35,9 @@ if (!skipCollection && process.platform === 'win32') {
     const targetDir = optionValue('--target-dir') || process.env.CARGO_TARGET_DIR || 'target'
     const target = optionValue('--target', '-t') || process.env.CARGO_BUILD_TARGET || ''
     const outputDir = path.resolve(root, 'src-tauri', targetDir, target, 'release')
-    const config = JSON.parse(fs.readFileSync(path.join(root, 'src-tauri', 'tauri.conf.json'), 'utf8'))
+    const config = resolveReleaseConfig(root, args)
     collectWindowsRelease({ root, outputDir, version: config.version, startedAt, target,
-      includeBundles: !args.includes('--no-bundle') })
+      expectedBundles: config.expectedBundles })
   } catch (error) {
     console.error(`构建成功，但发布目录更新失败：${error.message}`)
     console.error('请关闭 release 目录中运行的程序，检查文件权限后重新执行构建。原构建产物仍保留在 Cargo 输出目录。')

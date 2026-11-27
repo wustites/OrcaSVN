@@ -78,4 +78,6 @@ macOS/Linux 确保 `svn` 位于当前用户的 `PATH` 中，然后重新启动 O
 
 开发服务器要求固定使用 1420 端口。结束占用进程后重新运行 `npm run tauri dev`。
 
+发布汇总使用 Windows 平台配置及 `--config` / `-c` 覆盖后的版本与 bundle 配置，支持 JSON 文件和内联 JSON（按参数顺序合并）。暂不支持 JSON5/TOML、外部 `TAURI_CONFIG` 或更改程序名称；遇到这些情况汇总明确失败，Cargo 原产物仍保留。请求的 NSIS/MSI 安装包必须匹配最终版本且为本次生成，缺失或过期会保留旧 `release/`；`--no-bundle` 或关闭 bundle 时不要求安装包。
+
 Windows 默认使用嵌入程序的私有 UTF-8 SVN 运行时；自定义旧 SVN 无法无损接收参数时，在执行之前切换至内置运行时。首次使用会将运行时校验并解包到 `%LOCALAPPDATA%/OrcaSVN/svn-runtime/`。无需改变系统区域设置或修改已安装的 SVN。来源、固定校验值、许可证及构建步骤见 [Windows SVN 运行时](docs/windows-svn-runtime.md)。
